@@ -1,6 +1,7 @@
 import { remoteApiLocator } from "./config";
 import { useTransport } from "./transport/useTransport";
 import { StreamGrid } from "./streams/StreamGrid";
+import { RosExplorer } from "./ros/RosExplorer";
 import { KeyspaceDebug } from "./debug/KeyspaceDebug";
 
 export function App() {
@@ -23,6 +24,7 @@ export function App() {
         </pre>
       )}
       {transport && <StreamGrid transport={transport} />}
+      {transport && <RosExplorer transport={transport} />}
       {transport && <KeyspaceDebug transport={transport} />}
     </main>
   );

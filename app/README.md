@@ -35,8 +35,15 @@ src/
     zenohRemoteApi.ts       # Phase-1 impl: zenoh-ts over the remote-api WebSocket
   schema/
     types.ts                # TypeIdentity, Decoder, SchemaResolver
-    keyParser.ts            # keyexpr → {topicName, identity}; ROS1 done, ROS2 TODO
-    resolver.ts             # fingerprint-cached resolver; decode backends STUBBED (next increment)
+    keyParser.ts            # data keyexpr → {topicName, identity} (ROS2 rmw_zenoh + ROS1 bridge)
+    typeName.ts             # DDS-mangled ↔ ROS type-name forms
+    resolver.ts             # fingerprint-cached resolver → decoders/staticDefs (bundled defs + CDR/ROS1 readers)
+  ros/
+    graph.ts                # @ros2_lv liveliness tokens → RosGraph (topics/nodes/services + QoS)
+    useRosGraph.ts          # live graph hook (liveliness sub with history)
+    RosExplorer.tsx         # topic table + drill-down; nodes/services lists
+    TopicInspector.tsx      # subscribe→decode→render one topic (Hz/bytes, latched get)
+    MessageTree.tsx         # decoded-message tree (bigint/TypedArray-safe)
   streams/                  # WebRTC camera streams: fleet media discovery + viewer
     types.ts                # StreamDescriptor (docs/DISCOVERY.md) + parse/validate
     discovery.ts            # liveliness sub on fleet/<v>/media/<s> + descriptor get → DiscoveredStream[]
@@ -65,16 +72,27 @@ signalling server, then consumes it by that producer's signalling `id`.
   tiles); per-stream `ConsumerSession`s open/close with Play/Stop.
 - Add protocols (WHEP, …) by registering a factory in `streams/source/registry.ts`.
 
-## Next increment (decode)
+## ROS explorer / decode
 
-Add the codecs and fill in `schema/resolver.ts`:
+The ROS graph is rebuilt client-side from rmw_zenoh's `@ros2_lv/**` liveliness tokens (`ros/graph.ts`
+— token + QoS formats verified against rmw_zenoh jazzy `liveliness_utils.cpp` and live against a
+`lyrical` vehicle). Clicking a topic subscribes to its data keyexpr
+(`<domain>/<topic>/<dds-type>/<RIHS hash>`) and decodes CDR with readers built from
+`@foxglove/rosmsg-msgs-common` bundled definitions (`schema/decoders/staticDefs.ts`, loaded as an
+async chunk). Unit tests cover the parsers and a write→decode round-trip: `npm test`.
 
-```sh
-npm install @foxglove/rosmsg @foxglove/rosmsg-serialization @foxglove/rosmsg2-serialization
-```
+Known behaviors:
 
-- ROS2: `get` the `get_type_description` queryable (payload = CDR `GetTypeDescription` req keyed by
-  RIHS) → CDR reader from the returned `TypeDescription`.
-- ROS1: `get` the companion md5→`full_text` advertiser → parse `.msg` → ROS1-wire reader.
-
-Then a ROS Explorer panel subscribes to a topic, `parseKey` → `resolve` → `decode` → render.
+- **Bundled defs only**: vendor types (novatel/sbg/vectornav…) aren't in the bundle and show a
+  "not in the bundled message definitions" error in the inspector. The fix is the dynamic
+  `get_type_description` backend (resolver.ts doc comment) — needs attachment support on
+  `Transport.get` to satisfy rmw_zenoh's service-call protocol.
+- **Version skew**: defs are jazzy-era; if a decode leaves trailing bytes the inspector shows a ⚠
+  warning instead of failing (CDR ignores trailing bytes).
+- **image_transport gating**: camera topics publish only when a *ROS* subscriber matches; a raw
+  zenoh subscriber declares no `MS` graph token, so such topics show "no data yet". (Future trick:
+  declare a mimic `@ros2_lv` MS token to nudge lazy publishers.)
+- **transient_local**: the inspector also `get`s the keyexpr once on open (publication cache); on
+  the lyrical vehicle the advanced publisher already replays history to late-joining subscribers,
+  so latched values show up either way. `/rosout` is latched but has a 10 s lifespan — empty on an
+  idle vehicle is normal.

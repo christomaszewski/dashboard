@@ -35,9 +35,14 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 Open `http://<vehicle-ip>:8080`:
 1. **status: connected** — transport reached the sidecar.
 2. **Camera streams** lists the camera → **Play** → live WebRTC video.
-3. **Bus debug** (expand) → **Liveliness** shows the live keyspace: the rmw_zenoh graph tokens + the
-   `fleet/.../media/...` discovery token. Read the rmw_zenoh key format here — it's what we need to finish
-   `parseRos2Key` + the ROS2 type-description fetch. (The data-subscription box can sample any keyexpr.)
+3. **ROS graph** shows the vehicle's nodes/topics/services (from `@ros2_lv` liveliness) with QoS
+   chips. Click a topic → live decoded messages + Hz/bytes. To prove decode without sensors flowing,
+   pub from any ROS container on the vehicle:
+   `ros2 topic pub -w 0 -r 5 /dash_test std_msgs/msg/String "{data: hello}"` → topic appears in the
+   graph, click → `data: "hello"` at ~5 Hz. (Camera `image_raw*` topics are image_transport-gated —
+   they publish only with a matching *ROS* subscriber, so "no data yet" there is expected.)
+4. **Bus debug** (expand) → **Liveliness** shows the raw keyspace: the rmw_zenoh graph tokens + the
+   `fleet/.../media/...` discovery token. (The data-subscription box can sample any keyexpr.)
 
 ## Fast UI iteration (no rebuild)
 
@@ -58,6 +63,8 @@ Serve the page over http so it can open the `ws://` signalling socket (an https 
 
 ## After this passes
 
-The transport + discovery + viewer foundation is proven. Then finish the ROS decode on top of it:
-`parseRos2Key` (from the keys observed in Bus debug) → the ROS2 `get_type_description` fetch + CDR decode
-(and the ROS1 md5→`full_text` path) → a ROS Explorer panel.
+Transport + discovery + viewer + ROS explorer/decode are proven (decode = bundled common-interface
+defs; verified live against a lyrical vehicle 2026-06-09). Next: the dynamic `get_type_description`
+backend for vendor types (needs `Transport.get` attachments), telemetry plots/GNSS map on top of the
+decoded streams, and the camera-side fixes (H.264 level/profile redeploy; per-camera `sensor_id` so
+both cameras advertise).

@@ -9,6 +9,8 @@ export type DecodedMessage = Record<string, unknown>;
 
 export interface Decoder {
   decode(bytes: Uint8Array): DecodedMessage;
+  /** Diagnostic for the most recent decode (e.g. trailing bytes → schema version skew). */
+  lastWarning?(): string | undefined;
 }
 
 /**

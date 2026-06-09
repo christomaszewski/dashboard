@@ -9,3 +9,6 @@ app/dist/
 # OS / editor
 .DS_Store
 *.local
+
+# Claude Code dev-server launch config (machine-specific vehicle IP)
+.claude/launch.json
