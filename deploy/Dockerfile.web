@@ -8,8 +8,10 @@ WORKDIR /app
 COPY app/package.json app/package-lock.json ./
 RUN npm ci
 COPY app/ ./
-RUN npm run build                 # tsc --noEmit && vite build -> /app/dist
+# tsc --noEmit && vite build -> /app/dist
+RUN npm run build
 
 FROM caddy:2-alpine
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
-COPY --from=build /app/dist /srv   # Caddyfile roots at /srv
+# Caddyfile roots at /srv
+COPY --from=build /app/dist /srv
