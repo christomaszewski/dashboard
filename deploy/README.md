@@ -8,7 +8,7 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 | Service | What | Port |
 |---|---|---|
 | `dashboard-zenoh` | `zenoh-bridge-remote-api` — a Zenoh **client** of the rmw_zenoh router that exposes a WebSocket for the browser's `zenoh-ts` | `:10000` (ws) |
-| `dashboard-web` | Caddy serving the React bundle (`./www`) | `:8080` (http) |
+| `dashboard-web` | Caddy with the React bundle baked in (a built image — `deploy/Dockerfile.web`) | `:8080` (http) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over
 `ws://<vehicle-ip>:10000`.
@@ -25,7 +25,7 @@ reproducibility. If/when an official `zenoh-bridge-remote-api` image exists, swa
 
 ## Verify the spine
 
-1. `http://<vehicle-ip>:8080` shows the placeholder page.
+1. `http://<vehicle-ip>:8080` shows the dashboard (status, Camera streams, Bus debug).
 2. Open a `zenoh-ts` session to `ws://<vehicle-ip>:10000` and subscribe to `**` (or `@/**` for
    the admin space) — you should see the vehicle's keys / rmw_zenoh topics flowing.
 
@@ -45,6 +45,5 @@ reproducibility. If/when an official `zenoh-bridge-remote-api` image exists, swa
 
 ## TODO
 
-- Replace `./www` with the real Vite build output.
 - Pin `ZENOH_TS_REF` to a release tag (the workspace pulls `zenoh` from git `main`).
 - Swap to an official remote-api image if one is published.

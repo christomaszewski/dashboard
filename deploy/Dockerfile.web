@@ -1,0 +1,15 @@
+# Builds the React bundle and bakes it into Caddy -> a self-contained dashboard-web image (no runtime
+# bundle mount, nothing to vendor). Node lives only in the build stage. The final image is plain Caddy
+# + the static bundle, so it runs anywhere (arm64 / x86).
+#
+# Build context = the REPO ROOT (needs app/ + deploy/Caddyfile). build-images.sh / compose set that.
+FROM node:20-alpine AS build
+WORKDIR /app
+COPY app/package.json app/package-lock.json ./
+RUN npm ci
+COPY app/ ./
+RUN npm run build                 # tsc --noEmit && vite build -> /app/dist
+
+FROM caddy:2-alpine
+COPY deploy/Caddyfile /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv   # Caddyfile roots at /srv

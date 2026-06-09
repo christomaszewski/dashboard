@@ -3,10 +3,6 @@ node_modules/
 app/dist/
 *.tsbuildinfo
 
-# Vite builds into deploy/www/ (the dir dashboard-web serves). Keep the committed placeholder
-# index.html; ignore the generated bundle assets.
-deploy/www/assets/
-
 # Local Claude Code settings (personal, not shared)
 .claude/settings.local.json
 

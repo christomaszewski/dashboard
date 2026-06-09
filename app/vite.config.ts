@@ -8,8 +8,5 @@ import topLevelAwait from "vite-plugin-top-level-await";
 export default defineConfig({
   plugins: [react(), wasm(), topLevelAwait()],
   server: { host: true, port: 5173 }, // host:true → reachable on the LAN during dev
-  build: {
-    outDir: "../deploy/www", // build straight into the dir the dashboard-web service serves
-    emptyOutDir: true,
-  },
+  // build outDir = default (app/dist); deploy/Dockerfile.web bakes the bundle into the dashboard-web image.
 });

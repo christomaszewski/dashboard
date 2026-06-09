@@ -13,10 +13,9 @@ TAG="${2:-arm64}"
 docker build -f "$REPO/deploy/Dockerfile.zenoh-remote-api" -t "$REGISTRY/dashboard-zenoh:$TAG" "$REPO/deploy"
 docker push "$REGISTRY/dashboard-zenoh:$TAG"
 
-# TODO(dashboard-web): once the Vite bundle + deploy/Dockerfile.web exist, build+push the baked
-# Caddy+bundle image here, e.g.:
-#   docker build -f "$REPO/deploy/Dockerfile.web" -t "$REGISTRY/dashboard-web:$TAG" "$REPO"
-#   docker push "$REGISTRY/dashboard-web:$TAG"
-# Until then dashboard-web runs stock caddy:2-alpine with the bundle bind-mounted (see compose).
+# dashboard-web: the React bundle baked into Caddy (multi-stage; Node only in the build stage). Build
+# context is the repo ROOT (Dockerfile.web needs app/ + deploy/Caddyfile).
+docker build -f "$REPO/deploy/Dockerfile.web" -t "$REGISTRY/dashboard-web:$TAG" "$REPO"
+docker push "$REGISTRY/dashboard-web:$TAG"
 
-echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG  (dashboard-web TODO: needs the frontend bundle)" >&2
+echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG and $REGISTRY/dashboard-web:$TAG" >&2

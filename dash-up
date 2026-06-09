@@ -13,9 +13,9 @@
 #   dash-up config/infra/dashboard.example.yaml config       # render the merged compose
 #
 # Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY); run `pull` then `up -d`.
-# The built image dashboard-zenoh resolves to <registry>/dashboard-zenoh:<tag>; the web layer uses the
-# registry's mirrored caddy (compose default). Per-image vars (DASH_ZENOH_IMAGE/DASH_WEB_IMAGE)
-# override individually. Stdout stays clean (status line -> stderr) so `ps --format json` parses.
+# Both images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, both built by
+# tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE/DASH_WEB_IMAGE) override individually.
+# Stdout stays clean (status line -> stderr) so `ps --format json` parses.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
 PYTHON="${DASH_PYTHON:-python3}"
@@ -42,9 +42,7 @@ DASH_REGISTRY="${DASH_REGISTRY:-${RIG_IMAGE_REGISTRY:-}}"
 if [ -n "${DASH_REGISTRY:-}" ]; then
   TAG="${RIG_IMAGE_TAG:-${DASH_IMAGE_TAG:-arm64}}"
   export DASH_ZENOH_IMAGE="${DASH_ZENOH_IMAGE:-$DASH_REGISTRY/dashboard-zenoh:$TAG}"
-  # Do NOT auto-point DASH_WEB_IMAGE at $DASH_REGISTRY/dashboard-web -- that image isn't built. The web
-  # layer is mirrored caddy, kept at its OWN tag ($DASH_REGISTRY/caddy:2-alpine, NOT the fleet tag);
-  # compose resolves it (see rigging.yaml `mirror:`).
+  export DASH_WEB_IMAGE="${DASH_WEB_IMAGE:-$DASH_REGISTRY/dashboard-web:$TAG}"
 fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)

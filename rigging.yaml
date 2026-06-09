@@ -27,15 +27,12 @@ external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar 
 build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
   command: tools/build-images.sh
   arch: arm64                       # plain arm64 (also runs on an x86 off-vehicle host)
-  images: [dashboard-zenoh]         # images this stack builds + pushes (dashboard-web: see `mirror` below)
+  images: [dashboard-zenoh, dashboard-web]   # both built + pushed by build-images.sh
 
-mirror:               # third-party images `rig build --registry` copies into the registry for offline pull
-  - caddy:2-alpine    #   dashboard-web is still stock caddy; drop this once it's a built image in build.images
+# (no `mirror:` -- the web layer is now a built image with caddy + the bundle baked in, not a mirrored base)
 
-launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source / build context)
-  - dash-up
+launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source / build context).
+  - dash-up           #   The Caddyfile + React bundle are baked into the dashboard-web image, so not here.
   - tools/dash_env.py
   - deploy/docker-compose.yml
-  - deploy/Caddyfile
   - deploy/zenohd-dashboard.json5
-  - deploy/www                      # a directory (the bundle); rig vendor/bake handles directories

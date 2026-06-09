@@ -1,7 +1,7 @@
 # app — dashboard frontend (Vite + React + TS)
 
 Phase-1 frontend. Talks Zenoh from the browser via `zenoh-ts` → the `dashboard-zenoh` remote-api
-sidecar. Built straight into `../deploy/www` (what the `dashboard-web` service serves).
+sidecar. Builds to `app/dist`; `deploy/Dockerfile.web` bakes it into the `dashboard-web` image.
 
 ## Dev
 
@@ -22,7 +22,7 @@ vehicle-served deployment. Override with `VITE_REMOTE_API_LOCATOR` for dev.
 ## Build
 
 ```sh
-npm run build      # tsc + vite → ../deploy/www  (overwrites the placeholder index.html)
+npm run build      # tsc + vite → app/dist  (the dashboard-web image bakes this; for the UI, prefer `npm run dev`)
 ```
 
 ## Layout / seams
@@ -56,9 +56,9 @@ Discovers streams your producers advertise per the camera-service `docs/DISCOVER
 Opening a stream matches the descriptor's `producer_id` (= webrtcsink `meta.name`) to a producer on the
 signalling server, then consumes it by that producer's signalling `id`.
 
-- **Reachability**: the viewer rewrites the descriptor's signalling *host* to the page host
-  (`signalling.ts`) — correct for single-vehicle/vehicle-served; a fleet deployment needs per-vehicle
-  resolution.
+- **Reachability**: the viewer rewrites the descriptor's signalling *host* to the vehicle host
+  (`signalling.ts` → `vehicleHost()`: the page host when vehicle-served, the `VITE_REMOTE_API_LOCATOR`
+  host in dev) — single-vehicle; a fleet deployment needs per-vehicle resolution.
 - **Scheme must align**: an https page can't open a `ws://` signalling socket — serve the page over http
   (Phase-1 Caddy `:8080`) or run the bridge with `wss`.
 - `gstwebrtc-api` has no `close()`, so signalling connections are **pooled per URL** (shared across

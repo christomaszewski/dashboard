@@ -21,14 +21,14 @@ keys we need to finish the ROS decode).
 
 ```sh
 cd dashboard
-docker compose -f deploy/docker-compose.yml up --build   # first build compiles zenoh-bridge-remote-api (slow)
+docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-bridge-remote-api + web bundle (slow)
 #   or: ./dash-up config/infra/dashboard.example.yaml up -d
 ```
 - `dashboard-zenoh` → `ws://<host>:10000` (remote-api), a client of the router.
 - `dashboard-web`   → `http://<host>:8080` (the bundle).
 
-> `deploy/www` is a placeholder until you build the app bundle:
-> `cd app && npm install && npm run build` (outputs to `deploy/www`), then re-up `dashboard-web`.
+> The React bundle is **baked into the `dashboard-web` image** (`deploy/Dockerfile.web`) — `--build`
+> produces it locally; `rig build` produces + pushes it. No bundle mount, nothing to vendor.
 
 ## Verify (browser on the mesh)
 
@@ -53,7 +53,7 @@ Serve the page over http so it can open the `ws://` signalling socket (an https 
 |---|---|
 | status: **error** | sidecar down / locator unreachable. `docker compose -f deploy/docker-compose.yml logs dashboard-zenoh`; confirm `:10000` reachable and the router is up on `:7447`. |
 | **no streams** | producer not advertising, or on a different bus. Re-run `discovery_probe.py`; check the webrtc-bridge logs for `advertising fleet/...`; confirm both use `tcp/localhost:7447`. |
-| stream **won't play** | signalling reachability/scheme. The viewer rewrites the descriptor's signalling host → the page host, but `:8443` must be reachable from the browser, and an **http page needs a `ws://` signalling URL** (https ⇒ `wss`). Check the browser console. |
+| stream **won't play** | signalling reachability/scheme. The viewer rewrites the signalling host → the vehicle host (`vehicleHost()`), but `:8443` must be reachable from the browser, and an **http page needs a `ws://` signalling URL** (https ⇒ `wss`). Check the browser console. |
 | vite **wasm** build/dev error | keep `vite-plugin-wasm` + `vite-plugin-top-level-await` (already in `app/vite.config.ts`). |
 
 ## After this passes

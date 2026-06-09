@@ -1,0 +1,8 @@
+# Keep the dashboard-web build context (repo root) small + reproducible.
+**/node_modules
+.git
+**/dist
+**/*.tsbuildinfo
+deploy/www
+var
+.claude
