@@ -24,7 +24,9 @@ services:
     restart: unless-stopped                    # retries if the router isn't up yet
 
   dashboard-web:
-    image: ${DASH_WEB_IMAGE:-caddy:2-alpine}   # baked Caddy+bundle image once the frontend exists
+    # interim: web layer is mirrored caddy (rigging.yaml `mirror:`) — a built dashboard-web image later.
+    # registry set (rig injects RIG_IMAGE_REGISTRY) → use the mirrored copy; else plain caddy from the Hub.
+    image: ${DASH_WEB_IMAGE:-${RIG_IMAGE_REGISTRY:+${RIG_IMAGE_REGISTRY}/}caddy:2-alpine}
     network_mode: host                         # serve the bundle on the mesh (http://<vehicle-ip>:<web_port>)
     environment:
       DASH_WEB_PORT: "${DASH_WEB_PORT:-8080}"  # Caddyfile listens on {$DASH_WEB_PORT:8080}
