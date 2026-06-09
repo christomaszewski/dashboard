@@ -1,6 +1,6 @@
 import GstWebRTCAPI from "gstwebrtc-api";
 import type { StreamDescriptor } from "../types";
-import type { StreamSource } from "./types";
+import type { StreamSource, StreamSourceHooks } from "./types";
 import { resolveSignallingUrl } from "../signalling";
 
 type Producer = { id: string; meta: Record<string, unknown> };
@@ -51,7 +51,7 @@ export class GstWebRtcSource implements StreamSource {
 
   constructor(private readonly descriptor: StreamDescriptor) {}
 
-  async open(video: HTMLVideoElement): Promise<void> {
+  async open(video: HTMLVideoElement, hooks?: StreamSourceHooks): Promise<void> {
     const api = apiFor(resolveSignallingUrl(this.descriptor));
     const producer = await findProducer(api, this.descriptor.producer_id);
     const session = api.createConsumerSession(producer.id);
@@ -62,6 +62,17 @@ export class GstWebRtcSource implements StreamSource {
         video.srcObject = stream;
         void video.play().catch(() => undefined);
       }
+    });
+    // Surface async failures (ICE/media never connects, codec not decodable, signalling drop) — otherwise
+    // the tile just stays black. gstwebrtc's "error" event carries a `.message`.
+    session.addEventListener("error", (ev: Event) => {
+      const msg = (ev as unknown as { message?: string }).message ?? "webrtc consumer error";
+      console.error("[gstwebrtc]", msg, ev);
+      hooks?.onError?.(msg);
+    });
+    session.addEventListener("closed", () => {
+      console.warn("[gstwebrtc] consumer session closed");
+      hooks?.onClosed?.();
     });
     session.connect();
   }

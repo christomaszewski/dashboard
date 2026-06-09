@@ -29,7 +29,13 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
     try {
       const src = createSource(descriptor);
       sourceRef.current = src;
-      await src.open(video);
+      await src.open(video, {
+        onError: (m) => {
+          setState("error");
+          setErr(m);
+        },
+        onClosed: () => setState("idle"),
+      });
     } catch (e) {
       sourceRef.current?.close();
       sourceRef.current = null;
@@ -60,6 +66,7 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
       </div>
       <video
         ref={videoRef}
+        autoPlay
         playsInline
         muted
         style={{ width: "100%", height: 200, background: "#111", borderRadius: 6, marginBlock: ".4rem" }}
