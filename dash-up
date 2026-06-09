@@ -34,14 +34,17 @@ docker compose version >/dev/null 2>&1 || { echo "dash-up: needs the Docker Comp
 eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
 export COMPOSE_PROJECT_NAME="${DASH_NAME:-dashboard}"   # rig requires the instance name to be unique
 
-# Registry deploy: rig injects RIG_IMAGE_REGISTRY fleet-wide; honor it. The dashboard is
-# platform-agnostic (no NVENC), so a single tag (default arm64) covers every host.
+# Registry deploy: rig injects RIG_IMAGE_REGISTRY + RIG_IMAGE_TAG fleet-wide (e.g. tag jp7); honor both
+# so the image we PULL matches what `rig build` pushed (it tags with vehicle.yaml images.tag). The binary
+# is arch-agnostic -- the tag is just the fleet deployment label (one coherent tag per vehicle). arm64 is
+# only the standalone fallback.
 DASH_REGISTRY="${DASH_REGISTRY:-${RIG_IMAGE_REGISTRY:-}}"
 if [ -n "${DASH_REGISTRY:-}" ]; then
-  TAG="${DASH_IMAGE_TAG:-arm64}"
+  TAG="${RIG_IMAGE_TAG:-${DASH_IMAGE_TAG:-arm64}}"
   export DASH_ZENOH_IMAGE="${DASH_ZENOH_IMAGE:-$DASH_REGISTRY/dashboard-zenoh:$TAG}"
   # Do NOT auto-point DASH_WEB_IMAGE at $DASH_REGISTRY/dashboard-web -- that image isn't built. The web
-  # layer is mirrored caddy; compose resolves it to the registry copy (see rigging.yaml `mirror:`).
+  # layer is mirrored caddy, kept at its OWN tag ($DASH_REGISTRY/caddy:2-alpine, NOT the fleet tag);
+  # compose resolves it (see rigging.yaml `mirror:`).
 fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
