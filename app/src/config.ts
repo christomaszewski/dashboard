@@ -6,10 +6,18 @@
 //   VITE_REMOTE_API_LOCATOR=ws/192.168.1.10:10000 npm run dev
 const WS_PORT = 10000;
 
+// The host of the vehicle we're talking to: the page host when vehicle-served, or the host parsed from
+// the VITE_REMOTE_API_LOCATOR override in dev — so the remote-api AND the WebRTC signalling target the
+// same vehicle.
+export function vehicleHost(): string {
+  const loc = import.meta.env.VITE_REMOTE_API_LOCATOR as string | undefined;
+  const m = loc?.match(/^[a-z]+\/([^:/]+)/i); // ws/<host>:<port>
+  return m?.[1] ?? (window.location.hostname || "127.0.0.1");
+}
+
 export function remoteApiLocator(): string {
   const override = import.meta.env.VITE_REMOTE_API_LOCATOR as string | undefined;
   if (override) return override;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const host = window.location.hostname || "127.0.0.1";
-  return `${proto}/${host}:${WS_PORT}`;
+  return `${proto}/${vehicleHost()}:${WS_PORT}`;
 }
