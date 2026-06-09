@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# dash-up <dashboard-config.yaml> [docker compose subcommand + args...]
+#
+# Bring up the vehicle dashboard (remote-api sidecar + static web server) from ONE config.
+# rig invokes:  dash-up <config> <verb>   (verbs mapped in rigging.yaml; e.g. up -> "up -d").
+# The repo does NOT depend on rig; rig depends on this launcher + rigging.yaml (one-way).
+#
+#   dash-up config/infra/dashboard.example.yaml up -d        # detached
+#   dash-up /any/host/path/dashboard.yaml up -d        # arbitrary config path (rig supplies it)
+#   dash-up config/infra/dashboard.example.yaml down
+#   dash-up config/infra/dashboard.example.yaml ps
+#   dash-up config/infra/dashboard.example.yaml logs
+#   dash-up config/infra/dashboard.example.yaml config       # render the merged compose
+#
+# Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY) -> images resolve to
+# <registry>/<name>:<tag>; run `pull` then `up -d`. Per-image vars (DASH_ZENOH_IMAGE/DASH_WEB_IMAGE)
+# override individually. Stdout stays clean (status line -> stderr) so `ps --format json` parses.
+set -euo pipefail
+REPO="$(cd "$(dirname "$0")" && pwd)"
+PYTHON="${DASH_PYTHON:-python3}"
+COMPOSE="$REPO/deploy/docker-compose.yml"
+
+CONFIG="${1:?usage: dash-up <dashboard-config.yaml> [compose args...]}"; shift || true
+# Accept the config as given (abs / cwd-relative -- e.g. a rig-supplied vehicle path), or fall back to
+# the repo-relative short form so `dash-up config/infra/dashboard.example.yaml` works anywhere.
+if [ ! -f "$CONFIG" ] && [ -f "$REPO/$CONFIG" ]; then CONFIG="$REPO/$CONFIG"; fi
+[ -f "$CONFIG" ] || { echo "dash-up: config not found: $CONFIG" >&2; exit 1; }
+CONFIG_ABS="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
+
+docker compose version >/dev/null 2>&1 || { echo "dash-up: needs the Docker Compose v2 plugin ('docker compose')" >&2; exit 1; }
+
+# config -> env (instance name + host ports). Simple tokens, no spaces.
+eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
+export COMPOSE_PROJECT_NAME="${DASH_NAME:-dashboard}"   # rig requires the instance name to be unique
+
+# Registry deploy: rig injects RIG_IMAGE_REGISTRY fleet-wide; honor it. The dashboard is
+# platform-agnostic (no NVENC), so a single tag (default arm64) covers every host.
+DASH_REGISTRY="${DASH_REGISTRY:-${RIG_IMAGE_REGISTRY:-}}"
+if [ -n "${DASH_REGISTRY:-}" ]; then
+  TAG="${DASH_IMAGE_TAG:-arm64}"
+  export DASH_ZENOH_IMAGE="${DASH_ZENOH_IMAGE:-$DASH_REGISTRY/dashboard-zenoh:$TAG}"
+  export DASH_WEB_IMAGE="${DASH_WEB_IMAGE:-$DASH_REGISTRY/dashboard-web:$TAG}"
+fi
+
+ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
+echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY} config=$CONFIG_ABS" >&2
+exec docker compose -f "$COMPOSE" "${ARGS[@]}"

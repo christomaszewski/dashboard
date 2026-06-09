@@ -1,0 +1,8 @@
+# Static file server for the dashboard bundle.
+# SPA fallback so client-side routes resolve to index.html.
+:{$DASH_WEB_PORT:8080} {
+	root * /srv
+	encode gzip
+	try_files {path} /index.html
+	file_server
+}

@@ -1,0 +1,35 @@
+{
+  // ───────────────────────────────────────────────────────────────────────────
+  // Dashboard remote-api sidecar — Phase 1 transport spine.
+  //
+  // Joins the vehicle's Zenoh network as a CLIENT of the main rmw_zenoh router and
+  // (via the zenoh-bridge-remote-api binary + --ws-port) exposes a WebSocket for the
+  // browser's zenoh-ts. Optional and additive: it does NOT modify the rmw_zenoh router.
+  // See README.md for the security rationale.
+  // ───────────────────────────────────────────────────────────────────────────
+
+  mode: "client",
+
+  connect: {
+    // The vehicle's main zenohd (the rmw_zenoh router). Host networking => localhost.
+    endpoints: ["tcp/localhost:7447"],
+  },
+
+  // client mode accepts no inbound sessions → no `listen`, no port clash with the router.
+  scouting: {
+    multicast: { enabled: false }, // explicit connect only
+  },
+
+  // NOTE: intentionally NO access_control / transport.auth here.
+  // Trust boundary = the mesh, same as the already-open rmw_zenoh router (any client on the
+  // mesh can already publish to the ROS bus, incl. cmd_vel). Do NOT add auth to the rmw_zenoh
+  // router to "lock down" the dashboard — it would force every ROS node to authenticate and
+  // break the graph. If you ever want a footgun-guard against the dashboard ITSELF publishing,
+  // add a deny put/delete access_control rule HERE on the sidecar (never the router) and verify
+  // it intercepts remote-api ops.
+
+  // Dynamic-plugin alternative (instead of the zenoh-bridge-remote-api binary): load the plugin
+  // into a stock zenohd and set the port in-config (then drop --ws-port from compose):
+  //   plugins_loading: { enabled: true, search_dirs: ["~/.zenoh/lib"] },
+  //   plugins: { remote_api: { websocket_port: "[::]:10000" } },
+}

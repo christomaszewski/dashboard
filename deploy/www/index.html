@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Vehicle Dashboard — Phase 1</title>
+  <style>
+    body { font-family: system-ui, sans-serif; margin: 3rem auto; max-width: 40rem; line-height: 1.5; }
+    code { background: #f0f0f0; padding: .1rem .3rem; border-radius: 3px; }
+  </style>
+</head>
+<body>
+  <h1>Vehicle Dashboard — Phase 1 placeholder</h1>
+  <p>The transport spine is up. This directory (<code>deploy/www</code>) gets replaced by the
+     built React bundle (Vite <code>dist/</code>).</p>
+  <p>remote-api (zenoh-ts) endpoint: <code id="ws">…</code></p>
+  <script>
+    document.getElementById('ws').textContent = 'ws://' + location.hostname + ':10000';
+  </script>
+</body>
+</html>

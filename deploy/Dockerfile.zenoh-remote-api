@@ -1,0 +1,28 @@
+# Builds the standalone `zenoh-bridge-remote-api` (the same zenohd, statically linked with the
+# remote-api plugin, plus --ws-port) from the zenoh-ts workspace.
+#
+# No official image is confirmed at the time of writing — if one gets published, replace the
+# `build:` block in docker-compose.yml with `image: ...` instead.
+#
+# REPRODUCIBILITY: the zenoh-ts workspace pulls `zenoh` from git (branch main), so pin
+# ZENOH_TS_REF to a release tag that carries a committed Cargo.lock and build --locked.
+
+ARG RUST_VERSION=1.83
+FROM rust:${RUST_VERSION}-slim-bookworm AS build
+ARG ZENOH_TS_REF=main          # ← pin to a release tag, e.g. 1.9.0
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        git pkg-config libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+RUN git clone --depth 1 --branch "${ZENOH_TS_REF}" \
+        https://github.com/eclipse-zenoh/zenoh-ts.git /src
+WORKDIR /src
+# Verified target: package + [[bin]] name = zenoh-bridge-remote-api.
+RUN cargo build --release --locked -p zenoh-bridge-remote-api \
+ || cargo build --release          -p zenoh-bridge-remote-api   # fallback if no lockfile at ref
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        libssl3 ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/target/release/zenoh-bridge-remote-api /usr/local/bin/
+ENTRYPOINT ["zenoh-bridge-remote-api"]

@@ -1,0 +1,34 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Dashboard Phase-1 transport spine (optional, additive — runs ALONGSIDE the
+# vehicle's rmw_zenoh router WITHOUT modifying it):
+#   dashboard-zenoh : remote-api sidecar (zenoh client) → WebSocket for zenoh-ts
+#   dashboard-web   : static server for the React bundle
+#
+# Driven by `dash-up <config>` (which exports DASH_* from the instance config), or standalone via
+# `docker compose` (the ${VAR:-default} fallbacks keep it runnable without dash-up).
+# Trust boundary = the mesh. No auth/ACL by design (see README.md).
+# Assumes Linux host networking (the vehicle / Jetson — matches gige-vision-service).
+# ─────────────────────────────────────────────────────────────────────────────
+services:
+  dashboard-zenoh:
+    image: ${DASH_ZENOH_IMAGE:-dashboard-zenoh:local}
+    build:
+      context: .
+      dockerfile: Dockerfile.zenoh-remote-api
+      args:
+        ZENOH_TS_REF: ${ZENOH_TS_REF:-main}    # pin to a release tag
+    network_mode: host                         # reach localhost:7447 (router) + expose ws on the mesh
+    command: ["-c", "/config/zenohd-dashboard.json5", "--ws-port", "${DASH_WS_PORT:-10000}"]
+    volumes:
+      - ./zenohd-dashboard.json5:/config/zenohd-dashboard.json5:ro
+    restart: unless-stopped                    # retries if the router isn't up yet
+
+  dashboard-web:
+    image: ${DASH_WEB_IMAGE:-caddy:2-alpine}   # baked Caddy+bundle image once the frontend exists
+    network_mode: host                         # serve the bundle on the mesh (http://<vehicle-ip>:<web_port>)
+    environment:
+      DASH_WEB_PORT: "${DASH_WEB_PORT:-8080}"  # Caddyfile listens on {$DASH_WEB_PORT:8080}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./www:/srv:ro                          # ← the built React bundle (Vite `dist/`) goes here
+    restart: unless-stopped

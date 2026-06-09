@@ -1,0 +1,41 @@
+# How the "rig" vehicle orchestrator drives this service. One-way: this repo never imports rig; rig
+# reads this file. rig consumes: service, launcher, verbs, ros_distro, host_ports, external_volumes,
+# build, mirror (plus launch_surface for vendor/bake). It invokes the launcher as:
+#   <launcher> <config> <mapped-verb>     e.g.  dash-up <config> up -d
+service: dashboard
+launcher: dash-up
+verbs:
+  up: "up -d"
+  down: "down"
+  status: "ps"        # rig may append `--format json` to parse `docker compose ps`
+  logs: "logs"
+  config: "config"
+
+# (no ros_distro: the dashboard runs NO ROS node -- it's a pure zenoh client + web server)
+
+host_ports:           # config keys rig reads to validate cross-service port clashes
+  - web_port          #   http: serves the bundle
+  - ws_port           #   remote-api websocket (zenoh-ts)
+
+external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar is a stateless client
+
+# Image resolution is NOT read by rig -- it's dash-up's env contract, documented here for reference:
+#   DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY, which dash-up honors) -> <registry>/<name>:<tag>
+#   DASH_IMAGE_TAG default = arm64 (platform-agnostic: no NVENC/JetPack split)
+#   per-image overrides: DASH_ZENOH_IMAGE, DASH_WEB_IMAGE
+
+build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
+  command: tools/build-images.sh
+  arch: arm64                       # plain arm64 (also runs on an x86 off-vehicle host)
+  images: [dashboard-zenoh]         # images this stack builds + pushes (dashboard-web: see `mirror` below)
+
+mirror:               # third-party images `rig build --registry` copies into the registry for offline pull
+  - caddy:2-alpine    #   dashboard-web is still stock caddy; drop this once it's a built image in build.images
+
+launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source / build context)
+  - dash-up
+  - tools/dash_env.py
+  - deploy/docker-compose.yml
+  - deploy/Caddyfile
+  - deploy/zenohd-dashboard.json5
+  - deploy/www                      # a directory (the bundle); rig vendor/bake handles directories

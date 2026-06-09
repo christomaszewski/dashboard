@@ -1,0 +1,6 @@
+# Dashboard instance config. rig cross-checks `service`/`name` against vehicle.yaml; dash-up reads
+# the rest (tools/dash_env.py) to parameterize the compose stack. Copy/edit per deployment.
+service: dashboard
+name: dashboard       # instance name -> compose project (rig requires it unique across the vehicle)
+web_port: 8080        # http: the React bundle        -> http://<vehicle-ip>:<web_port>
+ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws_port>
