@@ -32,7 +32,9 @@ docker compose version >/dev/null 2>&1 || { echo "dash-up: needs the Docker Comp
 
 # config -> env (instance name + host ports). Simple tokens, no spaces.
 eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
-export COMPOSE_PROJECT_NAME="${DASH_NAME:-dashboard}"   # rig requires the instance name to be unique
+# rig owns the compose project (<name>-vehicle-<id>) and exports COMPOSE_PROJECT_NAME per call; honor
+# it so rig/bake/the launcher all manage ONE project. The instance name is the standalone fallback.
+export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${DASH_NAME:-dashboard}}"
 
 # Registry deploy: rig injects RIG_IMAGE_REGISTRY + RIG_IMAGE_TAG fleet-wide (e.g. tag jp7); honor both
 # so the image we PULL matches what `rig build` pushed (it tags with vehicle.yaml images.tag). The binary
