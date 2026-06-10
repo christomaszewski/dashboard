@@ -22,6 +22,9 @@ export interface DiscoveredStream {
   vehicleId: string;
   sensorId: string;
   descriptor: StreamDescriptor;
+  /** false = liveliness token currently dropped; the entry is held for a grace period (producer
+   *  restarts withdraw + re-advertise, e.g. the webrtc-bridge cycling) so tiles don't unmount. */
+  alive: boolean;
 }
 
 const REQUIRED: (keyof StreamDescriptor)[] = [

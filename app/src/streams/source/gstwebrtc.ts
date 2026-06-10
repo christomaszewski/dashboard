@@ -48,12 +48,16 @@ function findProducer(api: GstWebRTCAPI, metaName: string, timeoutMs = 8000): Pr
 /** Consumes a webrtcsink stream via the gstwebrtc-api JS client. */
 export class GstWebRtcSource implements StreamSource {
   private session: ConsumerSession | null = null;
+  private closed = false;
 
   constructor(private readonly descriptor: StreamDescriptor) {}
 
   async open(video: HTMLVideoElement, hooks?: StreamSourceHooks): Promise<void> {
     const api = apiFor(resolveSignallingUrl(this.descriptor));
     const producer = await findProducer(api, this.descriptor.producer_id);
+    // close() may have raced the producer lookup (retry loops do this constantly): a session
+    // created now would be a zombie — playing into a video element some newer session owns.
+    if (this.closed) return;
     const session = api.createConsumerSession(producer.id);
     this.session = session;
     session.addEventListener("streamsChanged", () => {
@@ -64,13 +68,16 @@ export class GstWebRtcSource implements StreamSource {
       }
     });
     // Surface async failures (ICE/media never connects, codec not decodable, signalling drop) — otherwise
-    // the tile just stays black. gstwebrtc's "error" event carries a `.message`.
+    // the tile just stays black. gstwebrtc's "error" event carries a `.message`. Both hooks are
+    // suppressed after close(): a self-initiated teardown is expected, not a reconnect trigger.
     session.addEventListener("error", (ev: Event) => {
+      if (this.closed) return;
       const msg = (ev as unknown as { message?: string }).message ?? "webrtc consumer error";
       console.error("[gstwebrtc]", msg, ev);
       hooks?.onError?.(msg);
     });
     session.addEventListener("closed", () => {
+      if (this.closed) return;
       console.warn("[gstwebrtc] consumer session closed");
       hooks?.onClosed?.();
     });
@@ -78,6 +85,7 @@ export class GstWebRtcSource implements StreamSource {
   }
 
   close(): void {
+    this.closed = true;
     try {
       this.session?.close();
     } finally {
