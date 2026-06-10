@@ -50,9 +50,10 @@ src/
     useStreams.ts           # React hook over StreamDiscovery
     signalling.ts           # resolve the descriptor's signalling URL (host rewrite, single-vehicle)
     source/                 # protocol-keyed players: gstwebrtc-api now (whep/… later)
-    StreamGrid.tsx/StreamTile.tsx   # list + per-stream <video> with Play/Stop
+    CameraConsole.tsx       # available-streams rail + subscribe set + grid/focus layouts
+    StreamView.tsx          # one subscribed stream: self-healing session + <video> (mode = chrome only)
   transport/useTransport.ts # opens/holds the Transport for the app
-  App.tsx                   # status + <StreamGrid>
+  App.tsx                   # topbar/status + <CameraConsole> + <RosExplorer> + <KeyspaceDebug>
 ```
 
 ## Camera streams (WebRTC)
@@ -69,7 +70,8 @@ signalling server, then consumes it by that producer's signalling `id`.
 - **Scheme must align**: an https page can't open a `ws://` signalling socket — serve the page over http
   (Phase-1 Caddy `:8080`) or run the bridge with `wss`.
 - `gstwebrtc-api` has no `close()`, so signalling connections are **pooled per URL** (shared across
-  tiles); per-stream `ConsumerSession`s open/close with Play/Stop.
+  tiles); per-stream `ConsumerSession`s open on subscribe and close on unsubscribe — grid/focus/
+  thumbnail layout changes are CSS-only, so sessions are never renegotiated by view switches.
 - Add protocols (WHEP, …) by registering a factory in `streams/source/registry.ts`.
 
 ## ROS explorer / decode

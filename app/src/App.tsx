@@ -1,6 +1,6 @@
 import { remoteApiLocator } from "./config";
 import { useTransport } from "./transport/useTransport";
-import { StreamGrid } from "./streams/StreamGrid";
+import { CameraConsole } from "./streams/CameraConsole";
 import { RosExplorer } from "./ros/RosExplorer";
 import { KeyspaceDebug } from "./debug/KeyspaceDebug";
 
@@ -25,7 +25,7 @@ export function App() {
             {"\n\n"}Is the dashboard-zenoh sidecar up and reachable at that locator?
           </div>
         )}
-        {transport && <StreamGrid transport={transport} />}
+        {transport && <CameraConsole transport={transport} />}
         {transport && <RosExplorer transport={transport} />}
         {transport && <KeyspaceDebug transport={transport} />}
       </main>

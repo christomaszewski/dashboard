@@ -3,7 +3,8 @@ import type { DiscoveredStream } from "./types";
 import type { StreamSource } from "./source/types";
 import { createSource } from "./source/registry";
 
-type TileState = "idle" | "opening" | "playing" | "reconnecting" | "offline" | "error";
+type ViewState = "opening" | "playing" | "reconnecting" | "offline" | "error";
+export type ViewMode = "grid" | "focused" | "thumb";
 
 const RETRY_BASE_MS = 1000;
 const RETRY_MAX_MS = 10_000;
@@ -15,23 +16,34 @@ const STALL_MS = 12_000;
 const STALL_POLL_MS = 3_000;
 
 /**
- * One stream's viewer. Play records *intent*: while intent is on, the tile self-heals — an
- * unexpected session end (signalling socket drop, bridge restart, ICE failure) schedules a
- * backoff retry, and a liveliness flap (stream offline → back) resumes playback as soon as the
- * producer re-advertises. Stop clears the intent. Each (re)attempt re-resolves the producer from
- * the CURRENT descriptor — ports/peer-ids change across producer restarts.
+ * One SUBSCRIBED stream: mounting opens the session, unmounting closes it — the parent console owns
+ * the subscription list. The session self-heals (backoff retries, stall watchdog, liveliness-flap
+ * resume) for as long as the component lives. `mode` only changes the chrome/CSS — the <video> and
+ * its session survive grid ↔ focus ↔ thumb switches untouched, so layout changes are instant.
  */
-export function StreamTile({ stream }: { stream: DiscoveredStream }) {
+export function StreamView({
+  stream,
+  mode,
+  onFocus,
+  onRestore,
+  onClose,
+}: {
+  stream: DiscoveredStream;
+  mode: ViewMode;
+  onFocus: () => void;
+  onRestore: () => void;
+  onClose: () => void;
+}) {
   const videoRef = useRef<HTMLVideoElement>(null);
   const sourceRef = useRef<StreamSource | null>(null);
   const latest = useRef(stream);
   latest.current = stream;
 
-  const desired = useRef(false); // operator wants this playing (survives flaps/retries)
+  const alive = useRef(true); // component lifetime guard (subscription = lifetime)
   const retryTimer = useRef<number | null>(null);
   const backoff = useRef(RETRY_BASE_MS);
 
-  const [state, setState] = useState<TileState>("idle");
+  const [state, setState] = useState<ViewState>("opening");
   const [err, setErr] = useState("");
 
   const clearRetry = () => {
@@ -47,7 +59,7 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
   };
 
   const scheduleRetry = (reason: string) => {
-    if (!desired.current) return;
+    if (!alive.current) return;
     closeSource();
     if (retryTimer.current !== null) return; // one pending retry at a time (error+closed both fire)
     if (!latest.current.alive) {
@@ -65,7 +77,7 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
 
   const attempt = async () => {
     const video = videoRef.current;
-    if (!video || !desired.current) return;
+    if (!video || !alive.current) return;
     if (!latest.current.alive) {
       setState("offline");
       return;
@@ -89,21 +101,17 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
     }
   };
 
-  const play = () => {
-    desired.current = true;
-    backoff.current = RETRY_BASE_MS;
-    clearRetry();
+  // Subscription lifetime: open on mount, tear down on unmount.
+  useEffect(() => {
+    alive.current = true;
     void attempt();
-  };
-
-  const stop = () => {
-    desired.current = false;
-    clearRetry();
-    closeSource();
-    if (videoRef.current) videoRef.current.srcObject = null;
-    setState("idle");
-    setErr("");
-  };
+    return () => {
+      alive.current = false;
+      clearRetry();
+      closeSource();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Stall watchdog (see STALL_MS): catches the session-death modes that emit no event at all.
   useEffect(() => {
@@ -112,12 +120,12 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
     let lastAdvance = performance.now();
     const timer = window.setInterval(() => {
       const v = videoRef.current;
-      if (!v || !desired.current) return;
+      if (!v || !alive.current) return;
       if (v.currentTime !== lastTime) {
         lastTime = v.currentTime;
         lastAdvance = performance.now();
       } else if (performance.now() - lastAdvance > STALL_MS) {
-        console.warn("[tile] video stalled — reconnecting", stream.key);
+        console.warn("[stream] video stalled — reconnecting", stream.key);
         scheduleRetry("video stalled");
       }
     }, STALL_POLL_MS);
@@ -125,10 +133,9 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [state]);
 
-  // Liveliness transitions: producer came back while we want to play → resume now; producer
-  // withdrew → drop the dead session and wait (the signalling server likely went with it).
+  // Liveliness transitions: producer came back → resume now; producer withdrew → drop the dead
+  // session and wait (the signalling server likely went with it).
   useEffect(() => {
-    if (!desired.current) return;
     if (stream.alive && state === "offline") {
       backoff.current = RETRY_BASE_MS;
       clearRetry();
@@ -141,53 +148,45 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stream.alive]);
 
-  useEffect(
-    () => () => {
-      clearRetry();
-      closeSource();
-    },
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [],
-  );
-
   const { descriptor } = stream;
   const label = descriptor.role || descriptor.id;
-  const dims = descriptor.width && descriptor.height ? ` ${descriptor.width}×${descriptor.height}` : "";
-  const active = desired.current && state !== "idle" && state !== "error";
+  const dims = descriptor.width && descriptor.height ? `${descriptor.width}×${descriptor.height}` : "";
   const statusText =
-    state === "offline"
-      ? "offline — will resume"
-      : state === "reconnecting"
-        ? "reconnecting…"
-        : state === "error"
-          ? err || "error"
-          : state;
+    state === "offline" ? "offline — will resume" : state === "reconnecting" ? "reconnecting…" : state === "error" ? err || "error" : state;
   const pillClass =
-    state === "playing"
-      ? "ok"
-      : state === "reconnecting" || state === "opening" || state === "offline"
-        ? "warn"
-        : state === "error"
-          ? "err"
-          : "idle";
+    state === "playing" ? "ok" : state === "reconnecting" || state === "opening" || state === "offline" ? "warn" : "err";
 
   return (
-    <div className={`tile${stream.alive ? "" : " offline"}`} title={state === "reconnecting" ? err : undefined}>
+    <div
+      className={`stream-view ${mode}${stream.alive ? "" : " is-offline"}`}
+      onClick={mode === "thumb" ? onFocus : undefined}
+      title={mode === "thumb" ? `${label} — click to focus` : state === "reconnecting" ? err : undefined}
+    >
       <div className="tile-media">
         <video ref={videoRef} autoPlay playsInline muted />
         <div className="tile-overlay">
           <strong>{label}</strong>
-          <span className="meta">
-            {stream.vehicleId} · {descriptor.codec ?? "?"}
-            {dims}
-          </span>
+          {mode !== "thumb" && (
+            <span className="meta">
+              {descriptor.codec ?? "?"} {dims}
+            </span>
+          )}
         </div>
-      </div>
-      <div className="tile-controls">
-        <button className={`btn${active ? "" : " primary"}`} onClick={active ? stop : play}>
-          {active ? "Stop" : "Play"}
-        </button>
-        <span className={`pill ${pillClass}`}>{statusText}</span>
+        {mode !== "thumb" && (
+          <div className="tile-actions">
+            <button
+              className="icon-btn"
+              title={mode === "focused" ? "back to grid (Esc)" : "maximize"}
+              onClick={mode === "focused" ? onRestore : onFocus}
+            >
+              {mode === "focused" ? "⤡" : "⤢"}
+            </button>
+            <button className="icon-btn" title="unsubscribe" onClick={onClose}>
+              ✕
+            </button>
+          </div>
+        )}
+        {mode !== "thumb" && state !== "playing" && <span className={`pill ${pillClass} tile-status`}>{statusText}</span>}
       </div>
     </div>
   );

@@ -34,7 +34,9 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 Open `http://<vehicle-ip>:8080`:
 1. **status: connected** — transport reached the sidecar.
-2. **Camera streams** lists the camera → **Play** → live WebRTC video.
+2. **Cameras** lists discovered streams in the rail → click one to subscribe → live WebRTC video.
+   Maximize (⤢) focuses a feed full-width with the others as live thumbnails (click to swap, Esc/⤡
+   back to grid, ←/→ cycle). Subscriptions persist across reloads (localStorage).
 3. **ROS graph** shows the vehicle's nodes/topics/services (from `@ros2_lv` liveliness) with QoS
    chips. Click a topic → live decoded messages + Hz/bytes. To prove decode without sensors flowing,
    pub from any ROS container on the vehicle:
