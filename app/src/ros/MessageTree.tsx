@@ -5,9 +5,6 @@ import { useState, type ReactNode } from "react";
 // hence a bespoke tree. Expand state lives per-node (useState), so it survives the live re-renders
 // of a subscribed topic; node identity is the field path (React key), stable across messages.
 
-const mono = { fontFamily: "ui-monospace, monospace", fontSize: ".8rem" } as const;
-const dim = { color: "#888" } as const;
-
 const MAX_ARRAY_ITEMS = 50;
 const MAX_STRING = 160;
 
@@ -37,7 +34,7 @@ function TypedArrayValue({ value }: { value: ArrayBufferView & { length: number 
   const arr = value as unknown as ArrayLike<number | bigint>;
   const head = Array.from({ length: Math.min(8, value.length) }, (_, i) => formatPrimitive(arr[i])).join(", ");
   return (
-    <span style={dim}>
+    <span className="punct">
       {name}({value.length}) [{head}
       {value.length > 8 ? ", …" : ""}]
     </span>
@@ -48,9 +45,9 @@ function Expandable({ label, summary, defaultOpen, children }: { label: ReactNod
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div>
-      <span onClick={() => setOpen(!open)} style={{ cursor: "pointer", userSelect: "none" }}>
-        <span style={{ ...dim, display: "inline-block", width: "1em" }}>{open ? "▾" : "▸"}</span>
-        {label} {!open && <span style={dim}>{summary}</span>}
+      <span className="expandable" onClick={() => setOpen(!open)}>
+        <span className="twisty">{open ? "▾" : "▸"}</span>
+        {label} {!open && <span className="punct">{summary}</span>}
       </span>
       {open && <div style={{ marginLeft: "1.25rem" }}>{children()}</div>}
     </div>
@@ -69,7 +66,7 @@ function Node({ label, value, depth }: { label: ReactNode; value: unknown; depth
     if (value.length === 0) {
       return (
         <div>
-          {label} <span style={dim}>[]</span>
+          {label} <span className="punct">[]</span>
         </div>
       );
     }
@@ -78,9 +75,9 @@ function Node({ label, value, depth }: { label: ReactNode; value: unknown; depth
         {() => (
           <>
             {value.slice(0, MAX_ARRAY_ITEMS).map((v, i) => (
-              <Node key={i} label={<span style={dim}>{i}:</span>} value={v} depth={depth + 1} />
+              <Node key={i} label={<span className="key">{i}:</span>} value={v} depth={depth + 1} />
             ))}
-            {value.length > MAX_ARRAY_ITEMS && <div style={dim}>… +{value.length - MAX_ARRAY_ITEMS} more</div>}
+            {value.length > MAX_ARRAY_ITEMS && <div className="punct">… +{value.length - MAX_ARRAY_ITEMS} more</div>}
           </>
         )}
       </Expandable>
@@ -90,22 +87,22 @@ function Node({ label, value, depth }: { label: ReactNode; value: unknown; depth
     const entries = Object.entries(value);
     return (
       <Expandable label={label} summary={`{${entries.length}}`} defaultOpen={depth < 2}>
-        {() => entries.map(([k, v]) => <Node key={k} label={<span>{k}:</span>} value={v} depth={depth + 1} />)}
+        {() => entries.map(([k, v]) => <Node key={k} label={<span className="key">{k}:</span>} value={v} depth={depth + 1} />)}
       </Expandable>
     );
   }
   return (
     <div>
-      {label} <span style={{ color: "#16a" }}>{formatPrimitive(value)}</span>
+      {label} <span className="val">{formatPrimitive(value)}</span>
     </div>
   );
 }
 
 export function MessageTree({ message }: { message: Record<string, unknown> }) {
   return (
-    <div style={{ ...mono, lineHeight: 1.45 }}>
+    <div className="tree">
       {Object.entries(message).map(([k, v]) => (
-        <Node key={k} label={<span>{k}:</span>} value={v} depth={0} />
+        <Node key={k} label={<span className="key">{k}:</span>} value={v} depth={0} />
       ))}
     </div>
   );

@@ -4,21 +4,26 @@ import { StreamTile } from "./StreamTile";
 
 export function StreamGrid({ transport }: { transport: Transport }) {
   const streams = useStreams(transport);
+  const live = streams.filter((s) => s.alive).length;
   return (
-    <section>
-      <h2>
-        Camera streams <small style={{ color: "#888", fontWeight: 400 }}>({streams.length} discovered)</small>
-      </h2>
-      {streams.length === 0 && (
-        <p style={{ color: "#888" }}>
-          No live streams advertised on <code>fleet/*/media/*</code>.
-        </p>
-      )}
-      <div style={{ display: "flex", flexWrap: "wrap", gap: "1rem" }}>
-        {streams.map((s) => (
-          <StreamTile key={s.key} stream={s} />
-        ))}
+    <section className="card">
+      <div className="card-header">
+        <h2>Camera streams</h2>
+        <span className="meta">
+          {streams.length} discovered{live !== streams.length ? ` · ${live} live` : ""}
+        </span>
       </div>
+      {streams.length === 0 ? (
+        <p className="empty">
+          No live streams advertised on <span className="mono">fleet/*/media/*</span>.
+        </p>
+      ) : (
+        <div className="tile-grid">
+          {streams.map((s) => (
+            <StreamTile key={s.key} stream={s} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }

@@ -96,33 +96,29 @@ export function TopicInspector({ transport, resolver, topic }: { transport: Tran
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transport, resolver, topic.dataKeyexpr, topic.transientLocal]);
 
-  const mono = { fontFamily: "ui-monospace, monospace", fontSize: ".8rem" } as const;
+  const hasData = state.message !== undefined || state.lastBytes !== undefined;
 
   return (
-    <div style={{ border: "1px solid #ddd", borderRadius: 6, padding: ".75rem 1rem", marginTop: ".75rem", background: "#fcfcfc" }}>
-      <div style={{ display: "flex", gap: "1rem", alignItems: "baseline", flexWrap: "wrap" }}>
-        <strong style={mono}>{topic.name}</strong>
-        <span style={{ ...mono, color: "#888" }}>{topic.typeName}</span>
-        <span style={{ ...mono, color: "#888" }} title={topic.typeHash}>
+    <div className="inspector">
+      <div className="inspector-header">
+        <strong>{topic.name}</strong>
+        <span className="dim">{topic.typeName}</span>
+        <span className="dim" title={topic.typeHash}>
           {topic.typeHash.slice(0, 14)}…
         </span>
-        <span style={{ ...mono, color: "#2a7" }}>
-          {state.hz !== undefined
-            ? `${state.hz.toFixed(1)} Hz`
-            : state.message || state.lastBytes !== undefined
-              ? state.latched
-                ? "latched"
-                : "live"
-              : "no data yet"}
+        <span className={`pill ${hasData ? "ok" : "idle"}`} style={{ marginLeft: "auto" }}>
+          {state.hz !== undefined ? `${state.hz.toFixed(1)} Hz` : hasData ? (state.latched ? "latched" : "live") : "no data yet"}
           {state.lastBytes !== undefined ? ` · ${state.lastBytes} B` : ""}
         </span>
       </div>
-      {state.error && (
-        <pre style={{ color: "#c33", whiteSpace: "pre-wrap", background: "#fee", padding: ".5rem", borderRadius: 4 }}>{state.error}</pre>
+      {state.error && <div className="error-box">{state.error}</div>}
+      {state.warning && (
+        <p className="dim" style={{ color: "var(--warn)", margin: ".5rem .9rem" }}>
+          ⚠ {state.warning}
+        </p>
       )}
-      {state.warning && <p style={{ color: "#b80", margin: ".4rem 0" }}>⚠ {state.warning}</p>}
       {state.message && (
-        <div style={{ marginTop: ".5rem", maxHeight: 420, overflow: "auto" }}>
+        <div className="inspector-body">
           <MessageTree message={state.message} />
         </div>
       )}

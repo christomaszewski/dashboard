@@ -5,18 +5,11 @@ import { useRosGraph } from "./useRosGraph";
 import type { TopicEntry } from "./graph";
 import { TopicInspector } from "./TopicInspector";
 
-const mono = { fontFamily: "ui-monospace, monospace", fontSize: ".8rem" } as const;
-
 function QosChips({ topic }: { topic: TopicEntry }) {
-  const chip = (label: string, color: string) => (
-    <span style={{ ...mono, fontSize: ".7rem", color, border: `1px solid ${color}`, borderRadius: 4, padding: "0 .3rem", marginLeft: ".35rem" }}>
-      {label}
-    </span>
-  );
   return (
     <>
-      {topic.bestEffort && chip("best_effort", "#b80")}
-      {topic.transientLocal && chip("latched", "#27b")}
+      {topic.bestEffort && <span className="chip warn">best_effort</span>}
+      {topic.transientLocal && <span className="chip info">latched</span>}
     </>
   );
 }
@@ -34,22 +27,22 @@ export function RosExplorer({ transport }: { transport: Transport }) {
   const selected = graph.topics.find((t) => `${t.domainId}|${t.name}|${t.typeHash}` === selectedId) ?? null;
 
   return (
-    <section style={{ marginTop: "2rem" }}>
-      <h2 style={{ marginBottom: ".25rem" }}>
-        ROS graph{" "}
-        <small style={{ color: "#888", fontWeight: 400 }}>
+    <section className="card">
+      <div className="card-header">
+        <h2>ROS graph</h2>
+        <span className="meta">
           {graph.nodes.length} nodes · {graph.topics.length} topics · {graph.services.length} services
           {graph.domains.length > 0 && ` · domain ${graph.domains.join(", ")}`}
-        </small>
-      </h2>
+        </span>
+      </div>
       {graph.tokenCount === 0 ? (
-        <p style={{ color: "#888" }}>
-          No <code>@ros2_lv/**</code> liveliness tokens seen — is an rmw_zenoh graph routed to this bus?
+        <p className="empty">
+          No <span className="mono">@ros2_lv/**</span> liveliness tokens seen — is an rmw_zenoh graph routed to this bus?
         </p>
       ) : (
-        <table style={{ ...mono, width: "100%", borderCollapse: "collapse" }}>
+        <table className="data-table">
           <thead>
-            <tr style={{ textAlign: "left", color: "#888" }}>
+            <tr>
               <th>topic</th>
               <th>type</th>
               <th style={{ width: 50 }}>pubs</th>
@@ -61,16 +54,11 @@ export function RosExplorer({ transport }: { transport: Transport }) {
               const id = `${t.domainId}|${t.name}|${t.typeHash}`;
               const isSel = id === selectedId;
               return (
-                <tr
-                  key={id}
-                  onClick={() => setSelectedId(isSel ? null : id)}
-                  style={{ borderTop: "1px solid #eee", cursor: "pointer", background: isSel ? "#eef6ff" : undefined }}
-                >
-                  <td style={{ padding: ".2rem 0" }}>
-                    {t.name}
-                    <QosChips topic={t} />
+                <tr key={id} className={isSel ? "selected" : undefined} onClick={() => setSelectedId(isSel ? null : id)}>
+                  <td>
+                    {t.name} <QosChips topic={t} />
                   </td>
-                  <td style={{ color: "#666" }}>{t.typeName}</td>
+                  <td className="dim">{t.typeName}</td>
                   <td>{t.publishers.length}</td>
                   <td>{t.subscribers.length}</td>
                 </tr>
@@ -82,25 +70,29 @@ export function RosExplorer({ transport }: { transport: Transport }) {
       {selected && <TopicInspector transport={transport} resolver={resolver} topic={selected} />}
 
       {graph.nodes.length > 0 && (
-        <details style={{ marginTop: ".75rem" }}>
-          <summary style={{ cursor: "pointer", color: "#555" }}>Nodes ({graph.nodes.length})</summary>
-          <ul style={{ ...mono, columns: 2, margin: ".5rem 0" }}>
-            {graph.nodes.map((n) => (
-              <li key={n.keyexpr}>{n.nodeFq}</li>
-            ))}
-          </ul>
+        <details className="panel">
+          <summary>Nodes ({graph.nodes.length})</summary>
+          <div className="panel-body">
+            <ul className="plain" style={{ columns: 2 }}>
+              {graph.nodes.map((n) => (
+                <li key={n.keyexpr}>{n.nodeFq}</li>
+              ))}
+            </ul>
+          </div>
         </details>
       )}
       {graph.services.length > 0 && (
-        <details style={{ marginTop: ".25rem" }}>
-          <summary style={{ cursor: "pointer", color: "#555" }}>Services ({graph.services.length})</summary>
-          <ul style={{ ...mono, margin: ".5rem 0" }}>
-            {graph.services.map((s) => (
-              <li key={s.name + s.typeName}>
-                {s.name} <span style={{ color: "#888" }}>{s.typeName}</span>
-              </li>
-            ))}
-          </ul>
+        <details className="panel">
+          <summary>Services ({graph.services.length})</summary>
+          <div className="panel-body">
+            <ul className="plain">
+              {graph.services.map((s) => (
+                <li key={s.name + s.typeName}>
+                  {s.name} <span className="dim">{s.typeName}</span>
+                </li>
+              ))}
+            </ul>
+          </div>
         </details>
       )}
     </section>

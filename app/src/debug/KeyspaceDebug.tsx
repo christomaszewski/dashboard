@@ -3,9 +3,8 @@ import type { Subscription, Transport } from "../transport/types";
 
 /**
  * Raw bus inspector for bring-up/testing: a liveliness subscriber on `**` (the rmw_zenoh graph +
- * discovery tokens) plus an opt-in data subscription aggregated by key. Confirms the dashboard sees the
- * bus, and surfaces the real rmw_zenoh keyexprs we need to finish `parseRos2Key` + the ROS decode.
- * Seed of the eventual Zenoh Explorer panel.
+ * discovery tokens) plus an opt-in data subscription aggregated by key. Confirms the dashboard sees
+ * the bus and surfaces raw keyexprs. Seed of the eventual Zenoh Explorer panel.
  */
 export function KeyspaceDebug({ transport }: { transport: Transport }) {
   const [live, setLive] = useState<string[]>([]);
@@ -75,50 +74,59 @@ export function KeyspaceDebug({ transport }: { transport: Transport }) {
     [],
   );
 
-  const mono = { fontFamily: "ui-monospace, monospace", fontSize: ".8rem" } as const;
-
   return (
-    <details style={{ marginTop: "2rem", borderTop: "1px solid #eee", paddingTop: "1rem" }}>
-      <summary style={{ cursor: "pointer", color: "#555" }}>Bus debug (raw keyspace)</summary>
+    <section className="card">
+      <details className="panel" style={{ borderTop: "none" }}>
+        <summary>Bus debug (raw keyspace)</summary>
+        <div className="panel-body">
+          <h3 style={{ fontSize: ".85rem", margin: ".4rem 0" }}>
+            Liveliness{" "}
+            <span className="dim" style={{ fontWeight: 400 }}>
+              ({live.length} on <span className="mono">**</span>)
+            </span>
+          </h3>
+          <ul className="plain" style={{ maxHeight: 220, overflow: "auto", background: "var(--surface)", borderRadius: 7, padding: ".5rem 1.5rem" }}>
+            {live.map((k) => (
+              <li key={k}>{k}</li>
+            ))}
+          </ul>
 
-      <h3>
-        Liveliness <small style={{ color: "#888", fontWeight: 400 }}>({live.length} on <code>**</code>)</small>
-      </h3>
-      <ul style={{ ...mono, maxHeight: 220, overflow: "auto", background: "#fafafa", padding: ".5rem 1.5rem" }}>
-        {live.map((k) => (
-          <li key={k}>{k}</li>
-        ))}
-      </ul>
-
-      <h3>Data subscription</h3>
-      <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
-        <input
-          value={pattern}
-          onChange={(e) => setPattern(e.target.value)}
-          disabled={subbing}
-          style={{ ...mono, flex: 1, padding: ".3rem" }}
-          placeholder="keyexpr, e.g. ** or @/**"
-        />
-        <button onClick={subbing ? stop : () => void start()}>{subbing ? "Stop" : "Subscribe"}</button>
-      </div>
-      <table style={{ ...mono, width: "100%", marginTop: ".5rem", borderCollapse: "collapse" }}>
-        <thead>
-          <tr style={{ textAlign: "left", color: "#888" }}>
-            <th>key</th>
-            <th style={{ width: 70 }}>count</th>
-            <th style={{ width: 90 }}>last bytes</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((r) => (
-            <tr key={r.key} style={{ borderTop: "1px solid #eee" }}>
-              <td>{r.key}</td>
-              <td>{r.count}</td>
-              <td>{r.bytes}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
+          <h3 style={{ fontSize: ".85rem", margin: ".8rem 0 .4rem" }}>Data subscription</h3>
+          <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
+            <input
+              className="field"
+              value={pattern}
+              onChange={(e) => setPattern(e.target.value)}
+              disabled={subbing}
+              style={{ flex: 1 }}
+              placeholder="keyexpr, e.g. ** or @/**"
+            />
+            <button className="btn" onClick={subbing ? stop : () => void start()}>
+              {subbing ? "Stop" : "Subscribe"}
+            </button>
+          </div>
+          {rows.length > 0 && (
+            <table className="data-table" style={{ marginTop: ".6rem" }}>
+              <thead>
+                <tr>
+                  <th style={{ paddingLeft: 0 }}>key</th>
+                  <th style={{ width: 70 }}>count</th>
+                  <th style={{ width: 90 }}>last bytes</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.key} style={{ cursor: "default" }}>
+                    <td style={{ paddingLeft: 0 }}>{r.key}</td>
+                    <td>{r.count}</td>
+                    <td>{r.bytes}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+      </details>
+    </section>
   );
 }

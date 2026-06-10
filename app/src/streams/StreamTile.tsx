@@ -156,34 +156,38 @@ export function StreamTile({ stream }: { stream: DiscoveredStream }) {
   const active = desired.current && state !== "idle" && state !== "error";
   const statusText =
     state === "offline"
-      ? "stream offline — will resume"
+      ? "offline — will resume"
       : state === "reconnecting"
-        ? `reconnecting… ${err}`
+        ? "reconnecting…"
         : state === "error"
-          ? err
+          ? err || "error"
           : state;
+  const pillClass =
+    state === "playing"
+      ? "ok"
+      : state === "reconnecting" || state === "opening" || state === "offline"
+        ? "warn"
+        : state === "error"
+          ? "err"
+          : "idle";
 
   return (
-    <div style={{ border: "1px solid #ccc", borderRadius: 8, padding: ".5rem", width: 340, opacity: stream.alive ? 1 : 0.55 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: ".5rem" }}>
-        <strong>{label}</strong>
-        <small style={{ color: "#888" }}>
-          {stream.vehicleId} · {descriptor.codec ?? "?"}
-          {dims}
-        </small>
+    <div className={`tile${stream.alive ? "" : " offline"}`} title={state === "reconnecting" ? err : undefined}>
+      <div className="tile-media">
+        <video ref={videoRef} autoPlay playsInline muted />
+        <div className="tile-overlay">
+          <strong>{label}</strong>
+          <span className="meta">
+            {stream.vehicleId} · {descriptor.codec ?? "?"}
+            {dims}
+          </span>
+        </div>
       </div>
-      <video
-        ref={videoRef}
-        autoPlay
-        playsInline
-        muted
-        style={{ width: "100%", height: 200, background: "#111", borderRadius: 6, marginBlock: ".4rem" }}
-      />
-      <div style={{ display: "flex", gap: ".5rem", alignItems: "center" }}>
-        <button onClick={active ? stop : play}>{active ? "Stop" : "Play"}</button>
-        <small style={{ color: state === "error" ? "#c33" : state === "reconnecting" || state === "offline" ? "#b80" : "#888" }}>
-          {statusText}
-        </small>
+      <div className="tile-controls">
+        <button className={`btn${active ? "" : " primary"}`} onClick={active ? stop : play}>
+          {active ? "Stop" : "Play"}
+        </button>
+        <span className={`pill ${pillClass}`}>{statusText}</span>
       </div>
     </div>
   );
