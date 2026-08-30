@@ -1,10 +1,18 @@
 # vehicle-dashboard
 
-Vehicle operator dashboard — **Phase 1**: a *vehicle-served* web app for ROS/Zenoh introspection
-and WebRTC camera viewing. Runs as an optional sidecar next to the vehicle's rmw_zenoh router.
+Vehicle operator dashboard — a *vehicle-served*, tabbed web app: a config-driven **Home** tab
+(status pills, ROS2 service buttons, live video, topic readouts — laid out per project from the
+instance config YAML), a **Cameras** console (WebRTC), a **ROS** explorer (graph + live decode),
+and a raw **Bus debug** tab. Runs as an optional sidecar next to the vehicle's rmw_zenoh router;
+one generic service — projects customize only their instance YAML.
 
 - Transport: browser `zenoh-ts` → `remote-api` (the `dashboard-zenoh` sidecar, a Zenoh **client**
-  of the rmw_zenoh router). Bundle served by `dashboard-web` (Caddy).
+  of the rmw_zenoh router). Bundle served by `dashboard-web` (Caddy), which also serves the
+  bind-mounted instance config at `/config/dashboard.yaml` for the Home tab.
+- ROS2 service calls run over the same bus as zenoh queries (rmw_zenoh wire format), with dynamic
+  type resolution via each node's `~/get_type_description` — vendor srv types need no bundling.
+- Home widget schema: the commented `home:` block in
+  [config/infra/dashboard.example.yaml](config/infra/dashboard.example.yaml).
 - Deploy/architecture details + security rationale: [deploy/README.md](deploy/README.md).
 
 ## Run standalone (on the vehicle)
@@ -20,8 +28,7 @@ Then, from a laptop on the mesh, open `http://<vehicle-ip>:8080`.
 This repo is rig-compatible (one-way — the repo does not depend on rig):
 
 - [`rigging.yaml`](rigging.yaml) — the descriptor: service `dashboard`, launcher `dash-up`, verb map,
-  `host_ports` (clash check), `launch_surface` (vendored/baked, incl. the `deploy/www` dir),
-  `build` (run by `rig build`), and `mirror` (third-party images copied into the registry).
+  `host_ports` (clash check), `launch_surface` (vendored/baked), and `build` (run by `rig build`).
 - [`dash-up`](dash-up) — the launcher rig drives: `dash-up <config> <verb>`.
 
 The dashboard is a vehicle-wide sidecar that depends on the rmw_zenoh router, so it belongs in `infra:`
@@ -53,6 +60,6 @@ rigging.yaml                # rig descriptor
 config/infra/dashboard.example.yaml
 tools/dash_env.py           # config -> DASH_* env for dash-up
 tools/build-images.sh       # build + push images to the fleet registry
-deploy/                     # the transport spine (compose, Caddyfile, sidecar zenoh config, bundle)
-app/                        # (TODO) the React/Vite frontend
+deploy/                     # the transport spine (compose + config overlay, Caddyfile, sidecar zenoh config)
+app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```

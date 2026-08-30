@@ -42,6 +42,10 @@ reproducibility. If/when an official `zenoh-bridge-remote-api` image exists, swa
 - Optional footgun-guard (stop the *dashboard itself* from publishing): add a `deny put/delete`
   `access_control` rule to `zenohd-dashboard.json5` (the **sidecar**, never the ROS router), and
   verify it intercepts remote-api ops (`session.put(...)` from zenoh-ts → confirm blocked).
+  **Scope caveat**: the dashboard's ROS2 service calls are zenoh *queries* (`session.get`), which a
+  put/delete rule does not touch — the guard still permits service-based actuation, which is now a
+  deliberate dashboard feature (home-tab service buttons). A `deny query` rule would disable them,
+  but would ALSO break stream discovery and transient-local topic reads — don't.
 
 ## TODO
 
