@@ -35,4 +35,8 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - dash-up           #   The Caddyfile + React bundle are baked into the dashboard-web image, so not here.
   - tools/dash_env.py
   - deploy/docker-compose.yml
+  - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
   - deploy/zenohd-dashboard.json5
+
+examples:             # [0] seeds a new instance's editable config (rig pkg add convention)
+  - config/infra/dashboard.example.yaml

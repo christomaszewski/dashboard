@@ -1,8 +1,21 @@
-# Static file server for the dashboard bundle.
-# SPA fallback so client-side routes resolve to index.html.
+# Static file server for the dashboard bundle, plus the runtime instance config.
 :{$DASH_WEB_PORT:8080} {
-	root * /srv
 	encode gzip
-	try_files {path} /index.html
-	file_server
+
+	# The instance config YAML dash-up bind-mounts at /config/dashboard.yaml (see
+	# docker-compose.external-config.yml). Its own handle block so a MISSING config is a clean 404
+	# (the app's "no config → default Home" signal) instead of the SPA fallback's 200 index.html.
+	# no-store: operators edit-and-refresh this file.
+	handle /config/* {
+		root * /
+		header Cache-Control no-store
+		file_server
+	}
+
+	# SPA fallback so client-side routes resolve to index.html.
+	handle {
+		root * /srv
+		try_files {path} /index.html
+		file_server
+	}
 }

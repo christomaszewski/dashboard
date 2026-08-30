@@ -32,6 +32,9 @@ docker compose version >/dev/null 2>&1 || { echo "dash-up: needs the Docker Comp
 
 # config -> env (instance name + host ports). Simple tokens, no spaces.
 eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
+# The SAME config file is bind-mounted into dashboard-web (docker-compose.external-config.yml) and
+# served at /config/dashboard.yaml — the app reads its `home:` block + ws_port at load.
+export DASH_CONFIG_HOST="$CONFIG_ABS"
 # rig owns the compose project (<name>-vehicle-<id>) and exports COMPOSE_PROJECT_NAME per call; honor
 # it so rig/bake/the launcher all manage ONE project. The instance name is the standalone fallback.
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${DASH_NAME:-dashboard}}"
@@ -49,4 +52,4 @@ fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
 echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY} config=$CONFIG_ABS" >&2
-exec docker compose -f "$COMPOSE" "${ARGS[@]}"
+exec docker compose -f "$COMPOSE" -f "$REPO/deploy/docker-compose.external-config.yml" "${ARGS[@]}"

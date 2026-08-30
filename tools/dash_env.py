@@ -2,7 +2,9 @@
 """Read a dashboard instance config -> `KEY=value` lines for dash-up to `export`.
 
 Mirrors gige's sensor_env.py contract: stdout = export lines ONLY; errors -> stderr. Uses PyYAML if
-present, else a minimal flat-key parser so stock python3 is enough (the config is flat key: value).
+present, else a minimal TOP-LEVEL-key parser so stock python3 is enough. The fallback must ignore
+nested blocks (the `home:` tab layout): an indented `name:` inside a widget would otherwise clobber
+DASH_NAME. Only the three flat scalars below are read either way.
 """
 import sys
 
@@ -15,12 +17,18 @@ def load(path: str) -> dict:
         return yaml.safe_load(text) or {}
     except ModuleNotFoundError:
         data: dict = {}
-        for line in text.splitlines():
-            line = line.split("#", 1)[0].rstrip()
-            if not line or ":" not in line:
+        for raw in text.splitlines():
+            # Top-level scalars only: skip indented lines (nested keys) and list items.
+            if not raw or raw[0] in " \t" or raw.lstrip().startswith("-"):
+                continue
+            line = raw.split("#", 1)[0].rstrip()
+            if ":" not in line:
                 continue
             key, _, val = line.partition(":")
-            data[key.strip()] = val.strip().strip('"').strip("'")
+            val = val.strip().strip('"').strip("'")
+            if val == "":
+                continue  # block opener (e.g. `home:`) — no top-level scalar value
+            data[key.strip()] = val
         return data
 
 
