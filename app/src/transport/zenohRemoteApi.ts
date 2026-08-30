@@ -1,6 +1,29 @@
-import { Config, Session, KeyExpr, SampleKind, Sample as ZSample } from "@eclipse-zenoh/zenoh-ts";
+import {
+  Config,
+  ConsolidationMode,
+  Duration,
+  KeyExpr,
+  QueryTarget,
+  ReplyError,
+  SampleKind,
+  Session,
+  Sample as ZSample,
+} from "@eclipse-zenoh/zenoh-ts";
 import type { Reply } from "@eclipse-zenoh/zenoh-ts";
-import type { GetReply, LivelinessEvent, Sample, Subscription, Transport } from "./types";
+import type { GetReply, LivelinessEvent, Sample, Subscription, Transport, TransportGetOptions } from "./types";
+
+const TARGET: Record<NonNullable<TransportGetOptions["target"]>, QueryTarget> = {
+  "best-matching": QueryTarget.BEST_MATCHING,
+  all: QueryTarget.ALL,
+  "all-complete": QueryTarget.ALL_COMPLETE,
+};
+
+const CONSOLIDATION: Record<NonNullable<TransportGetOptions["consolidation"]>, ConsolidationMode> = {
+  auto: ConsolidationMode.AUTO,
+  none: ConsolidationMode.NONE,
+  monotonic: ConsolidationMode.MONOTONIC,
+  latest: ConsolidationMode.LATEST,
+};
 
 function mapSample(s: ZSample): Sample {
   return {
@@ -26,13 +49,27 @@ export class ZenohRemoteApiTransport implements Transport {
     return { close: () => sub.undeclare() };
   }
 
-  async get(keyexpr: string, opts?: { payload?: Uint8Array }): Promise<GetReply[]> {
-    const receiver = await this.session.get(keyexpr, opts?.payload ? { payload: opts.payload } : undefined);
+  async get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]> {
+    const zopts: NonNullable<Parameters<Session["get"]>[1]> = {};
+    if (opts?.payload) zopts.payload = opts.payload;
+    if (opts?.attachment) zopts.attachment = opts.attachment;
+    if (opts?.timeoutMs !== undefined) zopts.timeout = Duration.milliseconds.of(opts.timeoutMs);
+    if (opts?.target !== undefined) zopts.target = TARGET[opts.target];
+    if (opts?.consolidation !== undefined) zopts.consolidation = CONSOLIDATION[opts.consolidation];
+    const receiver = await this.session.get(keyexpr, Object.keys(zopts).length > 0 ? zopts : undefined);
     const out: GetReply[] = [];
     if (!receiver) return out;
     for await (const reply of receiver as AsyncIterable<Reply>) {
       const r = reply.result();
-      if (r instanceof ZSample) out.push({ keyexpr: r.keyexpr().toString(), payload: r.payload().toBytes() });
+      if (r instanceof ZSample) {
+        out.push({
+          keyexpr: r.keyexpr().toString(),
+          payload: r.payload().toBytes(),
+          attachment: r.attachment()?.toBytes(),
+        });
+      } else if (r instanceof ReplyError) {
+        opts?.onReplyError?.(new TextDecoder().decode(r.payload().toBytes()));
+      }
     }
     return out;
   }
