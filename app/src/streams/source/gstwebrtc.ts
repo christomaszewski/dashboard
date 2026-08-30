@@ -52,20 +52,17 @@ export class GstWebRtcSource implements StreamSource {
 
   constructor(private readonly descriptor: StreamDescriptor) {}
 
-  async open(video: HTMLVideoElement, hooks?: StreamSourceHooks): Promise<void> {
+  async open(hooks: StreamSourceHooks): Promise<void> {
     const api = apiFor(resolveSignallingUrl(this.descriptor));
     const producer = await findProducer(api, this.descriptor.producer_id);
     // close() may have raced the producer lookup (retry loops do this constantly): a session
-    // created now would be a zombie — playing into a video element some newer session owns.
+    // created now would be a zombie — delivering media some newer session owns.
     if (this.closed) return;
     const session = api.createConsumerSession(producer.id);
     this.session = session;
     session.addEventListener("streamsChanged", () => {
       const [stream] = session.streams;
-      if (stream) {
-        video.srcObject = stream;
-        void video.play().catch(() => undefined);
-      }
+      if (stream && !this.closed) hooks.onStream(stream);
     });
     // Surface async failures (ICE/media never connects, codec not decodable, signalling drop) — otherwise
     // the tile just stays black. gstwebrtc's "error" event carries a `.message`. Both hooks are
@@ -74,12 +71,12 @@ export class GstWebRtcSource implements StreamSource {
       if (this.closed) return;
       const msg = (ev as unknown as { message?: string }).message ?? "webrtc consumer error";
       console.error("[gstwebrtc]", msg, ev);
-      hooks?.onError?.(msg);
+      hooks.onError?.(msg);
     });
     session.addEventListener("closed", () => {
       if (this.closed) return;
       console.warn("[gstwebrtc] consumer session closed");
-      hooks?.onClosed?.();
+      hooks.onClosed?.();
     });
     session.connect();
   }

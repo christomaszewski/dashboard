@@ -1,22 +1,38 @@
 import { useEffect, useRef, useState } from "react";
-import type { Subscription, Transport } from "../transport/types";
+import type { Subscription } from "../transport/types";
+import { useTransportContext } from "../transport/TransportContext";
+import { decodeAttachment } from "../services/attachment";
+
+/** Probe a sample's rmw attachment: verifies the service-call wire format against live traffic
+ *  (rmw_zenoh publishers attach the same struct to every topic sample). */
+function describeAttachment(attachment: Uint8Array | undefined): string {
+  if (!attachment) return "";
+  try {
+    const a = decodeAttachment(attachment);
+    return `rmw ✓ seq ${a.sequenceNumber}`;
+  } catch (e) {
+    return `⚠ ${e instanceof Error ? e.message : String(e)}`;
+  }
+}
 
 /**
  * Raw bus inspector for bring-up/testing: a liveliness subscriber on `**` (the rmw_zenoh graph +
  * discovery tokens) plus an opt-in data subscription aggregated by key. Confirms the dashboard sees
  * the bus and surfaces raw keyexprs. Seed of the eventual Zenoh Explorer panel.
  */
-export function KeyspaceDebug({ transport }: { transport: Transport }) {
+export function KeyspaceDebug() {
+  const { transport } = useTransportContext();
   const [live, setLive] = useState<string[]>([]);
-  const [rows, setRows] = useState<{ key: string; count: number; bytes: number }[]>([]);
+  const [rows, setRows] = useState<{ key: string; count: number; bytes: number; rmw: string }[]>([]);
   const [pattern, setPattern] = useState("**");
   const [subbing, setSubbing] = useState(false);
   const dataSub = useRef<Subscription | null>(null);
-  const acc = useRef(new Map<string, { count: number; bytes: number }>());
+  const acc = useRef(new Map<string, { count: number; bytes: number; rmw: string }>());
   const flushTimer = useRef<number | null>(null);
 
   // Liveliness on `**` — always on; low-rate presence (PUT/DELETE).
   useEffect(() => {
+    if (!transport) return;
     let cancelled = false;
     let sub: Subscription | null = null;
     const set = new Set<string>();
@@ -39,18 +55,22 @@ export function KeyspaceDebug({ transport }: { transport: Transport }) {
   const flush = () =>
     setRows(
       [...acc.current.entries()]
-        .map(([key, v]) => ({ key, count: v.count, bytes: v.bytes }))
+        .map(([key, v]) => ({ key, ...v }))
         .sort((a, b) => a.key.localeCompare(b.key)),
     );
 
   const start = async () => {
-    if (subbing) return;
+    if (subbing || !transport) return;
     acc.current.clear();
     setRows([]);
     setSubbing(true);
     dataSub.current = await transport.subscribe(pattern, (s) => {
-      const prev = acc.current.get(s.keyexpr) ?? { count: 0, bytes: 0 };
-      acc.current.set(s.keyexpr, { count: prev.count + 1, bytes: s.payload.length });
+      const prev = acc.current.get(s.keyexpr) ?? { count: 0, bytes: 0, rmw: "" };
+      acc.current.set(s.keyexpr, {
+        count: prev.count + 1,
+        bytes: s.payload.length,
+        rmw: describeAttachment(s.attachment) || prev.rmw,
+      });
     });
     flushTimer.current = window.setInterval(flush, 500); // throttle re-renders; `**` can be a firehose
   };
@@ -76,7 +96,8 @@ export function KeyspaceDebug({ transport }: { transport: Transport }) {
 
   return (
     <section className="card">
-      <details className="panel" style={{ borderTop: "none" }}>
+      {/* open by default now that the panel owns a tab (was collapsed on the single page) */}
+      <details className="panel" style={{ borderTop: "none" }} open>
         <summary>Bus debug (raw keyspace)</summary>
         <div className="panel-body">
           <h3 style={{ fontSize: ".85rem", margin: ".4rem 0" }}>
@@ -112,6 +133,7 @@ export function KeyspaceDebug({ transport }: { transport: Transport }) {
                   <th style={{ paddingLeft: 0 }}>key</th>
                   <th style={{ width: 70 }}>count</th>
                   <th style={{ width: 90 }}>last bytes</th>
+                  <th style={{ width: 130 }}>attachment</th>
                 </tr>
               </thead>
               <tbody>
@@ -120,6 +142,7 @@ export function KeyspaceDebug({ transport }: { transport: Transport }) {
                     <td style={{ paddingLeft: 0 }}>{r.key}</td>
                     <td>{r.count}</td>
                     <td>{r.bytes}</td>
+                    <td className="dim">{r.rmw}</td>
                   </tr>
                 ))}
               </tbody>

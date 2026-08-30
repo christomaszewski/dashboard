@@ -1,5 +1,5 @@
 import type { StreamDescriptor } from "./types";
-import { vehicleHost } from "../config";
+import { vehicleHost } from "../transport/locator";
 
 /**
  * The descriptor advertises the signalling URL the producer serves (often `ws://<vehicle-hostname>:8443`),

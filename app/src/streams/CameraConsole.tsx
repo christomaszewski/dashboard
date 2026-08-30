@@ -1,6 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Transport } from "../transport/types";
-import { useStreams } from "./useStreams";
+import { useStreamsContext } from "./StreamsContext";
 import { StreamView } from "./StreamView";
 
 const STORE_KEY = "dashboard.cameras.subscribed";
@@ -24,8 +23,8 @@ function loadSubscribed(): string[] {
  * Layout switches are pure CSS — the <video> elements (and their WebRTC sessions) are never
  * unmounted, so swapping views never renegotiates. Subscriptions persist across reloads.
  */
-export function CameraConsole({ transport }: { transport: Transport }) {
-  const streams = useStreams(transport);
+export function CameraConsole() {
+  const { streams } = useStreamsContext();
   const [subscribed, setSubscribed] = useState<string[]>(loadSubscribed);
   const [focusKey, setFocusKey] = useState<string | null>(null);
 

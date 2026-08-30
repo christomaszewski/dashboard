@@ -1,7 +1,6 @@
-import { useMemo, useState } from "react";
-import type { Transport } from "../transport/types";
-import { FlavorResolver } from "../schema/resolver";
-import { useRosGraph } from "./useRosGraph";
+import { useState } from "react";
+import { useTransportContext } from "../transport/TransportContext";
+import { useRosGraphContext } from "./RosGraphContext";
 import type { TopicEntry } from "./graph";
 import { TopicInspector } from "./TopicInspector";
 
@@ -19,9 +18,9 @@ function QosChips({ topic }: { topic: TopicEntry }) {
  * (useRosGraph), with per-topic drill-down into a decoding inspector. The graph shows whatever the
  * bus advertises even when no data flows — same view `ros2 topic list` would give on the vehicle.
  */
-export function RosExplorer({ transport }: { transport: Transport }) {
-  const graph = useRosGraph(transport);
-  const resolver = useMemo(() => new FlavorResolver(transport), [transport]);
+export function RosExplorer() {
+  const { transport } = useTransportContext();
+  const { graph, resolver } = useRosGraphContext();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = graph.topics.find((t) => `${t.domainId}|${t.name}|${t.typeHash}` === selectedId) ?? null;
@@ -67,7 +66,7 @@ export function RosExplorer({ transport }: { transport: Transport }) {
           </tbody>
         </table>
       )}
-      {selected && <TopicInspector transport={transport} resolver={resolver} topic={selected} />}
+      {selected && transport && resolver && <TopicInspector transport={transport} resolver={resolver} topic={selected} />}
 
       {graph.nodes.length > 0 && (
         <details className="panel">

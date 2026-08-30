@@ -4,7 +4,7 @@
 //
 // For dev (page on localhost, sidecar on a vehicle), override:
 //   VITE_REMOTE_API_LOCATOR=ws/192.168.1.10:10000 npm run dev
-const WS_PORT = 10000;
+const DEFAULT_WS_PORT = 10000;
 
 // The host of the vehicle we're talking to: the page host when vehicle-served, or the host parsed from
 // the VITE_REMOTE_API_LOCATOR override in dev — so the remote-api AND the WebRTC signalling target the
@@ -15,9 +15,10 @@ export function vehicleHost(): string {
   return m?.[1] ?? (window.location.hostname || "127.0.0.1");
 }
 
-export function remoteApiLocator(): string {
+/** Precedence: VITE_REMOTE_API_LOCATOR (dev override) > wsPort (instance config) > default. */
+export function remoteApiLocator(wsPort: number = DEFAULT_WS_PORT): string {
   const override = import.meta.env.VITE_REMOTE_API_LOCATOR as string | undefined;
   if (override) return override;
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  return `${proto}/${vehicleHost()}:${WS_PORT}`;
+  return `${proto}/${vehicleHost()}:${wsPort}`;
 }

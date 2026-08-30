@@ -7,10 +7,11 @@ import { EMPTY_GRAPH, ROS2_LIVELINESS_GLOB, buildGraph, type RosGraph } from "./
  * arrive too) folded into a RosGraph. Token add/remove rates are graph-change rates (low), so a full
  * rebuild per event is fine.
  */
-export function useRosGraph(transport: Transport): RosGraph {
+export function useRosGraph(transport: Transport | null): RosGraph {
   const [graph, setGraph] = useState<RosGraph>(EMPTY_GRAPH);
 
   useEffect(() => {
+    if (!transport) return;
     let cancelled = false;
     let sub: Subscription | null = null;
     const tokens = new Set<string>();

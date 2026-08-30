@@ -1,34 +1,32 @@
-import { remoteApiLocator } from "./config";
-import { useTransport } from "./transport/useTransport";
-import { CameraConsole } from "./streams/CameraConsole";
-import { RosExplorer } from "./ros/RosExplorer";
-import { KeyspaceDebug } from "./debug/KeyspaceDebug";
+import { ConfigProvider, useConfig } from "./config/ConfigContext";
+import { remoteApiLocator } from "./transport/locator";
+import { TransportProvider } from "./transport/TransportContext";
+import { StreamsProvider } from "./streams/StreamsContext";
+import { RosGraphProvider } from "./ros/RosGraphContext";
+import { Shell } from "./shell/Shell";
+
+function ConnectedApp() {
+  const config = useConfig();
+  // Resolve the instance config BEFORE dialing: it may carry a non-default ws_port. `absent`/`error`
+  // fall through to defaults — the dashboard must come up with no config mounted at all.
+  if (config.phase === "loading") return null;
+  const wsPort = config.phase === "ready" ? config.config.ws_port : undefined;
+  const title = config.phase === "ready" ? config.config.home?.title : undefined;
+  return (
+    <TransportProvider locator={remoteApiLocator(wsPort)}>
+      <StreamsProvider>
+        <RosGraphProvider>
+          <Shell title={title} />
+        </RosGraphProvider>
+      </StreamsProvider>
+    </TransportProvider>
+  );
+}
 
 export function App() {
-  const { transport, status, error } = useTransport();
-  const pillClass = status === "connected" ? "ok" : status === "error" ? "err" : "warn";
-
   return (
-    <>
-      <header className="topbar">
-        <span className="brand">
-          Vehicle Dashboard<small>Phase 1</small>
-        </span>
-        <span className="spacer" />
-        <span className="locator">{remoteApiLocator()}</span>
-        <span className={`pill ${pillClass}`}>{status}</span>
-      </header>
-      <main className="page">
-        {status === "error" && (
-          <div className="error-box">
-            {error}
-            {"\n\n"}Is the dashboard-zenoh sidecar up and reachable at that locator?
-          </div>
-        )}
-        {transport && <CameraConsole transport={transport} />}
-        {transport && <RosExplorer transport={transport} />}
-        {transport && <KeyspaceDebug transport={transport} />}
-      </main>
-    </>
+    <ConfigProvider>
+      <ConnectedApp />
+    </ConfigProvider>
   );
 }
