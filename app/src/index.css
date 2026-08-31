@@ -893,3 +893,190 @@ ul.plain {
   font-size: 0.7rem;
   overflow-wrap: anywhere;
 }
+
+/* ---- clouds tab ------------------------------------------------------------------------------- */
+
+.clouds-tab {
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
+}
+
+.clouds-toolbar {
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  row-gap: 0.4rem;
+}
+
+.clouds-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.clouds-control .field {
+  padding: 0.22rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.clouds-control input[type="range"] {
+  width: 70px;
+  accent-color: var(--accent);
+}
+
+.clouds-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.clouds-check input {
+  accent-color: var(--accent);
+}
+
+.clouds-views {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.clouds-views .btn {
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+/* The viewer core appends its canvas here; flex+min-height is the sizing contract. */
+.clouds-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.clouds-viewport canvas {
+  display: block;
+}
+
+.clouds-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  pointer-events: none;
+}
+
+.clouds-overlay .clouds-list,
+.clouds-overlay button {
+  pointer-events: auto;
+}
+
+.clouds-drop {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.clouds-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+.clouds-attribution {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.3rem;
+  z-index: 5;
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.clouds-status {
+  min-height: 1.2rem;
+  font-size: 0.72rem;
+  padding-top: 0.4rem;
+}
+
+.clouds-error {
+  color: var(--err);
+  font-size: 0.72rem;
+}
+
+/* ---- map widget ------------------------------------------------------------------------------- */
+
+.widget-map {
+  padding: 0.85rem 1rem 1rem;
+}
+
+.map-frame {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 260px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+}
+
+/* Leaflet chrome, re-toned to the console theme. */
+.map-container .leaflet-control-zoom a {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.map-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--text-faint);
+  font-size: 0.62rem;
+}
+
+.map-vehicle {
+  background: var(--accent);
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+}
+
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  pointer-events: none;
+}
+
+.map-overlay .empty {
+  margin: 0;
+}
+
+.map-follow {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  z-index: 600;
+}

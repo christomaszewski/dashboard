@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDashboardConfig, parseHome, parseLayout } from "./schema";
+import { parseDashboardConfig, parseHome, parseLayout, parseTabs } from "./schema";
 
 const FULL = `
 service: dashboard
@@ -123,6 +123,74 @@ describe("parseHome widget isolation", () => {
     expect(cfg.home?.layout).toBeUndefined();
     expect(cfg.home?.layoutWarning).toBeUndefined();
     expect(cfg.home?.widgets.every((w) => w.ok && w.warning === undefined)).toBe(true);
+  });
+});
+
+describe("parseTabs", () => {
+  it("keeps boolean overrides, ignores junk values and unknown keys", () => {
+    expect(parseTabs({ debug: false, clouds: true, cameras: "yes", future_tab: false })).toEqual({
+      debug: false,
+      clouds: true,
+    });
+  });
+
+  it("rejects non-mapping values", () => {
+    expect(parseTabs(["debug"])).toBeUndefined();
+    expect(parseTabs("debug")).toBeUndefined();
+  });
+
+  it("flows through parseDashboardConfig", () => {
+    const cfg = parseDashboardConfig("name: d\ntabs:\n  debug: false\n");
+    expect(cfg.tabs).toEqual({ debug: false });
+  });
+});
+
+describe("map widget", () => {
+  it("parses with defaults left to the renderer", () => {
+    const home = parseHome({ widgets: [{ type: "map", topic: "/gnss/fix" }] });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { type: "map", topic: "/gnss/fix" } });
+  });
+
+  it("parses the full option set", () => {
+    const home = parseHome({
+      widgets: [
+        {
+          type: "map",
+          label: "Position",
+          topic: "/gnss/fix",
+          lat_field: "fix.lat",
+          lon_field: "fix.lon",
+          tiles: "/tiles/{z}/{x}/{y}.png",
+          zoom: 15,
+          trail: 200,
+          follow: false,
+          attribution: "© local",
+        },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: { tiles: "/tiles/{z}/{x}/{y}.png", zoom: 15, trail: 200, follow: false, lat_field: "fix.lat" },
+    });
+  });
+
+  it("requires topic and a well-formed tiles template", () => {
+    const noTopic = parseHome({ widgets: [{ type: "map" }] });
+    if (!noTopic.widgets[0].ok) expect(noTopic.widgets[0].message).toMatch(/'topic' is required/);
+    const badTiles = parseHome({ widgets: [{ type: "map", topic: "/f", tiles: "https://x/{z}/{x}.png" }] });
+    if (!badTiles.widgets[0].ok) expect(badTiles.widgets[0].message).toMatch(/XYZ template/);
+    const noneTiles = parseHome({ widgets: [{ type: "map", topic: "/f", tiles: "none" }] });
+    expect(noneTiles.widgets[0].ok).toBe(true);
+    expect(noTopic.widgets[0].ok).toBe(false);
+    expect(badTiles.widgets[0].ok).toBe(false);
+  });
+
+  it("is not allowed inside a panel", () => {
+    const home = parseHome({ widgets: [{ type: "panel", items: [{ type: "map", topic: "/f" }] }] });
+    const pw = home.widgets[0];
+    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    expect(pw.widget.items[0].ok).toBe(false);
+    if (!pw.widget.items[0].ok) expect(pw.widget.items[0].message).toMatch(/unknown item type 'map'/);
   });
 });
 

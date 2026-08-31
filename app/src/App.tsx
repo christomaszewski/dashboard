@@ -12,11 +12,12 @@ function ConnectedApp() {
   if (config.phase === "loading") return null;
   const wsPort = config.phase === "ready" ? config.config.ws_port : undefined;
   const title = config.phase === "ready" ? config.config.home?.title : undefined;
+  const tabs = config.phase === "ready" ? config.config.tabs : undefined;
   return (
     <TransportProvider locator={remoteApiLocator(wsPort)}>
       <StreamsProvider>
         <RosGraphProvider>
-          <Shell title={title} />
+          <Shell title={title} tabs={tabs} />
         </RosGraphProvider>
       </StreamsProvider>
     </TransportProvider>

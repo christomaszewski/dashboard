@@ -4,13 +4,23 @@ const LABELS: Record<TabId, string> = {
   home: "Home",
   cameras: "Cameras",
   ros: "ROS",
+  clouds: "Clouds",
   debug: "Bus debug",
 };
 
-export function TabBar({ tab, navigate }: { tab: TabId; navigate: (tab: TabId) => void }) {
+export function TabBar({
+  tabs,
+  tab,
+  navigate,
+}: {
+  /** Visible tabs, in display order (config-filtered by the Shell). */
+  tabs: readonly TabId[];
+  tab: TabId;
+  navigate: (tab: TabId) => void;
+}) {
   return (
     <nav className="tabs" aria-label="dashboard sections">
-      {(Object.keys(LABELS) as TabId[]).map((id) => (
+      {tabs.map((id) => (
         <button
           key={id}
           className={`tab${id === tab ? " active" : ""}`}

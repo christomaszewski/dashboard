@@ -7,6 +7,22 @@ import { parse as parseYaml } from "yaml";
 
 export const HOME_SCHEMA_VERSION = 1;
 
+/** Tab ids — the routing/config vocabulary (useHashRoute imports these; order = display order). */
+export const TAB_IDS = ["home", "cameras", "ros", "clouds", "debug"] as const;
+export type TabId = (typeof TAB_IDS)[number];
+
+/** `tabs:` block — per-tab visibility, everything defaulting to shown. Lenient: non-boolean
+ *  values and unknown keys are ignored (forward compat). */
+export type TabVisibility = Partial<Record<TabId, boolean>>;
+
+export function parseTabs(value: unknown): TabVisibility | undefined {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+  const raw = value as Record<string, unknown>;
+  const out: TabVisibility = {};
+  for (const id of TAB_IDS) if (typeof raw[id] === "boolean") out[id] = raw[id] as boolean;
+  return out;
+}
+
 export type WidgetSpan = 1 | 2 | "full";
 
 export interface StatusWidgetConfig {
@@ -58,7 +74,25 @@ export interface TopicValueWidgetConfig {
   area?: string;
 }
 
-/** Widget types allowed inside a panel (no video, no nested panels). */
+export interface MapWidgetConfig {
+  type: "map";
+  label?: string;
+  /** Topic carrying the position (NavSatFix by default: latitude/longitude fields). */
+  topic: string;
+  lat_field?: string; // dot-paths, for non-NavSatFix sources
+  lon_field?: string;
+  /** XYZ tile template fetched by the VIEWING BROWSER, or "none". Default: OSM. */
+  tiles?: string;
+  zoom?: number;
+  /** Breadcrumb points kept (0 disables the trail). */
+  trail?: number;
+  follow?: boolean;
+  attribution?: string;
+  span?: WidgetSpan;
+  area?: string;
+}
+
+/** Widget types allowed inside a panel (no video, no map, no nested panels). */
 export type PanelItemWidgetConfig = StatusWidgetConfig | ServiceButtonWidgetConfig | TopicValueWidgetConfig;
 
 export type ParsedPanelItem =
@@ -80,6 +114,7 @@ export type WidgetConfig =
   | ServiceButtonWidgetConfig
   | VideoWidgetConfig
   | TopicValueWidgetConfig
+  | MapWidgetConfig
   | PanelWidgetConfig;
 
 export type ParsedWidget =
@@ -109,6 +144,7 @@ export interface DashboardConfig {
   name?: string;
   web_port?: number;
   ws_port?: number;
+  tabs?: TabVisibility;
   home?: ParsedHome;
 }
 
@@ -335,6 +371,25 @@ function parseWidget(raw: unknown): WidgetConfig {
         span: optSpan(raw),
         area: optStr(raw, "area"),
       };
+    case "map": {
+      const tiles = optStr(raw, "tiles");
+      if (tiles !== undefined && tiles !== "none" && !(tiles.includes("{z}") && tiles.includes("{x}") && tiles.includes("{y}")))
+        throw new Error("'tiles' must be an XYZ template containing {z}/{x}/{y}, or 'none'");
+      return {
+        type,
+        label: optStr(raw, "label"),
+        topic: reqStr(raw, "topic"),
+        lat_field: optStr(raw, "lat_field"),
+        lon_field: optStr(raw, "lon_field"),
+        tiles,
+        zoom: optNum(raw, "zoom"),
+        trail: optNum(raw, "trail"),
+        follow: optBool(raw, "follow"),
+        attribution: optStr(raw, "attribution"),
+        span: optSpan(raw),
+        area: optStr(raw, "area"),
+      };
+    }
     case "panel": {
       const rawItems = raw["items"];
       if (!Array.isArray(rawItems)) throw new Error("'items' is required and must be a list");
@@ -352,8 +407,8 @@ function parseWidget(raw: unknown): WidgetConfig {
     default:
       throw new Error(
         type === undefined
-          ? "'type' is required (status | service_button | video | topic_value | panel)"
-          : `unknown widget type '${type}' (status | service_button | video | topic_value | panel)`,
+          ? "'type' is required (status | service_button | video | topic_value | map | panel)"
+          : `unknown widget type '${type}' (status | service_button | video | topic_value | map | panel)`,
       );
   }
 }
@@ -413,6 +468,7 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     name: optStr(doc, "name"),
     web_port: optNum(doc, "web_port"),
     ws_port: optNum(doc, "ws_port"),
+    tabs: doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined,
     home: doc["home"] !== undefined ? parseHome(doc["home"]) : undefined,
   };
 }

@@ -7,6 +7,7 @@ import { StatusWidget } from "./widgets/StatusWidget";
 import { ServiceButtonWidget } from "./widgets/ServiceButtonWidget";
 import { VideoWidget } from "./widgets/VideoWidget";
 import { TopicValueWidget } from "./widgets/TopicValueWidget";
+import { MapWidget } from "./widgets/MapWidget";
 import { PanelWidget } from "./widgets/PanelWidget";
 import { WidgetErrorCard } from "./widgets/WidgetErrorCard";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
@@ -21,6 +22,8 @@ function renderWidget(widget: WidgetConfig) {
       return <VideoWidget widget={widget} />;
     case "topic_value":
       return <TopicValueWidget widget={widget} />;
+    case "map":
+      return <MapWidget widget={widget} />;
     case "panel":
       return <PanelWidget widget={widget} />;
   }
@@ -28,12 +31,13 @@ function renderWidget(widget: WidgetConfig) {
 
 function spanClass(widget: WidgetConfig): string {
   if (widget.area) return ""; // the area defines the exact cells; span is ignored
-  const span = widget.span ?? (widget.type === "video" ? 2 : 1);
+  const span = widget.span ?? (widget.type === "video" || widget.type === "map" ? 2 : 1);
   return span === "full" ? " span-full" : span === 2 ? " span-2" : "";
 }
 
 function widgetLabel(w: WidgetConfig): string | undefined {
   if (w.type === "panel") return w.title ?? "panel";
+  if (w.type === "map") return w.label ?? w.topic;
   return "label" in w ? w.label : w.stream;
 }
 
