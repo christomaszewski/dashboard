@@ -778,3 +778,118 @@ ul.plain {
   border-color: var(--warn);
   color: var(--warn);
 }
+
+/* ---- home layout (grid areas) ----------------------------------------------------------------- */
+
+/* Widgets without an area back-fill the cells the named areas leave free. */
+.home-grid.has-areas {
+  grid-auto-flow: row dense;
+}
+
+.home-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.home-cell > :last-child {
+  flex: 1;
+}
+
+.cell-warn {
+  font-size: 0.68rem;
+  color: var(--warn);
+}
+
+.warn-box {
+  background: var(--warn-dim);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  padding: 0.7rem 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  /* One column, areas ignored. The grid template + grid-area are INLINE styles when a layout is
+     configured — only !important outranks them. grid-area:auto resets all placement longhands. */
+  .home-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-areas: none !important;
+  }
+  .home-cell {
+    grid-area: auto !important;
+  }
+}
+
+/* ---- home panels ------------------------------------------------------------------------------ */
+
+.widget-panel {
+  gap: 0.5rem;
+}
+
+.panel-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.24rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.panel-rows > :first-child .panel-row,
+.panel-rows > .panel-row:first-child {
+  border-top: none;
+}
+
+.panel-row .row-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.panel-row .row-value {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.panel-row .row-value small {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.panel-row .row-value.warn {
+  color: var(--warn);
+}
+
+.panel-row .row-value.err {
+  color: var(--err);
+}
+
+.panel-row .row-value.idle {
+  color: var(--text-faint);
+}
+
+.panel-row .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.panel-row .widget-sub {
+  text-align: right;
+}
+
+.panel-row.is-err {
+  color: var(--err);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}

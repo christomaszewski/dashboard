@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDashboardConfig, parseHome } from "./schema";
+import { parseDashboardConfig, parseHome, parseLayout } from "./schema";
 
 const FULL = `
 service: dashboard
@@ -116,5 +116,178 @@ describe("parseHome widget isolation", () => {
     const home = parseHome({ title: "T" });
     expect(home.fatal).toBeUndefined();
     expect(home.widgets).toHaveLength(0);
+  });
+
+  it("back-compat: a layout-free config yields no layout/warning fields", () => {
+    const cfg = parseDashboardConfig(FULL);
+    expect(cfg.home?.layout).toBeUndefined();
+    expect(cfg.home?.layoutWarning).toBeUndefined();
+    expect(cfg.home?.widgets.every((w) => w.ok && w.warning === undefined)).toBe(true);
+  });
+});
+
+describe("parseLayout", () => {
+  it("accepts a valid areas grid + matching columns", () => {
+    const { layout, warning } = parseLayout({
+      columns: "2fr 1fr 1fr",
+      areas: ["cams cams power", "cams cams nav", "ctrl ctrl nav"],
+    });
+    expect(warning).toBeUndefined();
+    expect(layout).toEqual({
+      columns: "2fr 1fr 1fr",
+      areas: ["cams cams power", "cams cams nav", "ctrl ctrl nav"],
+      areaNames: ["cams", "power", "nav", "ctrl"],
+      columnCount: 3,
+    });
+  });
+
+  it("treats '.' (and '...') as empty cells and normalizes whitespace", () => {
+    const { layout, warning } = parseLayout({ areas: ["a   .  b", "a ... b"] });
+    expect(warning).toBeUndefined();
+    expect(layout?.areas).toEqual(["a . b", "a ... b"]);
+    expect(layout?.areaNames).toEqual(["a", "b"]);
+  });
+
+  it("drops non-rectangular areas with a positioned warning", () => {
+    const { layout, warning } = parseLayout({ areas: ["a a b", "a a"] });
+    expect(layout).toBeUndefined();
+    expect(warning).toMatch(/not rectangular: row 1 has 2 cells, expected 3/);
+  });
+
+  it("drops areas whose name is not a solid rectangle (L-shape / hole)", () => {
+    expect(parseLayout({ areas: ["a a", "a b"] }).warning).toMatch(/'a' does not form a solid rectangle/);
+    expect(parseLayout({ areas: ["a b a"] }).warning).toMatch(/'a' does not form a solid rectangle/);
+  });
+
+  it("rejects invalid and CSS-reserved area names", () => {
+    expect(parseLayout({ areas: ["1bad ok"] }).warning).toMatch(/invalid area name '1bad'/);
+    expect(parseLayout({ areas: ["auto x"] }).warning).toMatch(/invalid area name 'auto'/);
+  });
+
+  it("validates columns independently of areas", () => {
+    const { layout, warning } = parseLayout({ columns: "1fr [main] 2fr", areas: ["a b"] });
+    expect(warning).toMatch(/unsupported characters/);
+    expect(layout?.areas).toEqual(["a b"]); // areas survive a bad columns
+    expect(layout?.columns).toBeUndefined();
+  });
+
+  it("cross-checks the track count against the areas column count", () => {
+    const { layout, warning } = parseLayout({ columns: "1fr 2fr", areas: ["a b c"] });
+    expect(warning).toMatch(/2 tracks but areas define 3 columns/);
+    expect(layout?.columns).toBeUndefined();
+    // repeat()/minmax() forms skip the count check
+    const ok = parseLayout({ columns: "repeat(3, minmax(0, 1fr))", areas: ["a b c"] });
+    expect(ok.warning).toBeUndefined();
+    expect(ok.layout?.columns).toBe("repeat(3, minmax(0, 1fr))");
+  });
+
+  it("allows columns without areas (fixed tracks, flowed widgets)", () => {
+    const { layout, warning } = parseLayout({ columns: "1fr 1fr" });
+    expect(warning).toBeUndefined();
+    expect(layout).toEqual({ columns: "1fr 1fr", areas: undefined, areaNames: [], columnCount: 0 });
+  });
+});
+
+describe("widget area post-pass", () => {
+  const LAYOUT = { areas: ["cams side"] };
+  const video = (area?: string) => ({ type: "video", stream: "cam0", area });
+
+  it("blesses areas defined in the layout", () => {
+    const home = parseHome({ layout: LAYOUT, widgets: [video("cams")] });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { area: "cams" } });
+    if (home.widgets[0].ok) expect(home.widgets[0].warning).toBeUndefined();
+  });
+
+  it("strips an undefined area with a warning; widget auto-flows", () => {
+    const home = parseHome({ layout: LAYOUT, widgets: [video("nope")] });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { area: undefined } });
+    if (home.widgets[0].ok) expect(home.widgets[0].warning).toMatch(/'nope' is not defined/);
+  });
+
+  it("strips area when no layout.areas exists at all", () => {
+    const home = parseHome({ widgets: [video("cams")] });
+    if (home.widgets[0].ok) expect(home.widgets[0].warning).toMatch(/home.layout.areas is not defined/);
+  });
+
+  it("duplicate claims: first ok widget wins, later ones auto-flow with a warning", () => {
+    const home = parseHome({ layout: LAYOUT, widgets: [video("cams"), video("cams")] });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { area: "cams" } });
+    if (home.widgets[1].ok) {
+      expect(home.widgets[1].widget.area).toBeUndefined();
+      expect(home.widgets[1].warning).toMatch(/already used by widgets\[0\]/);
+    }
+  });
+});
+
+describe("panel widget", () => {
+  it("parses mixed items: shorthands inherit the panel topic, name: aliases label, label defaults to field", () => {
+    const home = parseHome({
+      widgets: [
+        {
+          type: "panel",
+          title: "GNSS",
+          topic: "/gnss/fix",
+          items: [
+            { field: "latitude", name: "Lat", precision: 6 },
+            { field: "status.satellites_used" },
+            { field: "voltage", topic: "/battery_state", unit: "V" },
+            { type: "status", label: "Nav node", source: "node", node: "/navsat" },
+            { type: "service_button", label: "Re-init", service: "/gnss/reset" },
+          ],
+        },
+      ],
+    });
+    const pw = home.widgets[0];
+    expect(pw.ok).toBe(true);
+    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    const items = pw.widget.items;
+    expect(items.every((i) => i.ok)).toBe(true);
+    expect(items[0]).toMatchObject({
+      ok: true,
+      item: { type: "topic_value", topic: "/gnss/fix", field: "latitude", label: "Lat", precision: 6 },
+    });
+    expect(items[1]).toMatchObject({ ok: true, item: { label: "status.satellites_used", topic: "/gnss/fix" } });
+    expect(items[2]).toMatchObject({ ok: true, item: { topic: "/battery_state", unit: "V" } });
+    expect(items[3]).toMatchObject({ ok: true, item: { type: "status", source: "node" } });
+    expect(items[4]).toMatchObject({ ok: true, item: { type: "service_button", service: "/gnss/reset" } });
+  });
+
+  it("isolates bad items to their row; siblings still parse", () => {
+    const home = parseHome({
+      widgets: [
+        {
+          type: "panel",
+          items: [
+            { field: "a", topic: "/t" },
+            { type: "panel", items: [] }, // nested
+            { type: "video", stream: "cam0" }, // not allowed
+            { type: "dial" }, // unknown
+            { name: "no field" }, // shorthand without field
+            { field: "x" }, // no topic anywhere
+            { type: "topic_value", label: "L", field: "f" }, // typed items do NOT inherit panel topic
+          ],
+        },
+      ],
+    });
+    const pw = home.widgets[0];
+    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    const [ok, nested, video, dial, nofield, notopic, typed] = pw.widget.items;
+    expect(ok.ok).toBe(true);
+    if (!nested.ok) expect(nested.message).toMatch(/nested panels are not supported/);
+    if (!video.ok) expect(video.message).toMatch(/'video' is not allowed/);
+    if (!dial.ok) expect(dial.message).toMatch(/unknown item type 'dial'/);
+    if (!nofield.ok) expect(nofield.message).toMatch(/needs a 'type' or a readout 'field'/);
+    if (!notopic.ok) expect(notopic.message).toMatch(/'topic' is required \(set it on the item or on the panel\)/);
+    if (!typed.ok) expect(typed.message).toMatch(/items\[6\] \(topic_value\): 'topic' is required/);
+    expect([nested, video, dial, nofield, notopic, typed].every((i) => !i.ok)).toBe(true);
+  });
+
+  it("panel-level failures (missing/empty items) fail the whole widget", () => {
+    const missing = parseHome({ widgets: [{ type: "panel", title: "P" }] });
+    if (!missing.widgets[0].ok) expect(missing.widgets[0].message).toMatch(/'items' is required/);
+    const empty = parseHome({ widgets: [{ type: "panel", items: [] }] });
+    if (!empty.widgets[0].ok) expect(empty.widgets[0].message).toMatch(/'items' must not be empty/);
+    expect(missing.widgets[0].ok).toBe(false);
+    expect(empty.widgets[0].ok).toBe(false);
   });
 });

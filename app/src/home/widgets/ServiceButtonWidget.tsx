@@ -27,7 +27,7 @@ function summarize(response: Record<string, unknown>): string {
   }
 }
 
-export function ServiceButtonWidget({ widget }: { widget: ServiceButtonWidgetConfig }) {
+export function ServiceButtonWidget({ widget, compact = false }: { widget: ServiceButtonWidgetConfig; compact?: boolean }) {
   const { transport } = useTransportContext();
   const { graph } = useRosGraphContext();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -78,26 +78,39 @@ export function ServiceButtonWidget({ widget }: { widget: ServiceButtonWidgetCon
   const disabled = !transport || !entry || phase.kind === "calling";
   const buttonLabel =
     phase.kind === "confirm" ? "confirm?" : phase.kind === "calling" ? "calling…" : widget.label;
+  const subText =
+    phase.kind === "ok"
+      ? phase.summary
+      : phase.kind === "err"
+        ? phase.message
+        : typeMismatch
+          ? `⚠ ${typeMismatch}`
+          : entry
+            ? entry.typeName
+            : "no server advertised";
+  const subClass = `dim mono widget-sub${phase.kind === "err" ? " is-err" : ""}`;
+  const button = (
+    <button className={`btn primary${phase.kind === "confirm" ? " confirm" : ""}`} disabled={disabled} onClick={onClick}>
+      {buttonLabel}
+    </button>
+  );
+
+  if (compact) {
+    return (
+      <div className="panel-row" title={widget.service}>
+        {button}
+        <span className={subClass}>{subText}</span>
+      </div>
+    );
+  }
 
   return (
     <div className="widget-card">
       <span className="widget-label">
         <span className={`dot ${entry ? "ok" : ""}`} /> {widget.service}
       </span>
-      <button className={`btn primary${phase.kind === "confirm" ? " confirm" : ""}`} disabled={disabled} onClick={onClick}>
-        {buttonLabel}
-      </button>
-      <span className={`dim mono widget-sub${phase.kind === "err" ? " is-err" : ""}`}>
-        {phase.kind === "ok"
-          ? phase.summary
-          : phase.kind === "err"
-            ? phase.message
-            : typeMismatch
-              ? `⚠ ${typeMismatch}`
-              : entry
-                ? entry.typeName
-                : "no server advertised"}
-      </span>
+      {button}
+      <span className={subClass}>{subText}</span>
     </div>
   );
 }
