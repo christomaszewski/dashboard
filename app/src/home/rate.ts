@@ -5,7 +5,12 @@
 export class RateMonitor {
   private arrivals: number[] = [];
 
-  constructor(private readonly windowMs = 5000) {}
+  constructor(private windowMs = 5000) {}
+
+  /** Retarget the window (consumers sharing one monitor coalesce to the max of their windows). */
+  setWindow(ms: number): void {
+    this.windowMs = ms;
+  }
 
   record(t: number): void {
     this.arrivals.push(t);

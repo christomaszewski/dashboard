@@ -1,15 +1,32 @@
-import { useEffect, useRef, useState } from "react";
 import type { StatusWidgetConfig } from "../../config/schema";
-import type { Subscription } from "../../transport/types";
-import { useTransportContext } from "../../transport/TransportContext";
 import { useStreamsContext } from "../../streams/StreamsContext";
 import { useRosGraphContext } from "../../ros/RosGraphContext";
+import { useTopic } from "../../ros/useTopic";
 import { resolveStreamRef } from "../resolveStream";
-import { RateMonitor } from "../rate";
 
 type Level = "ok" | "warn" | "err" | "idle";
 
-function StatusCard({ label, level, detail, mono }: { label: string; level: Level; detail: string; mono?: string }) {
+function StatusCard({
+  label,
+  level,
+  detail,
+  mono,
+  compact,
+}: {
+  label: string;
+  level: Level;
+  detail: string;
+  mono?: string;
+  compact?: boolean;
+}) {
+  if (compact) {
+    return (
+      <div className="panel-row" title={mono}>
+        <span className="row-label">{label}</span>
+        <span className={`pill ${level}`}>{detail}</span>
+      </div>
+    );
+  }
   return (
     <div className="widget-card">
       <span className="widget-label">{label}</span>
@@ -19,67 +36,47 @@ function StatusCard({ label, level, detail, mono }: { label: string; level: Leve
   );
 }
 
-function StreamStatus({ widget }: { widget: StatusWidgetConfig }) {
+function StreamStatus({ widget, compact }: { widget: StatusWidgetConfig; compact?: boolean }) {
   const { streams } = useStreamsContext();
   const s = resolveStreamRef(streams, widget.stream ?? "");
-  if (!s) return <StatusCard label={widget.label} level="err" detail="not discovered" mono={widget.stream} />;
+  if (!s) return <StatusCard label={widget.label} level="err" detail="not discovered" mono={widget.stream} compact={compact} />;
   return (
     <StatusCard
       label={widget.label}
       level={s.alive ? "ok" : "warn"}
       detail={s.alive ? "live" : "offline"}
       mono={s.descriptor.codec && s.descriptor.width ? `${s.descriptor.codec} ${s.descriptor.width}×${s.descriptor.height}` : s.key}
+      compact={compact}
     />
   );
 }
 
-function NodeStatus({ widget }: { widget: StatusWidgetConfig }) {
+function NodeStatus({ widget, compact }: { widget: StatusWidgetConfig; compact?: boolean }) {
   const { graph } = useRosGraphContext();
   const present = graph.nodes.some((n) => n.nodeFq === widget.node);
-  return <StatusCard label={widget.label} level={present ? "ok" : "err"} detail={present ? "up" : "down"} mono={widget.node} />;
+  return (
+    <StatusCard label={widget.label} level={present ? "ok" : "err"} detail={present ? "up" : "down"} mono={widget.node} compact={compact} />
+  );
 }
 
-/** NB: measuring Hz means holding a live data subscription — the payload streams to the browser. */
-function TopicHzStatus({ widget }: { widget: StatusWidgetConfig }) {
-  const { transport } = useTransportContext();
-  const { graph } = useRosGraphContext();
-  const [hz, setHz] = useState<number | undefined>(undefined);
-  const monitor = useRef(new RateMonitor((widget.window_s ?? 5) * 1000));
-
-  const topic = graph.topics.find((t) => t.name === widget.topic);
-  const dataKeyexpr = topic?.dataKeyexpr;
-
-  useEffect(() => {
-    if (!transport || !dataKeyexpr) return;
-    let cancelled = false;
-    let sub: Subscription | null = null;
-    void transport
-      .subscribe(dataKeyexpr, (s) => {
-        if (s.kind === "put") monitor.current.record(performance.now());
-      })
-      .then((s) => {
-        if (cancelled) void s.close();
-        else sub = s;
-      });
-    const timer = window.setInterval(() => setHz(monitor.current.hz(performance.now())), 1000);
-    return () => {
-      cancelled = true;
-      void sub?.close();
-      clearInterval(timer);
-      setHz(undefined);
-    };
-  }, [transport, dataKeyexpr]);
-
-  if (!topic) return <StatusCard label={widget.label} level="idle" detail="waiting for topic" mono={widget.topic} />;
+/** Rate-only watch off the shared TopicStore — never resolves/decodes the type (decode: false). */
+function TopicHzStatus({ widget, compact }: { widget: StatusWidgetConfig; compact?: boolean }) {
+  const { topic, snapshot } = useTopic(widget.topic, {
+    windowMs: (widget.window_s ?? 5) * 1000,
+    decode: false,
+  });
+  if (!topic)
+    return <StatusCard label={widget.label} level="idle" detail="waiting for topic" mono={widget.topic} compact={compact} />;
+  const hz = snapshot?.hz;
   const level: Level =
     hz === undefined ? "err" : widget.min_hz !== undefined && hz < widget.min_hz ? "warn" : "ok";
   const detail = hz === undefined ? "no data" : `${hz.toFixed(1)} Hz`;
   const target = widget.min_hz !== undefined ? `${widget.topic} ≥ ${widget.min_hz} Hz` : widget.topic;
-  return <StatusCard label={widget.label} level={level} detail={detail} mono={target} />;
+  return <StatusCard label={widget.label} level={level} detail={detail} mono={target} compact={compact} />;
 }
 
-export function StatusWidget({ widget }: { widget: StatusWidgetConfig }) {
-  if (widget.source === "stream") return <StreamStatus widget={widget} />;
-  if (widget.source === "node") return <NodeStatus widget={widget} />;
-  return <TopicHzStatus widget={widget} />;
+export function StatusWidget({ widget, compact = false }: { widget: StatusWidgetConfig; compact?: boolean }) {
+  if (widget.source === "stream") return <StreamStatus widget={widget} compact={compact} />;
+  if (widget.source === "node") return <NodeStatus widget={widget} compact={compact} />;
+  return <TopicHzStatus widget={widget} compact={compact} />;
 }

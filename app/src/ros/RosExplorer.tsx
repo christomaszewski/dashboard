@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { useTransportContext } from "../transport/TransportContext";
 import { useRosGraphContext } from "./RosGraphContext";
 import type { TopicEntry } from "./graph";
 import { TopicInspector } from "./TopicInspector";
@@ -19,8 +18,7 @@ function QosChips({ topic }: { topic: TopicEntry }) {
  * bus advertises even when no data flows — same view `ros2 topic list` would give on the vehicle.
  */
 export function RosExplorer() {
-  const { transport } = useTransportContext();
-  const { graph, resolver } = useRosGraphContext();
+  const { graph } = useRosGraphContext();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
   const selected = graph.topics.find((t) => `${t.domainId}|${t.name}|${t.typeHash}` === selectedId) ?? null;
@@ -66,7 +64,7 @@ export function RosExplorer() {
           </tbody>
         </table>
       )}
-      {selected && transport && resolver && <TopicInspector transport={transport} resolver={resolver} topic={selected} />}
+      {selected && <TopicInspector topic={selected} />}
 
       {graph.nodes.length > 0 && (
         <details className="panel">

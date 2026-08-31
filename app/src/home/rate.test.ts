@@ -17,6 +17,18 @@ describe("RateMonitor", () => {
     expect(m.hz(1000)).toBeCloseTo(10);
   });
 
+  it("setWindow retargets the pruning horizon", () => {
+    const m = new RateMonitor(1000);
+    m.record(0);
+    m.record(100);
+    expect(m.hz(2000)).toBeUndefined(); // outside the 1 s window
+    const m2 = new RateMonitor(1000);
+    m2.record(0);
+    m2.record(100);
+    m2.setWindow(5000);
+    expect(m2.hz(2000)).toBeCloseTo(0.5); // widened window keeps them (1 interval / 2 s)
+  });
+
   it("prunes arrivals outside the window", () => {
     const m = new RateMonitor(1000);
     m.record(0);
