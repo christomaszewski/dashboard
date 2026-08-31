@@ -39,6 +39,11 @@ def main() -> None:
     print(f"DASH_NAME={cfg.get('name', 'dashboard')}")
     print(f"DASH_WEB_PORT={cfg.get('web_port', 8080)}")
     print(f"DASH_WS_PORT={cfg.get('ws_port', 10000)}")
+    # Optional: a host dir of point-cloud files for the Clouds tab. Emitted only when set —
+    # dash-up applies the clouds compose overlay only when this variable is non-empty.
+    clouds = cfg.get("clouds_dir")
+    if isinstance(clouds, str) and clouds:
+        print(f"DASH_CLOUDS_HOST={clouds}")
 
 
 if __name__ == "__main__":

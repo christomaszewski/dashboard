@@ -12,6 +12,15 @@
 		file_server
 	}
 
+	# Point-cloud files for the Clouds tab (dash-up mounts them when the instance YAML sets
+	# `clouds_dir:` — docker-compose.clouds.yml). `browse` = human listing AND JSON on
+	# Accept: application/json, which is how the app lists the files. Absent mount → 404, and the
+	# tab quietly hides its vehicle-files section.
+	handle_path /clouds/* {
+		root * /clouds
+		file_server browse
+	}
+
 	# SPA fallback so client-side routes resolve to index.html.
 	handle {
 		root * /srv

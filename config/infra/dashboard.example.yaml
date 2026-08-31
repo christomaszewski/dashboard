@@ -8,6 +8,19 @@ name: dashboard       # instance name -> compose project (rig requires it unique
 web_port: 8080        # http: the React bundle        -> http://<vehicle-ip>:<web_port>
 ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws_port>
 
+# clouds_dir: /data/clouds   # optional: host dir of point-cloud files (.bpf) served read-only at
+                             #   /clouds/ for the Clouds tab (relative paths resolve against this
+                             #   config's directory). Omit -> the tab still works via drag & drop.
+
+# ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
+# Per-tab visibility; anything omitted is shown. Available: home, cameras, ros, clouds, debug.
+# The Clouds tab is lazy-loaded (its three.js chunk only downloads when opened), so leaving it
+# enabled costs nothing until used. A hidden tab's deep link falls back to the first visible tab.
+#
+# tabs:
+#   debug: false      # e.g. hide the bus debugger in operator deployments
+#   clouds: false
+
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic
 # readouts, grouped panels. Omit the whole block for the built-in default Home (connection +
@@ -100,6 +113,25 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #         - type: service_button
 #           label: Re-init
 #           service: /gnss/reset
+#
+#     # -- map: live vehicle position -----------------------------------------------------------
+#     # Marker + breadcrumb trail from a NavSatFix-style topic. TILES ARE FETCHED BY THE VIEWING
+#     # BROWSER, never the vehicle: the OSM default just works on an internet-connected operator
+#     # PC; a fully-offline operator PC can serve its own z/x/y tile tree (e.g. `python3 -m
+#     # http.server 8000` in the tiles dir -> tiles: http://localhost:8000/{z}/{x}/{y}.png); a
+#     # vehicle-hosted path works too. Unreachable tiles degrade to a plain background — the
+#     # marker and trail always render.
+#     - type: map
+#       label: Position
+#       topic: /gnss/fix
+#       # lat_field: latitude     # dot-paths, for non-NavSatFix position sources
+#       # lon_field: longitude
+#       # tiles: https://tile.openstreetmap.org/{z}/{x}/{y}.png   # default; "none" disables tiles
+#       # zoom: 17               # initial/follow zoom (2..22)
+#       # trail: 500             # breadcrumb points kept (0 disables)
+#       # follow: true           # keep the vehicle centered; panning pauses, ⌖ resumes
+#       # attribution:           # set automatically for the OSM default
+#       # span: 2                # (map default 2)
 #
 #     # -- topic_value: live single-field readout -----------------------------------------------
 #     - type: topic_value

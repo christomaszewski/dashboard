@@ -36,6 +36,7 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - tools/dash_env.py
   - deploy/docker-compose.yml
   - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
+  - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)
   - deploy/zenohd-dashboard.json5
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)

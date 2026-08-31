@@ -50,6 +50,18 @@ if [ -n "${DASH_REGISTRY:-}" ]; then
   export DASH_WEB_IMAGE="${DASH_WEB_IMAGE:-$DASH_REGISTRY/dashboard-web:$TAG}"
 fi
 
+# Optional clouds mount (Clouds tab): only when the config set clouds_dir. Relative paths resolve
+# against the CONFIG's directory (the config travels with its data on a vehicle).
+OVERLAYS=(-f "$REPO/deploy/docker-compose.external-config.yml")
+if [ -n "${DASH_CLOUDS_HOST:-}" ]; then
+  case "$DASH_CLOUDS_HOST" in
+    /*) : ;;
+    *) DASH_CLOUDS_HOST="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$DASH_CLOUDS_HOST" ;;
+  esac
+  export DASH_CLOUDS_HOST
+  OVERLAYS+=(-f "$REPO/deploy/docker-compose.clouds.yml")
+fi
+
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
 echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY} config=$CONFIG_ABS" >&2
-exec docker compose -f "$COMPOSE" -f "$REPO/deploy/docker-compose.external-config.yml" "${ARGS[@]}"
+exec docker compose -f "$COMPOSE" "${OVERLAYS[@]}" "${ARGS[@]}"
