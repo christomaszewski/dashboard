@@ -60,7 +60,12 @@ Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus d
   editors need the restart) and refresh the page.
 - **Dev**: drop a config at `app/public/config/dashboard.yaml` (gitignored — never commit; it would
   bake into `dist`) and `npm run dev`. Widget schema reference: the commented `home:` block in
-  `config/infra/dashboard.example.yaml`.
+  `config/infra/dashboard.example.yaml` — including the `layout:` grid (named areas + `area:` per
+  widget) and `panel` widgets (grouped readout rows with `name:`/`unit:`, statuses, buttons).
+- Layout checks: widget placement matches the `areas:` ASCII grid; a bogus/duplicate `area:` shows
+  a ⚠ line on its cell and auto-flows; an invalid `areas:` block shows one warning banner and the
+  page auto-flows; narrow window (<560px) collapses to one column. All topic rows/widgets on one
+  topic share a single bus subscription (Bus debug or the sidecar logs confirm).
 - `curl -i http://<vehicle-ip>:8080/config/dashboard.yaml` → 200 with the YAML when mounted, and a
   clean **404** (not index.html) when not — the app's "no config → default Home" signal.
 - **dash_env.py acceptance** (any config with a `home:` block): run

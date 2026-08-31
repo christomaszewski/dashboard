@@ -10,13 +10,28 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic
-# readouts. Omit the whole block for the built-in default Home (connection + discovery summary).
-# Widgets render in order into a responsive grid; one malformed widget shows an inline error card
-# and the rest still render. Every optional key below is shown commented with its default.
+# readouts, grouped panels. Omit the whole block for the built-in default Home (connection +
+# discovery summary). One malformed widget shows an inline error card and the rest still render.
+# Every optional key below is shown commented with its default.
 #
 # home:
 #   version: 1                 # schema major; unsupported -> banner + default Home
 #   title: Mission Overview    # optional; also shown next to the topbar brand
+#
+#   # -- layout (optional): place widgets on a named 2-D grid --------------------------------------
+#   # Draw the page as rows of area names ('.' = empty cell); each name must form a solid
+#   # rectangle. Widgets pick a cell block with `area:`; widgets WITHOUT an area auto-flow into the
+#   # remaining cells (their `span:` still applies; `span` is ignored when `area` is set). An
+#   # invalid layout or unknown/duplicate area degrades to auto-flow with a warning banner — never
+#   # a broken page. Narrow screens (<560px) collapse to one column. Omit `layout:` entirely for
+#   # the flow-order grid.
+#   layout:
+#     columns: "2fr 1fr 1fr"   # optional grid-template-columns tracks (default: equal columns)
+#     areas:
+#       - "cams cams power"
+#       - "cams cams nav"
+#       - "ctrl ctrl  nav"
+#
 #   widgets:
 #
 #     # -- status: presence / rate indicator ----------------------------------------------------
@@ -53,8 +68,38 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #     # Shares ONE WebRTC session (and one vehicle-side encode) with the Cameras tab.
 #     - type: video
 #       stream: cam0
+#       area: cams             # optional: a layout.areas name (any widget type accepts area:)
 #       # label:               # overlay label (default: the stream's role/id)
-#       # span: 2              # grid cells: 1 | 2 | full (video default 2, others 1)
+#       # span: 2              # grid cells when auto-flowing: 1 | 2 | full (video default 2)
+#
+#     # -- panel: grouped mini-widgets in one card ----------------------------------------------
+#     # Items are readout shorthands (a `field:` with no `type:` — shown as name | value rows,
+#     # inheriting the panel `topic:`) and/or full status / service_button / topic_value configs
+#     # rendered compact. No video, no nested panels. A bad item is one red row; siblings render.
+#     # NB: a full `type: topic_value` item does NOT inherit the panel topic — only shorthands do.
+#     # All topic rows on one topic share a single bus subscription + decode.
+#     - type: panel
+#       title: GNSS            # optional header
+#       area: nav
+#       topic: /gnss/fix       # default topic for the readout shorthands below
+#       items:
+#         - field: latitude    # dot-path into the decoded message
+#           name: Lat          # row label (default: the field path); `label:` also accepted
+#           precision: 6
+#         - field: status.satellites_used
+#           name: Sats
+#         - field: voltage
+#           topic: /battery_state   # per-item topic override
+#           name: Battery
+#           unit: V
+#           warn_below: 22.0
+#         - type: status
+#           label: Nav node
+#           source: node
+#           node: /navsat_transform
+#         - type: service_button
+#           label: Re-init
+#           service: /gnss/reset
 #
 #     # -- topic_value: live single-field readout -----------------------------------------------
 #     - type: topic_value

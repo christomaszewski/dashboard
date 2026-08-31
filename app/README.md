@@ -37,9 +37,10 @@ src/
                             #   (all tab panels stay MOUNTED; inactive ones hidden with CSS only)
   config/                   # runtime instance config: schema.ts (parse/validate the home: block),
                             #   load.ts (GET /config/dashboard.yaml), ConfigContext
-  home/                     # config-driven Home tab: HomeTab, DefaultHome, widgets/ (status,
-                            #   service_button, video, topic_value + error card/boundary),
-                            #   rate.ts, pluck.ts, resolveStream.ts (pure helpers)
+  home/                     # config-driven Home tab: HomeTab (incl. grid-area layout), DefaultHome,
+                            #   widgets/ (status, service_button, video, topic_value, panel +
+                            #   error card/boundary; `compact` renders panel rows),
+                            #   rate.ts, pluck.ts, value.ts, resolveStream.ts (pure helpers)
   transport/
     types.ts                # Transport interface (the UI codes against this, never zenoh-ts)
     zenohRemoteApi.ts       # impl: zenoh-ts over the remote-api WebSocket (get: payload/attachment/timeout)
@@ -61,7 +62,9 @@ src/
   ros/
     graph.ts                # @ros2_lv liveliness tokens → RosGraph (topics/nodes/services + QoS)
     useRosGraph.ts          # live graph hook (liveliness sub with history)
-    RosGraphContext.tsx     # ONE graph + decoder cache app-wide (Home widgets + ROS tab share it)
+    RosGraphContext.tsx     # ONE graph + decoder cache + TopicStore app-wide
+    topicStore.ts           # refcounted shared topic subs: N watchers = 1 zenoh sub + 1 decode/flush
+    useTopic.ts             # React glue over the store (used by readouts, hz statuses, inspector)
     RosExplorer.tsx         # topic table + drill-down; nodes/services lists
     TopicInspector.tsx      # subscribe→decode→render one topic (Hz/bytes, latched get)
     MessageTree.tsx         # decoded-message tree (bigint/TypedArray-safe)
