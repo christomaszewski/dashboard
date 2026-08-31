@@ -38,9 +38,13 @@ src/
   config/                   # runtime instance config: schema.ts (parse/validate the home: block),
                             #   load.ts (GET /config/dashboard.yaml), ConfigContext
   home/                     # config-driven Home tab: HomeTab (incl. grid-area layout), DefaultHome,
-                            #   widgets/ (status, service_button, video, topic_value, panel +
+                            #   widgets/ (status, service_button, video, topic_value, map, panel +
                             #   error card/boundary; `compact` renders panel rows),
-                            #   rate.ts, pluck.ts, value.ts, resolveStream.ts (pure helpers)
+                            #   rate.ts, pluck.ts, value.ts, geo.ts, resolveStream.ts (pure helpers)
+  clouds/                   # Clouds tab: React chrome (CloudsTab/CloudsList/useCloudLoader) over a
+                            #   VENDORED framework-free point-cloud viewer core (vendor/ — see
+                            #   vendor/VENDORED.md for provenance/deltas/re-sync). Lazy-loaded:
+                            #   three.js ships in its own chunk, downloaded on first tab visit.
   transport/
     types.ts                # Transport interface (the UI codes against this, never zenoh-ts)
     zenohRemoteApi.ts       # impl: zenoh-ts over the remote-api WebSocket (get: payload/attachment/timeout)

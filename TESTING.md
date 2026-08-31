@@ -47,7 +47,19 @@ Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus d
    `ros2 topic pub -w 0 -r 5 /dash_test std_msgs/msg/String "{data: hello}"` → topic appears in the
    graph, click → `data: "hello"` at ~5 Hz. (Camera `image_raw*` topics are image_transport-gated —
    they publish only with a matching *ROS* subscriber, so "no data yet" there is expected.)
-5. **Bus debug** → **Liveliness** shows the raw keyspace: the rmw_zenoh graph tokens + the
+5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` onto the tab (drops on
+   other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists the
+   vehicle's `/clouds/` files. Orbit/color/size/ortho/view controls; switching tabs and back keeps
+   the loaded cloud (no re-parse). `?cloud=<url>` deep-loads one.
+6. **Map widget** (`type: map` on Home): with an internet-connected browser the OSM default shows
+   tiles (fetched by the BROWSER — the vehicle serves nothing); marker + trail appear on the first
+   fix from the configured topic and "waiting for fix…" before it. Offline operator PC: serve a
+   z/x/y tile tree locally (`python3 -m http.server 8000` → `tiles: http://localhost:8000/...`).
+   Tab away/back must re-render the map full-size (no gray half-tiles). Panning pauses follow;
+   ⌖ resumes.
+7. **Tabs config**: `tabs: { debug: false }` removes the tab and `#/debug` falls back to the first
+   visible tab.
+8. **Bus debug** → **Liveliness** shows the raw keyspace: the rmw_zenoh graph tokens + the
    `fleet/.../media/...` discovery token. The data-subscription box can sample any keyexpr; its
    **attachment** column decodes each sample's rmw attachment (`rmw ✓ seq N` = the service-call
    wire format is confirmed against live traffic; `⚠` = the attachment layout assumption is wrong).

@@ -1,10 +1,12 @@
 # vehicle-dashboard
 
 Vehicle operator dashboard — a *vehicle-served*, tabbed web app: a config-driven **Home** tab
-(status pills, ROS2 service buttons, live video, topic readouts — laid out per project from the
-instance config YAML), a **Cameras** console (WebRTC), a **ROS** explorer (graph + live decode),
-and a raw **Bus debug** tab. Runs as an optional sidecar next to the vehicle's rmw_zenoh router;
-one generic service — projects customize only their instance YAML.
+(status pills, ROS2 service buttons, live video, position map, topic readouts/panels — laid out
+per project from the instance config YAML), a **Cameras** console (WebRTC), a **ROS** explorer
+(graph + live decode), a **Clouds** point-cloud viewer (vendored from
+github.com/christomaszewski/cloud-viewer, lazy-loaded), and a raw **Bus debug** tab. Tabs are
+per-project switchable from the same YAML (`tabs:`). Runs as an optional sidecar next to the
+vehicle's rmw_zenoh router; one generic service — projects customize only their instance YAML.
 
 - Transport: browser `zenoh-ts` → `remote-api` (the `dashboard-zenoh` sidecar, a Zenoh **client**
   of the rmw_zenoh router). Bundle served by `dashboard-web` (Caddy), which also serves the
