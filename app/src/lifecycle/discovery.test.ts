@@ -91,6 +91,12 @@ describe("LifecycleDiscovery", () => {
     expect(latest()).toHaveLength(0);
   });
 
+  it("rejects a descriptor whose instance does not match the key segment", async () => {
+    const { publish, latest } = await start();
+    publish("fleet/veh1/svc/cam1/lifecycle/state", { ...INACTIVE, instance: "cam0" });
+    expect(latest()).toHaveLength(0);
+  });
+
   it("token DELETE → offline, removed after the grace; a re-PUT inside it revives", async () => {
     const { token, latest } = await start(15_000);
     token({ keyexpr: KEY, alive: true });

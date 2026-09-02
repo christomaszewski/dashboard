@@ -18,21 +18,46 @@ describe("parseLifecycleKey", () => {
 });
 
 describe("parseLifecycleDescriptor", () => {
+  // The landed LIFECYCLE.md example, verbatim in shape.
   const good = {
     schema_version: 1,
     service: "camera-service",
     instance: "cam0",
     state: "active",
     transitions: ["deactivate"],
-    since_unix_s: 1_700_000_000,
+    since_unix_s: 1756700000.0,
     boot_reason: "config",
-    recording: { prefix: "fake-20260901-120000", frames: 1234, encoder: "ffv1", segment_seconds: 30 },
-    health: { publish_drops: 0, stalled: false },
+    recording_enabled: true,
+    health: {
+      frames: 12345,
+      source_gaps: 0,
+      frames_missing: 0,
+      enqueue_failures: 0,
+      publish_drops: 0,
+      pts_rebases: 0,
+      stalled: false,
+      reconnecting: false,
+    },
+    recording: {
+      index: 2,
+      prefix: "cam-20260901-120000",
+      output_dir: "/data/runs/42/recordings/front-left",
+      started_unix_s: 1756700000.0,
+      frames: 1234,
+      segments: 3,
+      skipped_awaiting_keyframe: 0,
+      encoder: "hw-hevc-lossless",
+      segment_seconds: 60,
+      error: null,
+    },
     last_error: null,
   };
 
-  it("accepts the contract's descriptor", () => {
-    expect(parseLifecycleDescriptor(enc(good))).toMatchObject({ instance: "cam0", state: "active", transitions: ["deactivate"] });
+  it("accepts the contract's descriptor and keeps the service-specific fields", () => {
+    const d = parseLifecycleDescriptor(enc(good));
+    expect(d).toMatchObject({ instance: "cam0", state: "active", transitions: ["deactivate"], recording_enabled: true });
+    expect(d?.recording).toMatchObject({ index: 2, segments: 3, encoder: "hw-hevc-lossless" });
+    expect(d?.health).toMatchObject({ frames: 12345, reconnecting: false });
   });
 
   it("rejects missing/invalid REQUIRED fields and bad JSON", () => {

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { useTransportContext } from "../transport/TransportContext";
-import { changeState, LifecycleError } from "./changeState";
+import { changeState, LifecycleError, type ChangeStateResult } from "./changeState";
 import type { LifecycleService } from "./types";
 
 type Phase =
@@ -8,9 +8,10 @@ type Phase =
   | { kind: "confirm"; transition: string }
   | { kind: "calling"; transition: string }
   | { kind: "ok"; summary: string }
+  | { kind: "warn"; summary: string } // ok:true but a finalize reported trouble
   | { kind: "err"; message: string };
 
-const FLASH_MS = 5000;
+const FLASH_MS = 6000;
 
 const STATE_LEVEL: Record<string, string> = {
   active: "ok",
@@ -31,6 +32,20 @@ function since(unixS: number | undefined): string {
   if (s < 60) return `${s}s`;
   if (s < 3600) return `${Math.floor(s / 60)}m`;
   return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
+}
+
+/** One line for the result flash: state, idempotency, and the closed-session summary on deactivate. */
+function summarize(transition: string, r: ChangeStateResult): string {
+  const parts = [`${transition}: ${r.state ?? "ok"}${r.noop ? " (already)" : ""}`];
+  const s = r.session;
+  if (s) {
+    const files = Array.isArray(s.files) ? s.files.length : undefined;
+    if (files !== undefined) parts.push(`${files} file${files === 1 ? "" : "s"} finalized`);
+    if (typeof s.frames === "number") parts.push(`${s.frames.toLocaleString()} frames`);
+    if (s.truncated) parts.push("TRUNCATED");
+  }
+  if (r.error) parts.push(`— ${r.error}`);
+  return parts.join(" · ");
 }
 
 /**
@@ -75,8 +90,9 @@ export function LifecycleCard({
     setPhase({ kind: "calling", transition });
     try {
       const r = await changeState(transport, service.key, transition, { runId });
-      if (r.ok) flash({ kind: "ok", summary: `${transition}: ${r.state ?? "ok"}${r.noop ? " (already)" : ""}` });
-      else flash({ kind: "err", message: `${transition} refused: ${r.error ?? "no reason given"}` });
+      if (!r.ok) flash({ kind: "err", message: `${transition} refused: ${r.error ?? "no reason given"}` });
+      else if (r.error || r.session?.truncated) flash({ kind: "warn", summary: summarize(transition, r) });
+      else flash({ kind: "ok", summary: summarize(transition, r) });
     } catch (e) {
       const message = e instanceof LifecycleError ? `${e.kind}: ${e.message}` : String(e);
       flash({ kind: "err", message });
@@ -113,6 +129,8 @@ export function LifecycleCard({
   const feedback =
     phase.kind === "ok" ? (
       <span className="dim mono lifecycle-feedback">{phase.summary}</span>
+    ) : phase.kind === "warn" ? (
+      <span className="mono lifecycle-feedback is-warn">⚠ {phase.summary}</span>
     ) : phase.kind === "err" ? (
       <span className="mono lifecycle-feedback is-err">{phase.message}</span>
     ) : d.last_error ? (
@@ -131,7 +149,13 @@ export function LifecycleCard({
   }
 
   const rec = d.recording;
-  const health = d.health;
+  const health = d.health ?? undefined;
+  const healthCounters = health
+    ? Object.entries(health)
+        .filter(([k, v]) => typeof v === "number" && k !== "frames")
+        .map(([k, v]) => `${k} ${String(v)}`)
+        .join(" · ")
+    : "";
   return (
     <div className="widget-card lifecycle-card">
       <span className="widget-label">
@@ -142,6 +166,11 @@ export function LifecycleCard({
         <span className={`pill ${level}`}>{pillText}</span>
         {d.since_unix_s !== undefined && <span className="dim mono">for {since(d.since_unix_s)}</span>}
         {d.boot_reason && <span className="chip info">{d.boot_reason}</span>}
+        {d.recording_enabled === false && (
+          <span className="chip warn" title="recording.enabled: false in the sensor config — activate will be refused">
+            recording disabled
+          </span>
+        )}
       </div>
       {rec && (
         <dl className="lifecycle-detail mono">
@@ -154,19 +183,26 @@ export function LifecycleCard({
           {rec.frames !== undefined && (
             <>
               <dt>frames</dt>
-              <dd>{rec.frames.toLocaleString()}</dd>
+              <dd>
+                {rec.frames.toLocaleString()}
+                {rec.segments !== undefined ? ` · ${rec.segments} segment${rec.segments === 1 ? "" : "s"}` : ""}
+                {rec.skipped_awaiting_keyframe ? ` · ${rec.skipped_awaiting_keyframe} skipped (keyframe wait)` : ""}
+              </dd>
             </>
           )}
           {rec.encoder && (
             <>
               <dt>encoder</dt>
-              <dd>{rec.encoder}</dd>
+              <dd>
+                {rec.encoder}
+                {rec.segment_seconds !== undefined ? ` · ${rec.segment_seconds} s segments` : ""}
+              </dd>
             </>
           )}
-          {rec.segment_seconds !== undefined && (
+          {rec.error && (
             <>
-              <dt>segment</dt>
-              <dd>{rec.segment_seconds} s</dd>
+              <dt className="is-err">error</dt>
+              <dd className="is-err">{rec.error}</dd>
             </>
           )}
         </dl>
@@ -174,10 +210,9 @@ export function LifecycleCard({
       {health && (
         <span className="dim mono lifecycle-health">
           {health.stalled ? <span className="chip warn">stalled</span> : null}
-          {Object.entries(health)
-            .filter(([k, v]) => k !== "stalled" && typeof v === "number")
-            .map(([k, v]) => `${k} ${String(v)}`)
-            .join(" · ")}
+          {health.reconnecting ? <span className="chip warn">reconnecting</span> : null}
+          {typeof health.frames === "number" ? `${health.frames.toLocaleString()} frames` : ""}
+          {healthCounters ? ` · ${healthCounters}` : ""}
         </span>
       )}
       <div className="lifecycle-actions">{buttons}</div>

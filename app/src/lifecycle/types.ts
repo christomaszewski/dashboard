@@ -1,5 +1,4 @@
-// The service-lifecycle control plane (camera-service docs/LIFECYCLE.md is the source of truth —
-// the contract agreed for the zenoh control plane, §2.1 of its implementation plan):
+// The service-lifecycle control plane — camera-service docs/LIFECYCLE.md is the source of truth:
 //
 //   fleet/<vehicle_id>/svc/<instance>/lifecycle               liveliness token + queryable → descriptor
 //   fleet/<vehicle_id>/svc/<instance>/lifecycle/change_state  queryable: {transition, run_id?} → reply
@@ -8,30 +7,51 @@
 // Generic by design: any service (ROS 2 or not) may implement these keys; state/transition names
 // mirror ROS 2 lifecycle (inactive/active, activate/deactivate). <instance> is the same segment the
 // media key uses (CAM_INSTANCE), so a camera's stream and its recorder control line up by name.
+// Only schema_version/service/instance/state/transitions are REQUIRED; the rest is per-service
+// (the camera-service fields are typed below, everything else passes through).
 
 export const LIFECYCLE_PATTERN = "fleet/*/svc/*/lifecycle";
 export const LIFECYCLE_STATE_PATTERN = "fleet/*/svc/*/lifecycle/state";
 
+/** camera-service: the open recording session (present while active). */
 export interface LifecycleRecording {
+  index?: number;
   prefix?: string;
   output_dir?: string;
+  started_unix_s?: number;
+  frames?: number;
+  segments?: number;
+  skipped_awaiting_keyframe?: number;
   encoder?: string;
   segment_seconds?: number;
+  error?: string | null;
+}
+
+/** camera-service: process-lifetime link/drop counters + flags. */
+export interface LifecycleHealth {
   frames?: number;
-  started_unix_s?: number;
+  source_gaps?: number;
+  frames_missing?: number;
+  enqueue_failures?: number;
+  publish_drops?: number;
+  pts_rebases?: number;
+  stalled?: boolean;
+  reconnecting?: boolean;
+  [key: string]: unknown;
 }
 
 export interface LifecycleDescriptor {
   schema_version: number;
   service: string; // e.g. "camera-service"
-  instance: string;
-  state: string; // inactive | active | activating | deactivating (mirrors ROS 2 lifecycle)
-  transitions: string[]; // accepted NOW (e.g. ["activate"] while inactive)
+  instance: string; // MUST equal the key's <instance> segment
+  state: string; // inactive | activating | active | deactivating
+  transitions: string[]; // what change_state accepts RIGHT NOW
   since_unix_s?: number;
   boot_reason?: string; // config | derived | resumed
-  recording?: LifecycleRecording; // present while active
-  health?: Record<string, unknown> & { stalled?: boolean };
-  last_error?: string | null;
+  recording_enabled?: boolean; // camera-service: can it ever be activated
+  health?: LifecycleHealth | null;
+  recording?: LifecycleRecording;
+  last_error?: string | null; // the last refusal / session error, until the next clean transition
 }
 
 export interface LifecycleService {

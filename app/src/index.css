@@ -1225,3 +1225,11 @@ ul.plain {
   padding: 0.22rem 0.6rem;
   font-size: 0.72rem;
 }
+
+.lifecycle-feedback.is-warn {
+  color: var(--warn);
+}
+
+.lifecycle-detail .is-err {
+  color: var(--err);
+}

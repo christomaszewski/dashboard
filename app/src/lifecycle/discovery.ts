@@ -79,6 +79,8 @@ export class LifecycleDiscovery {
     const parsed = parseLifecycleKey(key);
     const descriptor = parseLifecycleDescriptor(payload);
     if (!parsed || !descriptor) return; // malformed → skip
+    // Contract: `instance` MUST equal the key's <instance> segment (the probe rejects a mismatch too).
+    if (descriptor.instance !== parsed.instance) return;
     this.services.set(key, { key, ...parsed, descriptor, alive: true });
     emit();
   }

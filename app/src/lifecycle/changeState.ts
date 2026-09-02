@@ -5,12 +5,24 @@ import { parseLifecycleDescriptor, type LifecycleDescriptor } from "./types";
  *  ≤10 s worst case), so the contract asks clients for a ≥15 s query timeout. */
 export const CHANGE_STATE_TIMEOUT_MS = 20_000;
 
+/** camera-service, on deactivate: the closed session (files, frames, truncated, csv/json paths). */
+export interface ClosedSession {
+  files?: string[];
+  frames?: number;
+  truncated?: boolean;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
 export interface ChangeStateResult {
   ok: boolean;
+  /** The state AFTER the request. */
   state?: string;
+  /** Present iff the state already matched (idempotent re-assert). */
   noop?: boolean;
-  /** Set on ok:false — a refusal (e.g. "recording disabled by config"), never a zenoh error. */
+  /** Present iff ok is false — OR a finalize reported trouble alongside ok:true (surface it!). */
   error?: string;
+  session?: ClosedSession;
   descriptor?: LifecycleDescriptor;
   rttMs: number;
 }
@@ -47,6 +59,8 @@ export function parseChangeStateReply(bytes: Uint8Array): Omit<ChangeStateResult
     if (typeof r.state === "string") out.state = r.state;
     if (typeof r.noop === "boolean") out.noop = r.noop;
     if (typeof r.error === "string") out.error = r.error;
+    if (typeof r.session === "object" && r.session !== null && !Array.isArray(r.session))
+      out.session = r.session as ClosedSession;
     if (r.descriptor !== undefined) {
       const d = parseLifecycleDescriptor(new TextEncoder().encode(JSON.stringify(r.descriptor)));
       if (d) out.descriptor = d;

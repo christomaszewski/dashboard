@@ -55,6 +55,25 @@ describe("changeState", () => {
     expect(result).toMatchObject({ ok: true, state: "active", descriptor: { instance: "cam0" } });
   });
 
+  it("carries the closed-session summary and an ok:true finalize warning through", async () => {
+    const { transport } = stubTransport(() => [
+      {
+        keyexpr: KEY,
+        payload: enc({
+          ok: true,
+          state: "inactive",
+          error: "sidecar join timed out",
+          session: { files: ["a-00000.mkv", "a-00001.mkv"], frames: 500, truncated: true, csv: "a.csv" },
+        }),
+      },
+    ]);
+    const result = await changeState(transport, KEY, "deactivate");
+    expect(result.ok).toBe(true);
+    expect(result.error).toMatch(/sidecar/);
+    expect(result.session).toMatchObject({ frames: 500, truncated: true });
+    expect(result.session?.files).toHaveLength(2);
+  });
+
   it("passes contract refusals through as ok:false, not errors", async () => {
     const { transport } = stubTransport(() => [{ keyexpr: KEY, payload: enc({ ok: false, state: "inactive", error: "recording disabled by config" }) }]);
     const result = await changeState(transport, KEY, "activate");
