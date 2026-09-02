@@ -37,9 +37,16 @@ src/
                             #   (all tab panels stay MOUNTED; inactive ones hidden with CSS only)
   config/                   # runtime instance config: schema.ts (parse/validate the home: block),
                             #   load.ts (GET /config/dashboard.yaml), ConfigContext
-  home/                     # config-driven Home tab: HomeTab (incl. grid-area layout), DefaultHome,
-                            #   widgets/ (status, service_button, video, topic_value, map, panel +
-                            #   error card/boundary; `compact` renders panel rows),
+  widgets/                  # the widget REGISTRY: registry.ts (spec + component per type — the one
+                            #   door built-ins and extensions share), parse.ts (YAML accessors),
+                            #   builtins.tsx (attaches built-in components), sdk.ts (the stable
+                            #   surface extensions import)
+  extensions/               # project widgets — index.ts registers them; example/CompassWidget.tsx;
+                            #   README.md = "writing a widget"
+  home/                     # config-driven Home tab: HomeTab (grid-area layout, registry-rendered),
+                            #   DefaultHome, widgets/specs.ts (built-in specs, pure), widgets/
+                            #   (status, service_button, video, topic_value, map, lifecycle, panel;
+                            #   primitives/: gauge, sparkline, indicator, text + rules.ts/series.ts),
                             #   rate.ts, pluck.ts, value.ts, geo.ts, resolveStream.ts (pure helpers)
   lifecycle/                # service lifecycle control plane (camera-service recording standby/active):
                             #   types.ts (keys + descriptor contract), discovery.ts (liveliness +

@@ -145,6 +145,50 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #       # attribution:           # set automatically for the OSM default
 #       # span: 2                # (map default 2)
 #
+#     # -- gauge: arc gauge for a numeric field -------------------------------------------------
+#     - type: gauge
+#       label: Battery
+#       topic: /battery_state
+#       field: percentage
+#       max: 100               # required
+#       # min: 0
+#       # unit: "%"
+#       # precision: 0
+#       # warn_below: 30 / err_below: 15 / warn_above / err_above   (arc color)
+#
+#     # -- sparkline: recent history of a numeric field ----------------------------------------
+#     - type: sparkline
+#       label: Speed
+#       topic: /odom
+#       field: twist.twist.linear.x
+#       # window_s: 60         # history kept
+#       # min: 0 / max: 5      # fixed y-range (autoscaled when omitted)
+#       # unit: m/s
+#       # precision: 1
+#       # warn_above: 4 ...    # colors the line + value
+#
+#     # -- indicator: value -> colored state pill via rules ------------------------------------
+#     # First rule whose conditions all hold wins (conditions: equals, not_equals, below, above,
+#     # between: [lo, hi], in: [..], matches: <regex>); level: ok | warn | err | idle; `text`
+#     # replaces the raw value. `default` applies when nothing matches (else idle).
+#     - type: indicator
+#       label: Armed
+#       topic: /mavros/state
+#       field: armed
+#       rules:
+#         - { equals: true,  level: ok,   text: ARMED }
+#         - { equals: false, level: idle, text: disarmed }
+#       # default: { level: warn, text: "?" }
+#
+#     # -- text: static operator notes ---------------------------------------------------------
+#     - type: text
+#       label: Radio
+#       text: |
+#         Ops channel 7. Call the tower before any lift.
+#
+#     # -- custom widgets: projects can add their own types (React, compiled into the image) ---
+#     # See app/src/extensions/README.md — the shipped example is `type: example_compass`.
+#
 #     # -- topic_value: live single-field readout -----------------------------------------------
 #     - type: topic_value
 #       label: Battery

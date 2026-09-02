@@ -14,7 +14,11 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 - ROS2 service calls run over the same bus as zenoh queries (rmw_zenoh wire format), with dynamic
   type resolution via each node's `~/get_type_description` — vendor srv types need no bundling.
 - Home widget schema: the commented `home:` block in
-  [config/infra/dashboard.example.yaml](config/infra/dashboard.example.yaml).
+  [config/infra/dashboard.example.yaml](config/infra/dashboard.example.yaml) — status pills,
+  service buttons, video, map, lifecycle control, readouts, gauges, sparklines, rule-driven
+  indicators, notes, grouped panels. Projects can add their own widget types in React
+  ([app/src/extensions/README.md](app/src/extensions/README.md)) — compiled into the image,
+  registered through the same registry as the built-ins.
 - Deploy/architecture details + security rationale: [deploy/README.md](deploy/README.md).
 
 ## Run standalone (on the vehicle)
