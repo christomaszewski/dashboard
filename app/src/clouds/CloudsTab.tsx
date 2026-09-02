@@ -1,7 +1,13 @@
-import { useEffect, useRef, useState, type DragEvent } from "react";
-import { PointCloudViewer, type ColorSpec, type ViewPreset } from "./vendor/core/PointCloudViewer";
+import { useCallback, useEffect, useRef, useState, type DragEvent, type KeyboardEvent } from "react";
+import {
+  PointCloudViewer,
+  type BlendMode,
+  type ColorScale,
+  type ColorSpec,
+  type ViewPreset,
+} from "./vendor/core/PointCloudViewer";
 import { BASEMAPS, type BasemapId } from "./vendor/core/BasemapLayer";
-import type { ColormapName } from "./vendor/core/colormaps";
+import { colormapData, type ColormapName } from "./vendor/core/colormaps";
 import { supportedExtensions } from "./vendor/loaders";
 import { useCloudLoader } from "./useCloudLoader";
 import { CloudsList } from "./CloudsList";
@@ -17,6 +23,9 @@ const VIEW_PRESETS: { view: ViewPreset; label: string; title: string }[] = [
 
 const EXTS = supportedExtensions().map((e) => `.${e}`);
 
+/** Legend numbers with a precision that suits the scale's span. */
+const fmt = (v: number, span: number) => v.toFixed(span >= 1000 ? 0 : span >= 100 ? 1 : 2);
+
 /**
  * Point-cloud viewer tab: React chrome over the vendored framework-free viewer core (see
  * vendor/VENDORED.md). Drag & drop is scoped to THIS tab's root — dropping a file on other tabs
@@ -31,6 +40,12 @@ export default function CloudsTab() {
 
   const [colorValue, setColorValue] = useState("height"); // "height" | "attr:<name>" | "flat"
   const [colormap, setColormap] = useState<ColormapName>("viridis");
+  const [alphaValue, setAlphaValue] = useState("none"); // "none" | "attr:<name>"
+  const [alphaFloor, setAlphaFloor] = useState(0.1);
+  const [blend, setBlend] = useState<BlendMode>("normal");
+  const [opacity, setOpacity] = useState(1);
+  const [edl, setEdl] = useState(true);
+  const [edlStrength, setEdlStrength] = useState(1);
   const [pointSize, setPointSize] = useState(2);
   const [attenuate, setAttenuate] = useState(true);
   const [ortho, setOrtho] = useState(false);
@@ -39,6 +54,15 @@ export default function CloudsTab() {
   const [basemapError, setBasemapError] = useState("");
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
+
+  // The active color scale (pull API on the viewer) mirrored into state for the legend. `nonce`
+  // forces the legend's uncontrolled number inputs to re-init after a rejected edit.
+  const [scale, setScale] = useState<ColorScale | null>(null);
+  const [nonce, setNonce] = useState(0);
+  const legendRef = useRef<HTMLCanvasElement>(null);
+  const minRef = useRef<HTMLInputElement>(null);
+  const maxRef = useRef<HTMLInputElement>(null);
+  const refreshScale = useCallback(() => setScale(viewerRef.current?.getColorScale() ?? null), []);
 
   // Viewer lifetime == tab mount (the Shell keeps this tab mounted once visited).
   useEffect(() => {
@@ -61,12 +85,13 @@ export default function CloudsTab() {
 
   const cloud = state.phase === "ready" ? state.cloud : null;
 
-  // New cloud → hand to the viewer, reset color to height (matches upstream behavior).
+  // New cloud → hand to the viewer; color and alpha reset (matches upstream), the rest persists.
   useEffect(() => {
     if (!cloud || !viewerRef.current) return;
     viewerRef.current.setPointCloud(cloud);
     setColorValue("height");
     setColormap("viridis");
+    setAlphaValue("none");
     setBasemapError("");
   }, [cloud]);
 
@@ -78,7 +103,19 @@ export default function CloudsTab() {
     else if (colorValue === "flat") spec = { mode: "flat" };
     else spec = { mode: "attribute", name: colorValue.slice("attr:".length) };
     viewerRef.current.setColor(spec, colormap);
-  }, [cloud, colorValue, colormap]);
+    refreshScale();
+  }, [cloud, colorValue, colormap, refreshScale]);
+  useEffect(() => {
+    if (!cloud || !viewerRef.current) return;
+    const on = alphaValue.startsWith("attr:");
+    viewerRef.current.setAlpha(
+      on ? { mode: "attribute", name: alphaValue.slice("attr:".length), floor: alphaFloor } : { mode: "none" },
+    );
+  }, [cloud, alphaValue, alphaFloor]);
+  useEffect(() => viewerRef.current?.setOpacity(opacity), [opacity]);
+  useEffect(() => viewerRef.current?.setBlending(blend), [blend]);
+  useEffect(() => viewerRef.current?.setEdl(edl), [edl]);
+  useEffect(() => viewerRef.current?.setEdlStrength(edlStrength), [edlStrength]);
   useEffect(() => viewerRef.current?.setPointSize(pointSize), [pointSize]);
   useEffect(() => viewerRef.current?.setAttenuation(attenuate), [attenuate]);
   useEffect(() => viewerRef.current?.setProjection(ortho ? "orthographic" : "perspective"), [ortho]);
@@ -101,12 +138,36 @@ export default function CloudsTab() {
     }
   }, [cloud, basemap]);
 
+  // Legend ramp: bake the gamma in so the bar shows the mapping as applied.
+  useEffect(() => {
+    const ctx = legendRef.current?.getContext("2d");
+    if (!ctx || !scale) return;
+    const src = colormapData(scale.map);
+    const img = ctx.createImageData(256, 1);
+    for (let i = 0; i < 256; i++) {
+      const j = Math.round(Math.pow(i / 255, scale.gamma) * 255) * 4;
+      img.data.set(src.subarray(j, j + 4), i * 4);
+    }
+    ctx.putImageData(img, 0, 0);
+  }, [scale]);
+
   const onColorChange = (value: string) => {
     // Auto-pick the classification palette for classification-ish attributes.
     const name = value.startsWith("attr:") ? value.slice(5) : "";
     if (/class/i.test(name)) setColormap("classification");
     else if (colormap === "classification") setColormap("viridis");
     setColorValue(value);
+  };
+
+  const applyRange = () => {
+    const lo = parseFloat(minRef.current?.value ?? "");
+    const hi = parseFloat(maxRef.current?.value ?? "");
+    if (Number.isFinite(lo) && Number.isFinite(hi) && lo < hi) viewerRef.current?.setColorRange([lo, hi]);
+    refreshScale();
+    setNonce((n) => n + 1); // also reverts a rejected edit
+  };
+  const onRangeKey = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") e.currentTarget.blur(); // blur commits via onBlur
   };
 
   // Tab-scoped drag & drop.
@@ -126,7 +187,10 @@ export default function CloudsTab() {
   };
 
   const canBasemap = cloud !== null && (viewerRef.current?.canShowBasemap() ?? false);
+  const alphaOn = alphaValue.startsWith("attr:");
   const dims = (cloud?.source.dimensions as string[] | undefined)?.join(", ") ?? "";
+  const showLegend = cloud !== null && scale !== null && scale.map !== "classification";
+  const span = scale ? scale.max - scale.min : 0;
 
   return (
     <section
@@ -152,6 +216,7 @@ export default function CloudsTab() {
             e.target.value = "";
           }}
         />
+        <span className="clouds-sep" />
         <label className="clouds-control">
           color
           <select className="field" value={colorValue} disabled={!cloud} onChange={(e) => onColorChange(e.target.value)}>
@@ -178,6 +243,77 @@ export default function CloudsTab() {
             <option value="classification">classification</option>
           </select>
         </label>
+        <label className="clouds-control" title="per-point opacity from an attribute — intensity brings out surface texture">
+          alpha
+          <select className="field" value={alphaValue} disabled={!cloud} onChange={(e) => setAlphaValue(e.target.value)}>
+            <option value="none">None</option>
+            {cloud?.attributes.map((a) => (
+              <option key={a.name} value={`attr:${a.name}`}>
+                {a.name}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="clouds-control" title="opacity of the weakest points — raise it so they don't vanish">
+          min
+          <input
+            type="range"
+            min={0}
+            max={1}
+            step={0.05}
+            value={alphaFloor}
+            disabled={!alphaOn}
+            onChange={(e) => setAlphaFloor(parseFloat(e.target.value))}
+          />
+        </label>
+        <label
+          className="clouds-control"
+          title="Normal: dim by alpha, near points still occlude. Translucent: see-through. Additive: sums contributions, dense areas glow"
+        >
+          blend
+          <select
+            className="field"
+            value={blend}
+            disabled={!(alphaOn || opacity < 1)}
+            onChange={(e) => setBlend(e.target.value as BlendMode)}
+          >
+            <option value="normal">Normal</option>
+            <option value="translucent">Translucent</option>
+            <option value="additive">Additive</option>
+          </select>
+        </label>
+        <label className="clouds-control" title="whole-cloud opacity — also the exposure control for additive blending">
+          opacity
+          <input
+            type="range"
+            min={0.05}
+            max={1}
+            step={0.05}
+            value={opacity}
+            onChange={(e) => setOpacity(parseFloat(e.target.value))}
+          />
+        </label>
+        <span className="clouds-sep" />
+        <label
+          className="clouds-check"
+          title="eye-dome lighting — shades depth edges so unlit lidar reads as surfaces (translucent/additive blends aren't shaded)"
+        >
+          <input type="checkbox" checked={edl} onChange={(e) => setEdl(e.target.checked)} />
+          EDL
+        </label>
+        <label className="clouds-control" title="EDL strength">
+          strength
+          <input
+            type="range"
+            min={0.1}
+            max={3}
+            step={0.1}
+            value={edlStrength}
+            disabled={!edl}
+            onChange={(e) => setEdlStrength(parseFloat(e.target.value))}
+          />
+        </label>
+        <span className="clouds-sep" />
         <label className="clouds-control" title="point size (px)">
           size
           <input
@@ -201,6 +337,7 @@ export default function CloudsTab() {
           <input type="checkbox" checked={grid} onChange={(e) => setGrid(e.target.checked)} />
           Grid
         </label>
+        <span className="clouds-sep" />
         <label className="clouds-control" title="georeferenced basemap (tiles fetched by this browser)">
           base
           <select
@@ -244,6 +381,63 @@ export default function CloudsTab() {
         {dragging && (
           <div className="clouds-overlay clouds-drop">
             <span>Drop to load</span>
+          </div>
+        )}
+        {showLegend && scale && (
+          <div className="clouds-legend">
+            <div className="clouds-legend-row">
+              <span className="clouds-legend-name">{scale.label}</span>
+              <input
+                key={`min-${scale.label}-${scale.min}-${nonce}`}
+                ref={minRef}
+                className="field clouds-legend-num"
+                type="number"
+                step="any"
+                defaultValue={fmt(scale.min, span)}
+                title="scale minimum — edit to clamp the color range"
+                onBlur={applyRange}
+                onKeyDown={onRangeKey}
+              />
+              <canvas ref={legendRef} className="clouds-legend-bar" width={256} height={1} />
+              <input
+                key={`max-${scale.label}-${scale.max}-${nonce}`}
+                ref={maxRef}
+                className="field clouds-legend-num"
+                type="number"
+                step="any"
+                defaultValue={fmt(scale.max, span)}
+                title="scale maximum — edit to clamp the color range"
+                onBlur={applyRange}
+                onKeyDown={onRangeKey}
+              />
+              {!scale.auto && (
+                <button
+                  className="btn-link"
+                  title="back to the automatic 2–98% percentile range"
+                  onClick={() => {
+                    viewerRef.current?.setColorRange(null);
+                    refreshScale();
+                  }}
+                >
+                  auto
+                </button>
+              )}
+            </div>
+            <label className="clouds-legend-row" title="gamma — below 1 lifts dark values (skewed intensity usually wants ~0.5)">
+              γ
+              <input
+                type="range"
+                min={-2}
+                max={2}
+                step={0.05}
+                value={Math.log2(scale.gamma)}
+                onChange={(e) => {
+                  viewerRef.current?.setColorGamma(2 ** parseFloat(e.target.value));
+                  refreshScale();
+                }}
+              />
+              <span className="clouds-legend-gamma mono">{scale.gamma.toFixed(2)}</span>
+            </label>
           </div>
         )}
         {basemap !== "none" && canBasemap && (

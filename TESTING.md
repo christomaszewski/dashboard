@@ -49,7 +49,7 @@ Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus d
    they publish only with a matching *ROS* subscriber, so "no data yet" there is expected.)
 5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` onto the tab (drops on
    other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists the
-   vehicle's `/clouds/` files. Orbit/color/size/ortho/view controls; switching tabs and back keeps
+   vehicle's `/clouds/` files. Orbit/color (+legend: editable range, auto, γ)/alpha+blend/opacity/EDL/size/ortho/view controls; switching tabs and back keeps
    the loaded cloud (no re-parse). `?cloud=<url>` deep-loads one.
 6. **Map widget** (`type: map` on Home): with an internet-connected browser the OSM default shows
    tiles (fetched by the BROWSER — the vehicle serves nothing); marker + trail appear on the first
