@@ -194,6 +194,27 @@ describe("map widget", () => {
   });
 });
 
+describe("lifecycle widget", () => {
+  it("parses as a home widget and as a panel item", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "lifecycle", label: "Front cam recorder", service: "cam0", confirm: true, run_id: "survey" },
+        { type: "panel", title: "Recorders", items: [{ type: "lifecycle", service: "veh1/cam1" }] },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { type: "lifecycle", service: "cam0", confirm: true, run_id: "survey" } });
+    const panel = home.widgets[1];
+    if (!panel.ok || panel.widget.type !== "panel") throw new Error("expected a panel");
+    expect(panel.widget.items[0]).toMatchObject({ ok: true, item: { type: "lifecycle", service: "veh1/cam1" } });
+  });
+
+  it("requires service", () => {
+    const home = parseHome({ widgets: [{ type: "lifecycle", label: "x" }] });
+    expect(home.widgets[0].ok).toBe(false);
+    if (!home.widgets[0].ok) expect(home.widgets[0].message).toMatch(/'service' is required/);
+  });
+});
+
 describe("parseLayout", () => {
   it("accepts a valid areas grid + matching columns", () => {
     const { layout, warning } = parseLayout({

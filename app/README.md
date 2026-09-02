@@ -41,6 +41,11 @@ src/
                             #   widgets/ (status, service_button, video, topic_value, map, panel +
                             #   error card/boundary; `compact` renders panel rows),
                             #   rate.ts, pluck.ts, value.ts, geo.ts, resolveStream.ts (pure helpers)
+  lifecycle/                # service lifecycle control plane (camera-service recording standby/active):
+                            #   types.ts (keys + descriptor contract), discovery.ts (liveliness +
+                            #   descriptor get + state publications), changeState.ts (change_state
+                            #   query client), LifecycleContext/useLifecycle, LifecycleCard (+compact),
+                            #   LifecycleServicesCard (zero-config card on the Cameras tab)
   clouds/                   # Clouds tab: React chrome (CloudsTab/CloudsList/useCloudLoader) over a
                             #   VENDORED framework-free point-cloud viewer core (vendor/ — see
                             #   vendor/VENDORED.md for provenance/deltas/re-sync). Lazy-loaded:

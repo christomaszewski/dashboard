@@ -92,8 +92,23 @@ export interface MapWidgetConfig {
   area?: string;
 }
 
+export interface LifecycleWidgetConfig {
+  type: "lifecycle";
+  label?: string;
+  /** Service instance (`cam0`) or vehicle-qualified (`veh1/cam0`) — fleet/<v>/svc/<instance>/lifecycle. */
+  service: string;
+  confirm?: boolean; // two-step click before a transition
+  run_id?: string; // passed with activate (recording run prefix suffix)
+  span?: WidgetSpan;
+  area?: string;
+}
+
 /** Widget types allowed inside a panel (no video, no map, no nested panels). */
-export type PanelItemWidgetConfig = StatusWidgetConfig | ServiceButtonWidgetConfig | TopicValueWidgetConfig;
+export type PanelItemWidgetConfig =
+  | StatusWidgetConfig
+  | ServiceButtonWidgetConfig
+  | TopicValueWidgetConfig
+  | LifecycleWidgetConfig;
 
 export type ParsedPanelItem =
   | { ok: true; item: PanelItemWidgetConfig }
@@ -115,6 +130,7 @@ export type WidgetConfig =
   | VideoWidgetConfig
   | TopicValueWidgetConfig
   | MapWidgetConfig
+  | LifecycleWidgetConfig
   | PanelWidgetConfig;
 
 export type ParsedWidget =
@@ -270,7 +286,7 @@ export function parseLayout(value: unknown): { layout?: HomeLayout; warning?: st
 
 // ---- panel items ------------------------------------------------------------------------------
 
-const PANEL_ITEM_TYPES = "status | service_button | topic_value, or a readout with 'field'";
+const PANEL_ITEM_TYPES = "status | service_button | topic_value | lifecycle, or a readout with 'field'";
 
 function parsePanelItem(raw: unknown, index: number, panelTopic: string | undefined): ParsedPanelItem {
   const fail = (message: string): ParsedPanelItem => ({ ok: false, index, message: `items[${index}]: ${message}` });
@@ -278,7 +294,7 @@ function parsePanelItem(raw: unknown, index: number, panelTopic: string | undefi
   const type = optStr(raw, "type");
   if (type === "panel") return fail("nested panels are not supported");
   if (type === "video") return fail(`'video' is not allowed inside a panel (${PANEL_ITEM_TYPES})`);
-  if (type === "status" || type === "service_button" || type === "topic_value") {
+  if (type === "status" || type === "service_button" || type === "topic_value" || type === "lifecycle") {
     // Full widget configs are full: a typed topic_value item does NOT inherit the panel topic.
     try {
       return { ok: true, item: parseWidget(raw) as PanelItemWidgetConfig };
@@ -390,6 +406,16 @@ function parseWidget(raw: unknown): WidgetConfig {
         area: optStr(raw, "area"),
       };
     }
+    case "lifecycle":
+      return {
+        type,
+        label: optStr(raw, "label"),
+        service: reqStr(raw, "service"),
+        confirm: optBool(raw, "confirm"),
+        run_id: optStr(raw, "run_id"),
+        span: optSpan(raw),
+        area: optStr(raw, "area"),
+      };
     case "panel": {
       const rawItems = raw["items"];
       if (!Array.isArray(rawItems)) throw new Error("'items' is required and must be a list");
@@ -407,8 +433,8 @@ function parseWidget(raw: unknown): WidgetConfig {
     default:
       throw new Error(
         type === undefined
-          ? "'type' is required (status | service_button | video | topic_value | map | panel)"
-          : `unknown widget type '${type}' (status | service_button | video | topic_value | map | panel)`,
+          ? "'type' is required (status | service_button | video | topic_value | map | lifecycle | panel)"
+          : `unknown widget type '${type}' (status | service_button | video | topic_value | map | lifecycle | panel)`,
       );
   }
 }

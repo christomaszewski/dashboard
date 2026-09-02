@@ -3,6 +3,7 @@ import { remoteApiLocator } from "./transport/locator";
 import { TransportProvider } from "./transport/TransportContext";
 import { StreamsProvider } from "./streams/StreamsContext";
 import { RosGraphProvider } from "./ros/RosGraphContext";
+import { LifecycleProvider } from "./lifecycle/LifecycleContext";
 import { Shell } from "./shell/Shell";
 
 function ConnectedApp() {
@@ -17,7 +18,9 @@ function ConnectedApp() {
     <TransportProvider locator={remoteApiLocator(wsPort)}>
       <StreamsProvider>
         <RosGraphProvider>
-          <Shell title={title} tabs={tabs} />
+          <LifecycleProvider>
+            <Shell title={title} tabs={tabs} />
+          </LifecycleProvider>
         </RosGraphProvider>
       </StreamsProvider>
     </TransportProvider>

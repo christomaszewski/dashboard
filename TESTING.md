@@ -99,6 +99,27 @@ Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus d
    playback → no renegotiation events. Producer restart → tile goes offline → auto-resumes. Freeze
    the producer (SIGSTOP) → recovery within ~15 s of unfreeze.
 
+## Lifecycle control plane (camera-service recording — on-vehicle acceptance)
+
+Needs a camera-service core with the zenoh control plane (`feat/zenoh-control-plane`, PR 2 —
+`control.enabled: true`, same router or a scoutable peer). Contract: camera-service
+`docs/LIFECYCLE.md`.
+1. **Discovery**: the core's token appears in Bus debug liveliness as
+   `fleet/<vehicle>/svc/<instance>/lifecycle`; the Cameras tab grows a **Recording control** card
+   with that instance, its state pill (`inactive`/`active`), boot reason chip, and a button per
+   accepted transition. No config needed. A `type: lifecycle` home widget (`service: <instance>`)
+   shows the same card wherever it is placed; `not advertised` until the token lands.
+2. **activate** → button reads `calling…` until the reply (sub-second) → pill `active`, the
+   recording run prefix/encoder/frames appear (frames climb via the `…/state` publications, which
+   also update every other open dashboard). A `run_id` in the widget config shows up in the prefix.
+3. **deactivate** → `calling…` for the file finalization (≤5 s, ≤10 s worst case; the client
+   timeout is 20 s) → `inactive`; the files are finalized on the vehicle.
+4. **Refusal path**: `recording.enabled: false` in the sensor YAML → activate flashes
+   `activate refused: recording disabled by config` (an `ok:false` reply, not an error).
+5. **Concurrent control**: `docker kill -s USR1 <core>` from a shell → the dashboard pill flips
+   without any click (state publication). Kill the core → pill shows `… · offline`, card survives
+   the 15 s grace, and a restart resumes the last commanded state (`resumed` chip).
+
 ## Fast UI iteration (no rebuild)
 
 Point the Vite dev server at the vehicle's sidecar:

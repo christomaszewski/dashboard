@@ -8,6 +8,7 @@ import { ServiceButtonWidget } from "./widgets/ServiceButtonWidget";
 import { VideoWidget } from "./widgets/VideoWidget";
 import { TopicValueWidget } from "./widgets/TopicValueWidget";
 import { MapWidget } from "./widgets/MapWidget";
+import { LifecycleWidget } from "./widgets/LifecycleWidget";
 import { PanelWidget } from "./widgets/PanelWidget";
 import { WidgetErrorCard } from "./widgets/WidgetErrorCard";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
@@ -24,6 +25,8 @@ function renderWidget(widget: WidgetConfig) {
       return <TopicValueWidget widget={widget} />;
     case "map":
       return <MapWidget widget={widget} />;
+    case "lifecycle":
+      return <LifecycleWidget widget={widget} />;
     case "panel":
       return <PanelWidget widget={widget} />;
   }
@@ -38,6 +41,7 @@ function spanClass(widget: WidgetConfig): string {
 function widgetLabel(w: WidgetConfig): string | undefined {
   if (w.type === "panel") return w.title ?? "panel";
   if (w.type === "map") return w.label ?? w.topic;
+  if (w.type === "lifecycle") return w.label ?? w.service;
   return "label" in w ? w.label : w.stream;
 }
 

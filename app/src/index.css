@@ -1152,3 +1152,76 @@ ul.plain {
   font-size: 0.72rem;
   cursor: pointer;
 }
+
+/* ---- lifecycle control (recording standby/active) ------------------------------------------- */
+
+.lifecycle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.8rem;
+}
+
+.lifecycle-card {
+  gap: 0.5rem;
+}
+
+.lifecycle-vehicle {
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.lifecycle-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+
+.lifecycle-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.7rem;
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.lifecycle-detail dt {
+  color: var(--text-faint);
+}
+
+.lifecycle-detail dd {
+  margin: 0;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+}
+
+.lifecycle-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.lifecycle-feedback {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-feedback.is-err {
+  color: var(--err);
+}
+
+.lifecycle-row {
+  flex-wrap: wrap;
+}
+
+.lifecycle-row .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}

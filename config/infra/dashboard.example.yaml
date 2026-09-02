@@ -114,6 +114,18 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #           label: Re-init
 #           service: /gnss/reset
 #
+#     # -- lifecycle: standby/active control of a service (camera-service recording) --------------
+#     # Drives the zenoh lifecycle control plane (camera-service docs/LIFECYCLE.md):
+#     #   fleet/<vehicle>/svc/<instance>/lifecycle{,/change_state,/state}. Shows the live state,
+#     # the current recording run + health, and one button per transition the service accepts
+#     # right now. The Cameras tab also lists every advertised service with no config at all.
+#     # Also allowed as a panel item (compact row).
+#     - type: lifecycle
+#       label: Front cam recorder
+#       service: cam0            # <instance> (the CAM_INSTANCE segment) or <vehicle>/<instance>
+#       # confirm: true          # two-step click before a transition
+#       # run_id: survey         # sent with activate -> recording run prefix suffix
+#
 #     # -- map: live vehicle position -----------------------------------------------------------
 #     # Marker + breadcrumb trail from a NavSatFix-style topic. TILES ARE FETCHED BY THE VIEWING
 #     # BROWSER, never the vehicle: the OSM default just works on an internet-connected operator
