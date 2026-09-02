@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseDashboardConfig, parseHome, parseLayout, parseTabs } from "./schema";
+import { isPanelWidget, parseDashboardConfig, parseHome, parseLayout, parseTabs } from "./schema";
 
 const FULL = `
 service: dashboard
@@ -188,9 +188,9 @@ describe("map widget", () => {
   it("is not allowed inside a panel", () => {
     const home = parseHome({ widgets: [{ type: "panel", items: [{ type: "map", topic: "/f" }] }] });
     const pw = home.widgets[0];
-    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    if (!pw.ok || !isPanelWidget(pw.widget)) throw new Error("expected a panel");
     expect(pw.widget.items[0].ok).toBe(false);
-    if (!pw.widget.items[0].ok) expect(pw.widget.items[0].message).toMatch(/unknown item type 'map'/);
+    if (!pw.widget.items[0].ok) expect(pw.widget.items[0].message).toMatch(/'map' is not allowed inside a panel/);
   });
 });
 
@@ -204,7 +204,7 @@ describe("lifecycle widget", () => {
     });
     expect(home.widgets[0]).toMatchObject({ ok: true, widget: { type: "lifecycle", service: "cam0", confirm: true, run_id: "survey" } });
     const panel = home.widgets[1];
-    if (!panel.ok || panel.widget.type !== "panel") throw new Error("expected a panel");
+    if (!panel.ok || !isPanelWidget(panel.widget)) throw new Error("expected a panel");
     expect(panel.widget.items[0]).toMatchObject({ ok: true, item: { type: "lifecycle", service: "veh1/cam1" } });
   });
 
@@ -212,6 +212,73 @@ describe("lifecycle widget", () => {
     const home = parseHome({ widgets: [{ type: "lifecycle", label: "x" }] });
     expect(home.widgets[0].ok).toBe(false);
     if (!home.widgets[0].ok) expect(home.widgets[0].message).toMatch(/'service' is required/);
+  });
+});
+
+describe("declarative primitives", () => {
+  it("gauge: min defaults to 0, max is required and must exceed min", () => {
+    const ok = parseHome({ widgets: [{ type: "gauge", label: "Batt", topic: "/b", field: "percentage", max: 100, unit: "%" }] });
+    expect(ok.widgets[0]).toMatchObject({ ok: true, widget: { type: "gauge", min: 0, max: 100, unit: "%" } });
+    const noMax = parseHome({ widgets: [{ type: "gauge", label: "B", topic: "/b", field: "f" }] });
+    if (!noMax.widgets[0].ok) expect(noMax.widgets[0].message).toMatch(/'max' is required/);
+    const inverted = parseHome({ widgets: [{ type: "gauge", label: "B", topic: "/b", field: "f", min: 10, max: 5 }] });
+    if (!inverted.widgets[0].ok) expect(inverted.widgets[0].message).toMatch(/'max' must be greater than 'min'/);
+    expect(noMax.widgets[0].ok).toBe(false);
+    expect(inverted.widgets[0].ok).toBe(false);
+  });
+
+  it("sparkline: optional window/range with sanity checks", () => {
+    const ok = parseHome({ widgets: [{ type: "sparkline", label: "Spd", topic: "/odom", field: "twist.twist.linear.x", window_s: 30, min: 0, max: 5 }] });
+    expect(ok.widgets[0]).toMatchObject({ ok: true, widget: { type: "sparkline", window_s: 30, min: 0, max: 5 } });
+    const bad = parseHome({ widgets: [{ type: "sparkline", label: "S", topic: "/o", field: "f", window_s: 0 }] });
+    expect(bad.widgets[0].ok).toBe(false);
+  });
+
+  it("indicator: rules are validated per rule, default is optional", () => {
+    const ok = parseHome({
+      widgets: [
+        {
+          type: "indicator",
+          label: "Armed",
+          topic: "/mavros/state",
+          field: "armed",
+          rules: [
+            { equals: true, level: "ok", text: "ARMED" },
+            { equals: false, level: "idle", text: "disarmed" },
+          ],
+          default: { level: "warn", text: "?" },
+        },
+      ],
+    });
+    expect(ok.widgets[0]).toMatchObject({ ok: true, widget: { type: "indicator", rules: [{ equals: true, level: "ok" }, { equals: false }], default: { level: "warn", text: "?" } } });
+    const badRule = parseHome({ widgets: [{ type: "indicator", label: "A", topic: "/t", field: "f", rules: [{ equals: 1 }] }] });
+    if (!badRule.widgets[0].ok) expect(badRule.widgets[0].message).toMatch(/rules\[0\]: 'level' must be one of/);
+    const noRules = parseHome({ widgets: [{ type: "indicator", label: "A", topic: "/t", field: "f" }] });
+    if (!noRules.widgets[0].ok) expect(noRules.widgets[0].message).toMatch(/'rules' is required/);
+    expect(badRule.widgets[0].ok).toBe(false);
+    expect(noRules.widgets[0].ok).toBe(false);
+  });
+
+  it("text: requires text; all four primitives are panel-capable", () => {
+    const home = parseHome({
+      widgets: [
+        {
+          type: "panel",
+          items: [
+            { type: "text", text: "Radio ch 7" },
+            { type: "gauge", label: "B", topic: "/b", field: "f", max: 1 },
+            { type: "sparkline", label: "S", topic: "/o", field: "f" },
+            { type: "indicator", label: "I", topic: "/t", field: "f", rules: [{ above: 0, level: "ok" }] },
+          ],
+        },
+        { type: "text" },
+      ],
+    });
+    const panel = home.widgets[0];
+    if (!panel.ok || !isPanelWidget(panel.widget)) throw new Error("expected a panel");
+    expect(panel.widget.items.every((i) => i.ok)).toBe(true);
+    expect(home.widgets[1].ok).toBe(false);
+    if (!home.widgets[1].ok) expect(home.widgets[1].message).toMatch(/'text' is required/);
   });
 });
 
@@ -328,7 +395,7 @@ describe("panel widget", () => {
     });
     const pw = home.widgets[0];
     expect(pw.ok).toBe(true);
-    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    if (!pw.ok || !isPanelWidget(pw.widget)) throw new Error("expected a panel");
     const items = pw.widget.items;
     expect(items.every((i) => i.ok)).toBe(true);
     expect(items[0]).toMatchObject({
@@ -359,7 +426,7 @@ describe("panel widget", () => {
       ],
     });
     const pw = home.widgets[0];
-    if (!pw.ok || pw.widget.type !== "panel") throw new Error("expected a panel");
+    if (!pw.ok || !isPanelWidget(pw.widget)) throw new Error("expected a panel");
     const [ok, nested, video, dial, nofield, notopic, typed] = pw.widget.items;
     expect(ok.ok).toBe(true);
     if (!nested.ok) expect(nested.message).toMatch(/nested panels are not supported/);

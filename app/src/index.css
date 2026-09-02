@@ -1233,3 +1233,167 @@ ul.plain {
 .lifecycle-detail .is-err {
   color: var(--err);
 }
+
+/* ---- declarative primitives: gauge / sparkline / indicator / text ---------------------------- */
+
+.widget-gauge {
+  align-items: center;
+}
+
+.gauge-svg {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+}
+
+.gauge-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.gauge-value {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.gauge-value.warn {
+  stroke: var(--warn);
+}
+
+.gauge-value.err {
+  stroke: var(--err);
+}
+
+.gauge-value.idle {
+  stroke: var(--text-faint);
+}
+
+.gauge-text {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 650;
+  fill: var(--text);
+}
+
+.gauge-text.warn {
+  fill: var(--warn);
+}
+
+.gauge-text.err {
+  fill: var(--err);
+}
+
+.gauge-unit {
+  font-size: 7px;
+  fill: var(--text-dim);
+}
+
+.gauge-bound {
+  font-family: var(--mono);
+  font-size: 6.5px;
+  fill: var(--text-faint);
+}
+
+.gauge-bar {
+  flex: 1;
+  height: 6px;
+  min-width: 50px;
+  max-width: 120px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.25s;
+}
+
+.gauge-bar-fill.warn {
+  background: var(--warn);
+}
+
+.gauge-bar-fill.err {
+  background: var(--err);
+}
+
+.gauge-bar-fill.idle {
+  background: var(--text-faint);
+}
+
+.widget-sparkline {
+  gap: 0.35rem;
+}
+
+.sparkline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.6rem;
+}
+
+.sparkline-range {
+  font-size: 0.68rem;
+}
+
+.sparkline-chart {
+  width: 100%;
+  height: 60px;
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sparkline-svg path {
+  stroke: var(--accent);
+  stroke-width: 1.5px;
+}
+
+.sparkline-svg.warn path {
+  stroke: var(--warn);
+}
+
+.sparkline-svg.err path {
+  stroke: var(--err);
+}
+
+.sparkline-row {
+  flex: 1;
+  height: 20px;
+  min-width: 60px;
+  max-width: 120px;
+}
+
+.indicator-pill {
+  font-size: 0.95rem;
+  padding: 0.35rem 0.8rem;
+}
+
+.widget-text {
+  margin: 0;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.text-row {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

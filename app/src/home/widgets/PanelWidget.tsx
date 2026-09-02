@@ -1,31 +1,25 @@
 import type { PanelItemWidgetConfig, PanelWidgetConfig } from "../../config/schema";
-import { StatusWidget } from "./StatusWidget";
-import { ServiceButtonWidget } from "./ServiceButtonWidget";
-import { TopicValueWidget } from "./TopicValueWidget";
-import { LifecycleWidget } from "./LifecycleWidget";
+import { getWidget } from "../../widgets/registry";
+import { WidgetErrorCard } from "./WidgetErrorCard";
 import { WidgetErrorBoundary } from "./WidgetErrorBoundary";
 
 function PanelItem({ item }: { item: PanelItemWidgetConfig }) {
-  switch (item.type) {
-    case "status":
-      return <StatusWidget widget={item} compact />;
-    case "service_button":
-      return <ServiceButtonWidget widget={item} compact />;
-    case "topic_value":
-      return <TopicValueWidget widget={item} compact />;
-    case "lifecycle":
-      return <LifecycleWidget widget={item} compact />;
+  const def = getWidget(item.type);
+  if (!def?.component) {
+    return <WidgetErrorCard compact title={item.label ?? item.type} message={`no renderer registered for '${item.type}'`} />;
   }
+  const Component = def.component;
+  return <Component widget={item} compact />;
 }
 
 function itemLabel(item: PanelItemWidgetConfig): string | undefined {
-  return item.type === "lifecycle" ? (item.label ?? item.service) : item.label;
+  return getWidget(item.type)?.label?.(item) ?? item.label ?? item.type;
 }
 
 /**
  * Grouped mini-widgets in one card: readout rows (topic dedup happens in the TopicStore — a
- * six-readout single-topic panel costs one zenoh sub), status pills, service buttons, lifecycle
- * controls. A bad or crashing item is one red row; its siblings render.
+ * six-readout single-topic panel costs one zenoh sub), and any panel-capable widget rendered
+ * `compact`. A bad or crashing item is one red row; its siblings render.
  */
 export function PanelWidget({ widget }: { widget: PanelWidgetConfig }) {
   return (

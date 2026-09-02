@@ -1,48 +1,31 @@
 import type { CSSProperties } from "react";
 import { useConfig } from "../config/ConfigContext";
 import type { HomeLayout, ParsedWidget, WidgetConfig } from "../config/schema";
+import { getWidget } from "../widgets/registry";
 import type { TabId } from "../shell/useHashRoute";
 import { DefaultHome } from "./DefaultHome";
-import { StatusWidget } from "./widgets/StatusWidget";
-import { ServiceButtonWidget } from "./widgets/ServiceButtonWidget";
-import { VideoWidget } from "./widgets/VideoWidget";
-import { TopicValueWidget } from "./widgets/TopicValueWidget";
-import { MapWidget } from "./widgets/MapWidget";
-import { LifecycleWidget } from "./widgets/LifecycleWidget";
-import { PanelWidget } from "./widgets/PanelWidget";
 import { WidgetErrorCard } from "./widgets/WidgetErrorCard";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
 
+/** Render through the registry — a spec without a component (or an unregistered type that somehow
+ *  parsed) degrades to an inline error card like any other widget failure. */
 function renderWidget(widget: WidgetConfig) {
-  switch (widget.type) {
-    case "status":
-      return <StatusWidget widget={widget} />;
-    case "service_button":
-      return <ServiceButtonWidget widget={widget} />;
-    case "video":
-      return <VideoWidget widget={widget} />;
-    case "topic_value":
-      return <TopicValueWidget widget={widget} />;
-    case "map":
-      return <MapWidget widget={widget} />;
-    case "lifecycle":
-      return <LifecycleWidget widget={widget} />;
-    case "panel":
-      return <PanelWidget widget={widget} />;
+  const def = getWidget(widget.type);
+  if (!def?.component) {
+    return <WidgetErrorCard title={widget.label ?? widget.type} message={`no renderer registered for widget type '${widget.type}'`} />;
   }
+  const Component = def.component;
+  return <Component widget={widget} />;
 }
 
 function spanClass(widget: WidgetConfig): string {
   if (widget.area) return ""; // the area defines the exact cells; span is ignored
-  const span = widget.span ?? (widget.type === "video" || widget.type === "map" ? 2 : 1);
+  const span = widget.span ?? getWidget(widget.type)?.defaultSpan ?? 1;
   return span === "full" ? " span-full" : span === 2 ? " span-2" : "";
 }
 
 function widgetLabel(w: WidgetConfig): string | undefined {
-  if (w.type === "panel") return w.title ?? "panel";
-  if (w.type === "map") return w.label ?? w.topic;
-  if (w.type === "lifecycle") return w.label ?? w.service;
-  return "label" in w ? w.label : w.stream;
+  return getWidget(w.type)?.label?.(w) ?? w.label ?? w.type;
 }
 
 /**
