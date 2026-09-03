@@ -12,3 +12,7 @@ app/dist/
 
 # Claude Code dev-server launch config (machine-specific vehicle IP)
 .claude/launch.json
+
+# python (agent/)
+__pycache__/
+*.pyc
