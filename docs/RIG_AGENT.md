@@ -25,7 +25,7 @@ segment every other `fleet/<vid>/…` key uses (rig exports it as `VEHICLE_ID`).
 
 ```
 fleet/<vid>/rig               liveliness token + queryable → descriptor
-fleet/<vid>/rig/state         publisher (on change + heartbeat) + queryable → state snapshot
+fleet/<vid>/rig/state         publisher (on change + a 2×poll_s heartbeat) + queryable → state snapshot
 fleet/<vid>/rig/runs          queryable → run registry rows
 fleet/<vid>/rig/run/<run_id>  queryable (wildcard-declared) → one run: its manifest as JSON
 fleet/<vid>/rig/jobs          queryable → recent job records, the running one first
@@ -77,7 +77,8 @@ or the filesystem; **no queryable ever blocks on docker or rig**.
 ## State snapshot (`…/rig/state`)
 
 Published on every change (a stack's compose state, the open run, a job transition) and as a
-heartbeat every 60 s; the same document answers a cold `get`.
+heartbeat every 2 poll periods (so a consumer flagging staleness at 3× `poll_s` tolerates one
+missed beat); the same document answers a cold `get`.
 
 ```jsonc
 {

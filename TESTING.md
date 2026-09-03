@@ -149,10 +149,19 @@ descriptor with `rig_version` = the tree's; every vehicle.yaml row in the state 
 `new-run bench1` → `queued` then `succeeded` events with `result.opened` = the new id, `runs` showing
 it `OPEN`, `run/<id>` returning its manifest, a `state` publication carrying `run`; a second submit
 while it runs → `busy`; `end-run` → `result.sealed`, `runs` showing `sealed`. Then the browser: the
-dashboard's own sidecar (`docker compose -f deploy/docker-compose.yml build dashboard-zenoh`, run
-with host networking so `tcp/localhost:7447` reaches the native agent) + `npm run dev` with
-`VITE_REMOTE_API_LOCATOR=ws/localhost:10000` and `rig_agent: true` in
-`app/public/config/dashboard.yaml` → the Rig tab.
+dashboard's own sidecar (`docker compose -f deploy/docker-compose.yml build dashboard-zenoh`). Docker
+Desktop's `--network host` is NOT effective on the Mac, so run it in bridge mode pointed at the host:
+```sh
+echo '{ mode: "client", connect: { endpoints: ["tcp/host.docker.internal:7447"] }, scouting: { multicast: { enabled: false } } }' > /tmp/zenohd-bench.json5
+docker run -d --name dash-zenoh-bench -p 10000:10000 -v /tmp/zenohd-bench.json5:/config/z.json5:ro dashboard-zenoh:local -c /config/z.json5 --ws-port 10000
+```
+then `npm run dev` with `VITE_REMOTE_API_LOCATOR=ws/localhost:10000` and `rig_agent: true` in
+`app/public/config/dashboard.yaml` → the Rig tab shows `advertising`, the six rows, the run card and
+the job history (verified 2026-09-03). The agent IMAGE's rig path is checked the same way without a
+vehicle: `docker build -f deploy/Dockerfile.rig-agent -t dashboard-rig-agent:local .`, then a one-shot
+poll inside the container with the tree identity-mounted and the socket —
+`docker run --rm -v ~/ws:~/ws:ro -v ~/ws/bringup/var:~/ws/bringup/var -v /var/run/docker.sock:/var/run/docker.sock -e RIG_ROOT=~/ws/bringup -e RIG_MOUNT=~/ws -e ZENOH_CONNECT= dashboard-rig-agent:local status`
+(expand `~`) → `"ok": true` with every row (verified 2026-09-03: rig 0.2.46 ran inside the image).
 
 **On the vehicle** (`rig_agent: true` in the dashboard instance YAML, `rig up`):
 1. **Discovery**: Bus debug liveliness shows `fleet/<vid>/rig`; the Rig tab header reads

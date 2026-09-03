@@ -28,7 +28,9 @@ log = logging.getLogger("rig_agent")
 
 STATUS_TIMEOUT_S = 30.0
 VERSION_TIMEOUT_S = 15.0
-HEARTBEAT_S = 60.0
+# Unchanged snapshots are re-published every HEARTBEAT_POLLS poll periods: consumers flag a
+# snapshot older than 3 poll periods as stale, so one missed heartbeat is still fresh.
+HEARTBEAT_POLLS = 2
 REGISTRY_TICK_S = 2.0
 DISK_TICK_S = 30.0
 SUPERVISE_TICK_S = 1.0
@@ -270,7 +272,7 @@ class RigAgent:
     def _maybe_publish_state(self, now: float) -> None:
         with self._lock:
             state = self.state
-        if snap.state_changed(self._published, state) or now - self._last_publish >= HEARTBEAT_S:
+        if snap.state_changed(self._published, state) or now - self._last_publish >= HEARTBEAT_POLLS * self.cfg.poll_s:
             self._publish_state()
 
     def _publish_state(self) -> None:

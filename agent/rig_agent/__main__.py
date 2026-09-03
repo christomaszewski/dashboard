@@ -49,8 +49,10 @@ def main(argv=None) -> int:
     if verb == "status":
         agent._read_version()
         agent.poll_once()
-        print(json.dumps(agent.state_doc(), indent=2, default=str))
-        return 0 if agent.state_doc().get("ok") else 1
+        doc = agent.state_doc()
+        agent.close()   # the zenoh session's threads are not daemons — an open session never exits
+        print(json.dumps(doc, indent=2, default=str))
+        return 0 if doc.get("ok") else 1
     if verb != "serve":
         print(__doc__.strip(), file=sys.stderr)
         return 2
