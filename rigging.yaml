@@ -27,7 +27,7 @@ external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar 
 build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
   command: tools/build-images.sh
   arch: arm64                       # plain arm64 (also runs on an x86 off-vehicle host)
-  images: [dashboard-zenoh, dashboard-web]   # both built + pushed by build-images.sh
+  images: [dashboard-zenoh, dashboard-web, dashboard-rig-agent]   # all built + pushed by build-images.sh
 
 # (no `mirror:` -- the web layer is now a built image with caddy + the bundle baked in, not a mirrored base)
 
@@ -37,6 +37,8 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - deploy/docker-compose.yml
   - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
   - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)
+  - deploy/docker-compose.rig-agent.yml         # optional rig agent (only when rig_agent: true)
+  - deploy/docker-compose.rig-data.yml          #   + the run registry mounts (when data_dir is known)
   - deploy/zenohd-dashboard.json5
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)

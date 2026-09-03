@@ -13,8 +13,9 @@
 #   dash-up config/infra/dashboard.example.yaml config       # render the merged compose
 #
 # Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY); run `pull` then `up -d`.
-# Both images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, both built by
-# tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE/DASH_WEB_IMAGE) override individually.
+# Images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, plus dashboard-rig-agent
+# when `rig_agent: true` — all built by tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE /
+# DASH_WEB_IMAGE / DASH_AGENT_IMAGE) override individually.
 # Stdout stays clean (status line -> stderr) so `ps --format json` parses.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
@@ -62,6 +63,56 @@ if [ -n "${DASH_CLOUDS_HOST:-}" ]; then
   OVERLAYS+=(-f "$REPO/deploy/docker-compose.clouds.yml")
 fi
 
+# Optional rig agent (Rig tab, docs/RIG_AGENT.md): only when the config set `rig_agent: true`. The
+# agent drives `rig` for the whole deployment, so it needs the deployment TREE at its host path
+# (identity mounts: rig hands docker compose host paths), the docker socket, and — for runs — the
+# registry's data_dir. rig invokes us with a config path INSIDE the tree, so the tree is found by
+# walking up to the nearest vehicle.yaml; `rig_root:` overrides. `rig_mount:` widens the read-only
+# mount (a dev catalog's `../sibling` checkouts); `rig_data_dir:` overrides rig's RIG_DATA_DIR.
+RIG_STATUS=""
+if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
+  RIG_ROOT_HOST="${DASH_RIG_ROOT:-}"
+  if [ -z "$RIG_ROOT_HOST" ]; then
+    d="$(dirname "$CONFIG_ABS")"
+    while [ "$d" != / ] && [ ! -f "$d/vehicle.yaml" ]; do d="$(dirname "$d")"; done
+    [ -f "$d/vehicle.yaml" ] && RIG_ROOT_HOST="$d"
+  fi
+  if [ -z "$RIG_ROOT_HOST" ]; then
+    echo "dash-up: rig_agent: true but no vehicle.yaml above $CONFIG_ABS — set rig_root: (agent skipped)" >&2
+  else
+    case "$RIG_ROOT_HOST" in /*) : ;; *) RIG_ROOT_HOST="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$RIG_ROOT_HOST" ;; esac
+    RIG_ROOT_HOST="$(cd "$RIG_ROOT_HOST" && pwd)"
+    export DASH_RIG_ROOT="$RIG_ROOT_HOST"
+    case "${DASH_RIG_MOUNT:-}" in
+      "") DASH_RIG_MOUNT="$RIG_ROOT_HOST" ;;
+      /*) : ;;
+      *) DASH_RIG_MOUNT="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$DASH_RIG_MOUNT" ;;
+    esac
+    export DASH_RIG_MOUNT="$(cd "$DASH_RIG_MOUNT" && pwd)"
+    local_f="${RIG_VEHICLE_LOCAL:-/etc/rig/vehicle.local.yaml}"
+    [ -f "$local_f" ] && export DASH_RIG_LOCAL="$local_f"
+    # The agent's state dir (job records) lives under the tree's var/ — create it as the OPERATOR
+    # before docker can create it root-owned; on Linux run the agent as this uid so everything rig
+    # writes (var/rendered, run manifests) stays operator-owned.
+    mkdir -p "$RIG_ROOT_HOST/var/dashboard-rig-agent/home"
+    if [ "$(uname -s)" = Linux ] && [ -S /var/run/docker.sock ]; then
+      export DASH_AGENT_USER="${DASH_AGENT_USER:-$(id -u):$(id -g)}"
+      export DASH_DOCKER_GID="${DASH_DOCKER_GID:-$(stat -c %g /var/run/docker.sock)}"
+    fi
+    if [ -n "${DASH_REGISTRY:-}" ]; then
+      export DASH_AGENT_IMAGE="${DASH_AGENT_IMAGE:-$DASH_REGISTRY/dashboard-rig-agent:$TAG}"
+    fi
+    OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-agent.yml")
+    data="${DASH_RIG_DATA:-${RIG_DATA_DIR:-}}"          # rig exports RIG_DATA_DIR to every launcher
+    if [ -n "$data" ]; then
+      case "$data" in /*) : ;; *) data="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$data" ;; esac
+      export DASH_RIG_DATA="$data"
+      OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-data.yml")
+    fi
+    RIG_STATUS=" agent=on root=$RIG_ROOT_HOST${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}"
+  fi
+fi
+
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
-echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY} config=$CONFIG_ABS" >&2
+echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}$RIG_STATUS config=$CONFIG_ABS" >&2
 exec docker compose -f "$COMPOSE" "${OVERLAYS[@]}" "${ARGS[@]}"

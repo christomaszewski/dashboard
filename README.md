@@ -3,7 +3,10 @@
 Vehicle operator dashboard — a *vehicle-served*, tabbed web app: a config-driven **Home** tab
 (status pills, ROS2 service buttons, live video, position map, topic readouts/panels — laid out
 per project from the instance config YAML), a **Cameras** console (WebRTC), a **ROS** explorer
-(graph + live decode), a **Clouds** point-cloud viewer (vendored from
+(graph + live decode), an optional **Rig** tab (the rig deployment: every row's compose/health/
+operational state with standby/activate/up/down, the open run with new-run/end-run, live job
+logs, and a run-registry browser with downloads — backed by the vehicle-side `dashboard-rig-agent`,
+[docs/RIG_AGENT.md](docs/RIG_AGENT.md)), a **Clouds** point-cloud viewer (vendored from
 github.com/christomaszewski/cloud-viewer, lazy-loaded), and a raw **Bus debug** tab. Tabs are
 per-project switchable from the same YAML (`tabs:`). Runs as an optional sidecar next to the
 vehicle's rmw_zenoh router; one generic service — projects customize only their instance YAML.
@@ -19,6 +22,10 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   indicators, notes, grouped panels. Projects can add their own widget types in React
   ([app/src/extensions/README.md](app/src/extensions/README.md)) — compiled into the image,
   registered through the same registry as the built-ins.
+- Rig control: `rig_agent: true` in the instance YAML adds the `dashboard-rig-agent` service
+  ([agent/](agent/README.md)) — rig is a one-shot CLI, this is its daemon half, speaking the
+  generic contract in [docs/RIG_AGENT.md](docs/RIG_AGENT.md) (`fleet/<vid>/rig/…`). Opt-in: it
+  holds the vehicle's docker socket.
 - Deploy/architecture details + security rationale: [deploy/README.md](deploy/README.md).
 
 ## Run standalone (on the vehicle)
@@ -66,6 +73,8 @@ rigging.yaml                # rig descriptor
 config/infra/dashboard.example.yaml
 tools/dash_env.py           # config -> DASH_* env for dash-up
 tools/build-images.sh       # build + push images to the fleet registry
-deploy/                     # the transport spine (compose + config overlay, Caddyfile, sidecar zenoh config)
+deploy/                     # the transport spine (compose + overlays, Caddyfile, sidecar zenoh config, Dockerfiles)
+agent/                      # dashboard-rig-agent (python): the rig deployment over zenoh (docs/RIG_AGENT.md)
+docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is its reference producer)
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```

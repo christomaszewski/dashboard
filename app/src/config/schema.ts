@@ -19,16 +19,22 @@ export type {
   TopicValueWidgetConfig,
   MapWidgetConfig,
   LifecycleWidgetConfig,
+  RigWidgetConfig,
 } from "../home/widgets/specs";
 
 export const HOME_SCHEMA_VERSION = 1;
 
 /** Tab ids — the routing/config vocabulary (useHashRoute imports these; order = display order). */
-export const TAB_IDS = ["home", "cameras", "ros", "clouds", "debug"] as const;
+export const TAB_IDS = ["home", "cameras", "ros", "rig", "clouds", "debug"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
-/** `tabs:` block — per-tab visibility, everything defaulting to shown. Lenient: non-boolean
- *  values and unknown keys are ignored (forward compat). */
+/** Visibility when `tabs:` says nothing. Every tab is shown except Rig, which is useless without
+ *  the vehicle-side agent — `rig_agent: true` (the same YAML) turns it on; `tabs: { rig: … }`
+ *  always wins. Resolved into `tabs` by parseDashboardConfig; the Shell applies it for no-config. */
+export const TAB_DEFAULT_VISIBLE: Record<TabId, boolean> = { home: true, cameras: true, ros: true, rig: false, clouds: true, debug: true };
+
+/** `tabs:` block — per-tab visibility. Lenient: non-boolean values and unknown keys are ignored
+ *  (forward compat). */
 export type TabVisibility = Partial<Record<TabId, boolean>>;
 
 export function parseTabs(value: unknown): TabVisibility | undefined {
@@ -85,6 +91,8 @@ export interface DashboardConfig {
   name?: string;
   web_port?: number;
   ws_port?: number;
+  /** dash-up starts the vehicle-side rig agent (docs/RIG_AGENT.md); shows the Rig tab by default. */
+  rig_agent?: boolean;
   tabs?: TabVisibility;
   home?: ParsedHome;
 }
@@ -301,11 +309,16 @@ export function parseHome(value: unknown): ParsedHome {
 export function parseDashboardConfig(yamlText: string): DashboardConfig {
   const doc: unknown = parseYaml(yamlText);
   if (!isObj(doc)) return {};
+  const rigAgent = doc["rig_agent"] === true || doc["rig_agent"] === "true";
+  const tabs = doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined;
+  const resolvedTabs: TabVisibility | undefined =
+    tabs?.rig !== undefined ? tabs : rigAgent ? { ...(tabs ?? {}), rig: true } : tabs;
   return {
     name: optStr(doc, "name"),
     web_port: optNum(doc, "web_port"),
     ws_port: optNum(doc, "ws_port"),
-    tabs: doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined,
+    rig_agent: rigAgent || undefined,
+    tabs: resolvedTabs,
     home: doc["home"] !== undefined ? parseHome(doc["home"]) : undefined,
   };
 }

@@ -9,9 +9,41 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 |---|---|---|
 | `dashboard-zenoh` | `zenoh-bridge-remote-api` — a Zenoh **client** of the rmw_zenoh router that exposes a WebSocket for the browser's `zenoh-ts` | `:10000` (ws) |
 | `dashboard-web` | Caddy with the React bundle baked in (a built image — `deploy/Dockerfile.web`) | `:8080` (http) |
+| `dashboard-rig-agent` (opt-in) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, the run registry, rig verbs as detached jobs. Only with `rig_agent: true` in the instance YAML (`docker-compose.rig-agent.yml` + `docker-compose.rig-data.yml` overlays). | — (peer on `:7447`) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over
 `ws://<vehicle-ip>:10000`.
+
+## Rig agent (opt-in)
+
+`dash-up` applies the agent overlay when the instance YAML sets `rig_agent: true`. What it mounts
+and why (see the comments in `docker-compose.rig-agent.yml`):
+
+- **Identity mounts.** rig hands `docker compose` the launchers' *host* bind paths and the agent
+  talks to the *host* daemon through `/var/run/docker.sock`, so the deployment tree (and, for dev
+  catalogs with `../sibling` checkouts, the wider `rig_mount:`) is mounted at the **same absolute
+  path** inside the container. The tree is read-only; its `var/` is read-write because rig renders
+  configs and mints its deployment id there on every verb — and the agent keeps its job records
+  under `var/dashboard-rig-agent/` too (no named volume).
+- **Runs as the operator on Linux.** `dash-up` passes `$(id -u):$(id -g)` and the docker socket's
+  group, so run manifests and rendered configs stay operator-owned (a root-owned
+  `var/rendered/*.yaml` would break the operator's next `rig up`). `mkdir -p <root>/var/…` runs
+  as the operator before compose can create it as root.
+- **Detached jobs.** A verb like `down --end-run` removes the agent's own container mid-verb, so
+  jobs run as sibling `docker run` containers from the agent's image with **no compose labels**
+  (`compose down` cannot see them); they finish, seal the run, and write their record themselves.
+- **`/rig-data/`.** When a `data_dir` is known (`rig_data_dir:` or rig's `RIG_DATA_DIR`), the
+  registry is mounted read-write into the agent and read-only into `dashboard-web`, which serves it
+  at `/rig-data/` (JSON listings + downloads) for the run browser.
+- **The rig tree's own `rig_cli/`** is what the agent runs (`PYTHONPATH=<root>`); the image
+  bundles python, PyYAML, the docker CLI + compose plugin and the zenoh binding — no rig.
+
+Security: this is a **new actuation surface** — the socket makes the agent root-equivalent on the
+vehicle and its verbs stop the whole stack. Hence opt-in, a fixed verb whitelist with validated
+arguments (row names must exist, labels are regex-checked, no free-form argv), a read-only mode
+(`rig_actuate: false`), and a `client` tag on every job. A key-scoped sidecar ACL
+(`deny` queries on `fleet/*/rig/jobs/**` in `zenohd-dashboard.json5`) blocks verbs without breaking
+discovery, unlike the general `deny query` warned about below.
 
 ## Run (on the vehicle)
 

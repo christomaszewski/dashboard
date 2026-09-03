@@ -12,14 +12,35 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
                              #   /clouds/ for the Clouds tab (relative paths resolve against this
                              #   config's directory). Omit -> the tab still works via drag & drop.
 
+# ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
+# `rig_agent: true` makes dash-up start a third service, dashboard-rig-agent (docs/RIG_AGENT.md):
+# the deployment's rows with live compose/health/operational state, the open run with new-run /
+# end-run, standby/activate/up/down per row (as jobs), and the run registry browser — all on the
+# Rig tab (shown automatically) and in `type: rig` home widgets. OPT-IN ON PURPOSE: the agent holds
+# the vehicle's docker socket (root-equivalent) and drives `rig` for the whole deployment; the mesh
+# is the trust boundary (deploy/README.md). dash-up finds the deployment tree by walking up from
+# this file to the nearest vehicle.yaml and takes data_dir from rig's RIG_DATA_DIR; override below.
+#
+# rig_agent: true
+# rig_root: /home/uxv/ws/test1     # the deployment tree (default: nearest vehicle.yaml above this file)
+# rig_data_dir: /home/uxv/logs     # the run registry (default: rig's RIG_DATA_DIR); mounted read-only
+#                                  #   into dashboard-web at /rig-data/ for the run browser + downloads
+# rig_mount: /home/uxv/ws          # a WIDER read-only mount when the catalog points at ../sibling
+#                                  #   checkouts (dev workspaces); default: rig_root
+# rig_actuate: false               # read-only agent: no verbs, no buttons (state + runs still shown)
+# rig_poll_s: 10                   # `rig status` cadence
+
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
-# Per-tab visibility; anything omitted is shown. Available: home, cameras, ros, clouds, debug.
-# The Clouds tab is lazy-loaded (its three.js chunk only downloads when opened), so leaving it
-# enabled costs nothing until used. A hidden tab's deep link falls back to the first visible tab.
+# Per-tab visibility. Available: home, cameras, ros, rig, clouds, debug. Everything omitted is shown
+# except `rig`, which follows `rig_agent:` (useless without the agent); an explicit `tabs.rig`
+# always wins. The Clouds tab is lazy-loaded (its three.js chunk only downloads when opened), so
+# leaving it enabled costs nothing until used. A hidden tab's deep link falls back to the first
+# visible tab.
 #
 # tabs:
 #   debug: false      # e.g. hide the bus debugger in operator deployments
 #   clouds: false
+#   rig: true         # force the tab on/off regardless of rig_agent
 
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic
@@ -125,6 +146,21 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #       service: cam0            # <instance> (the CAM_INSTANCE segment) or <vehicle>/<instance>
 #       # confirm: true          # two-step click before a transition
 #       # run_id: survey         # sent with activate -> recording run prefix suffix
+#
+#     # -- rig: the deployment at a glance (needs rig_agent: true) --------------------------------
+#     # The open run (label · age, New run / End run) and one row per vehicle.yaml entry with its
+#     # state pill and buttons: the zenoh lifecycle transitions when the instance advertises one
+#     # (camera-service), else rig's standby/activate for services declaring the trio, plus
+#     # compose up/down. Verbs run as jobs on the vehicle (progress on the Rig tab). Also allowed
+#     # as a panel item (one compact row: run · n/m running).
+#     - type: rig
+#       label: Deployment
+#       # stacks: [cam_front, lidar]   # only these rows (default: every enabled row)
+#       # actions: true          # per-row buttons
+#       # runs: true             # New run / End run controls
+#       # confirm: true          # two-step click before any verb
+#       # use_run_label: true    # lifecycle activate carries the open run's label as run_id
+#       # span: 2                # (rig default 2)
 #
 #     # -- map: live vehicle position -----------------------------------------------------------
 #     # Marker + breadcrumb trail from a NavSatFix-style topic. TILES ARE FETCHED BY THE VIEWING

@@ -4,6 +4,7 @@ import { TransportProvider } from "./transport/TransportContext";
 import { StreamsProvider } from "./streams/StreamsContext";
 import { RosGraphProvider } from "./ros/RosGraphContext";
 import { LifecycleProvider } from "./lifecycle/LifecycleContext";
+import { RigProvider } from "./rig/RigContext";
 import { Shell } from "./shell/Shell";
 
 function ConnectedApp() {
@@ -19,7 +20,9 @@ function ConnectedApp() {
       <StreamsProvider>
         <RosGraphProvider>
           <LifecycleProvider>
-            <Shell title={title} tabs={tabs} />
+            <RigProvider>
+              <Shell title={title} tabs={tabs} />
+            </RigProvider>
           </LifecycleProvider>
         </RosGraphProvider>
       </StreamsProvider>

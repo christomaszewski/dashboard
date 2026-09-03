@@ -1397,3 +1397,303 @@ ul.plain {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* ---- rig tab / widget (deployment control via the vehicle-side rig agent) -------------------- */
+
+.rig-header .card-header {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rig-meta {
+  overflow-wrap: anywhere;
+}
+
+.rig-table td {
+  vertical-align: middle;
+}
+
+.rig-tier-header td {
+  padding: 0.55rem 1.1rem 0.25rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  border-bottom: none;
+  background: var(--surface);
+}
+
+.rig-row-disabled td {
+  opacity: 0.45;
+}
+
+.rig-self {
+  margin-left: 0.5rem;
+}
+
+.rig-containers {
+  font-size: 0.7rem;
+}
+
+.rig-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rig-actions .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.rig-feedback {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.rig-feedback.is-err {
+  color: var(--err);
+}
+
+.rig-feedback.is-warn {
+  color: var(--warn);
+}
+
+.btn.danger {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.btn.danger:hover:not(:disabled),
+.btn.danger.confirm {
+  background: var(--err-dim);
+}
+
+.chip.ok {
+  color: var(--ok);
+  border-color: rgba(74, 222, 128, 0.4);
+  background: var(--ok-dim);
+}
+
+.chip.err {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: var(--err-dim);
+}
+
+.rig-run-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.rig-run-id strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rig-run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.rig-label-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  min-width: 18rem;
+}
+
+.rig-guard {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rig-guard-text {
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.rig-guard-projects {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+}
+
+.rig-run-row,
+.rig-widget-row {
+  flex-wrap: wrap;
+}
+
+.rig-job {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rig-job:last-child {
+  border-bottom: none;
+}
+
+.rig-job-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.rig-job-head .spacer {
+  flex: 1;
+}
+
+.rig-progress {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rig-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+
+.rig-log {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rig-history {
+  margin: 0;
+}
+
+.rig-history details summary,
+.rig-run-detail details summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.rig-runs-table tr.rig-run-tr {
+  cursor: pointer;
+}
+
+.rig-runs-table tr.rig-run-tr:hover td {
+  background: var(--surface);
+}
+
+.rig-runs-table tr.selected td {
+  background: var(--accent-dim);
+}
+
+.rig-run-detail {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rig-run-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.rig-manifest-row {
+  display: contents;
+}
+
+.rig-ups ul {
+  margin: 0.2rem 0 0;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.rig-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.rig-tree {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.74rem;
+}
+
+.rig-tree li {
+  padding: 0.12rem 0;
+}
+
+.rig-tree-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rig-tree-file a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.rig-tree-file a:hover {
+  text-decoration: underline;
+}
+
+.rig-file-size {
+  font-size: 0.68rem;
+}
+
+.rig-sidecar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.rig-tree-note {
+  margin: 0.2rem 0 0 1rem;
+  font-size: 0.72rem;
+}
+
+.widget-rig {
+  gap: 0.45rem;
+}
+
+.rig-widget-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+}

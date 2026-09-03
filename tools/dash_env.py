@@ -4,7 +4,7 @@
 Mirrors gige's sensor_env.py contract: stdout = export lines ONLY; errors -> stderr. Uses PyYAML if
 present, else a minimal TOP-LEVEL-key parser so stock python3 is enough. The fallback must ignore
 nested blocks (the `home:` tab layout): an indented `name:` inside a widget would otherwise clobber
-DASH_NAME. Only the three flat scalars below are read either way.
+DASH_NAME. Only flat top-level scalars are read either way (values are simple tokens — no spaces).
 """
 import sys
 
@@ -32,6 +32,19 @@ def load(path: str) -> dict:
         return data
 
 
+def truthy(value) -> bool:
+    """`true` from PyYAML is a bool; from the fallback parser it is the string 'true'."""
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
+def falsy(value) -> bool:
+    if isinstance(value, bool):
+        return not value
+    return str(value).strip().lower() in ("false", "0", "no", "off")
+
+
 def main() -> None:
     if len(sys.argv) != 2:
         sys.exit("usage: dash_env.py <dashboard-config.yaml>")
@@ -44,6 +57,22 @@ def main() -> None:
     clouds = cfg.get("clouds_dir")
     if isinstance(clouds, str) and clouds:
         print(f"DASH_CLOUDS_HOST={clouds}")
+    # Optional: the rig agent (Rig tab). `rig_agent: true` opts in; dash-up resolves the tree and
+    # data_dir itself (rig_root / rig_data_dir / rig_mount only override that resolution).
+    if "rig_agent" in cfg and truthy(cfg.get("rig_agent")):
+        print("DASH_RIG_AGENT=1")
+    for key, var in (("rig_root", "DASH_RIG_ROOT"), ("rig_data_dir", "DASH_RIG_DATA"), ("rig_mount", "DASH_RIG_MOUNT")):
+        value = cfg.get(key)
+        if isinstance(value, str) and value:
+            print(f"{var}={value}")
+    if "rig_actuate" in cfg and falsy(cfg.get("rig_actuate")):
+        print("DASH_RIG_ACTUATE=0")
+    poll = cfg.get("rig_poll_s")
+    if poll is not None and not isinstance(poll, bool):
+        try:
+            print(f"DASH_RIG_POLL_S={float(poll):g}")
+        except (TypeError, ValueError):
+            print(f"dash_env: rig_poll_s is not a number: {poll!r}", file=sys.stderr)
 
 
 if __name__ == "__main__":

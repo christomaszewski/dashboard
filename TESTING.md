@@ -32,8 +32,9 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 ## Verify (browser on the mesh)
 
-Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus debug, hash-routed —
-`#/ros` deep-links); all tabs stay mounted, so switching never drops video or subscriptions:
+Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Rig / Clouds / Bus debug,
+hash-routed — `#/ros` deep-links; Rig only with `rig_agent: true`); all tabs stay mounted, so
+switching never drops video or subscriptions:
 1. **status: connected** (topbar) — transport reached the sidecar.
 2. **Home** with no config mounted = the built-in default (connection, discovered-stream and graph
    summaries, config hint). With a `home:` block mounted, the configured widgets render — a
@@ -83,7 +84,10 @@ Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Bus d
 - **dash_env.py acceptance** (any config with a `home:` block): run
   `python3 tools/dash_env.py <config>` twice — once normally, once with PyYAML blocked
   (`python3 -c "import sys,builtins; r=builtins.__import__; builtins.__import__=lambda n,*a,**k: (_ for _ in ()).throw(ModuleNotFoundError(n)) if n=='yaml' else r(n,*a,**k); sys.argv=['x','<config>']; exec(open('tools/dash_env.py').read())"`)
-  — the three `DASH_*` lines must be identical and junk-free (nested keys must not leak).
+  — the `DASH_*` lines must be identical and junk-free (nested keys must not leak). With
+  `rig_agent: true` + `rig_root/rig_data_dir/rig_actuate: false/rig_poll_s` set, both runs must also
+  emit `DASH_RIG_AGENT=1`, `DASH_RIG_ROOT`, `DASH_RIG_DATA`, `DASH_RIG_ACTUATE=0`, `DASH_RIG_POLL_S`
+  (verified identical on the bench 2026-09-02).
 
 ## Service calls / shared sessions (on-vehicle acceptance)
 
@@ -119,6 +123,63 @@ Needs a camera-service core with the zenoh control plane (`feat/zenoh-control-pl
 5. **Concurrent control**: `docker kill -s USR1 <core>` from a shell → the dashboard pill flips
    without any click (state publication). Kill the core → pill shows `… · offline`, card survives
    the 15 s grace, and a restart resumes the last commanded state (`resumed` chip).
+
+## Rig control surface (rig agent — bench + on-vehicle acceptance)
+
+Contract: [docs/RIG_AGENT.md](docs/RIG_AGENT.md). Producer: `agent/` (`dashboard-rig-agent`, opt-in
+via `rig_agent: true`). Unit tests: `cd agent && python3 -m unittest -v` (no binding, no docker) and
+the `app/src/rig/*.test.ts` vitest files.
+
+**Bench (verified 2026-09-02 on the Mac, no vehicle):** run the agent natively against a dev tree with
+jobs as child processes and let it stand in for the router (`ZENOH_LISTEN`); a scratch
+`vehicle.local.yaml` supplies a scratch `data_dir` through `RIG_VEHICLE_LOCAL` so nothing in the tree
+changes:
+```sh
+python3 -m venv /tmp/rig-venv && /tmp/rig-venv/bin/pip install -r agent/requirements.txt
+mkdir -p /tmp/rig-data && echo "data_dir: /tmp/rig-data" > /tmp/vehicle.local.yaml
+cd agent && RIG_ROOT=~/ws/bringup RIG_MOUNT=~/ws RIG_DATA_DIR=/tmp/rig-data \
+  RIG_VEHICLE_LOCAL=/tmp/vehicle.local.yaml RIG_AGENT_STATE_DIR=/tmp/rig-agent-state \
+  RIG_AGENT_RUNNER=subprocess ZENOH_CONNECT="" ZENOH_LISTEN=tcp/0.0.0.0:7447 \
+  /tmp/rig-venv/bin/python -m rig_agent serve
+```
+A consumer written from the doc's recipe (`liveliness().get("fleet/*/rig")`, `get` of the
+descriptor / `state` / `runs`, a `submit`, subscribe `jobs/events`) must see: the token; the
+descriptor with `rig_version` = the tree's; every vehicle.yaml row in the state (disabled rows as
+`down`); refusals as `ok:false` (`standby` of a row without the trio, an unknown row, a bad label);
+`new-run bench1` → `queued` then `succeeded` events with `result.opened` = the new id, `runs` showing
+it `OPEN`, `run/<id>` returning its manifest, a `state` publication carrying `run`; a second submit
+while it runs → `busy`; `end-run` → `result.sealed`, `runs` showing `sealed`. Then the browser: the
+dashboard's own sidecar (`docker compose -f deploy/docker-compose.yml build dashboard-zenoh`, run
+with host networking so `tcp/localhost:7447` reaches the native agent) + `npm run dev` with
+`VITE_REMOTE_API_LOCATOR=ws/localhost:10000` and `rig_agent: true` in
+`app/public/config/dashboard.yaml` → the Rig tab.
+
+**On the vehicle** (`rig_agent: true` in the dashboard instance YAML, `rig up`):
+1. **Discovery**: Bus debug liveliness shows `fleet/<vid>/rig`; the Rig tab header reads
+   `advertising`, rig version = the tree's, `root`/`data_dir` as mounted; `docker compose ps` in the
+   dashboard project shows `dashboard-rig-agent` running as the operator's uid (Linux).
+2. **Deployment table** matches `rig status` (compose state + n/m, health, op/lifecycle pill,
+   tier grouping, disabled rows dimmed, the dashboard row marked). `docker kill` a container of
+   some stack → its row flips within one poll (10 s); `docker compose start` it → back.
+3. **Run banner** matches `rig runs`; a shell `rig new-run bench` (with the stacks down, or
+   `--force`) → the banner updates within ~2 s (registry watch, no status poll needed).
+4. **Lifecycle-advertised row** (camera-service): its pill is the lifecycle state and its buttons
+   are `activate`/`deactivate` over zenoh (not agent jobs); `activate` carries the open run's label
+   into the recording prefix (`use_run_label`).
+5. **Trio row** (ouster / jetson-manager): `standby` → a job appears in the Jobs card with the log
+   tail streaming rig's `==>` lines; `op_state` flips to `standby` on the next poll; `activate` back.
+6. **Guard**: `new run…` / `end run (seal)` while stacks run → the refusal shows rig's message
+   verbatim with the blocking projects and the two follow-ups; `force` seals/rotates; `stop
+   everything & seal` asks twice, tears the stack down (the dashboard drops), and after `rig up` the
+   Jobs card shows the terminal record with `result.sealed` (the detached runner survived).
+7. **Run browser**: states match `rig runs`; a selected run shows its manifest, `ups[]`, and — with
+   data_dir mounted — its files: `.rig/logs/<sensor>/*.log`, `recordings/<instance>/*` with the
+   sidecar chips; a download link streams an `.mkv`; `curl -I http://<vehicle>:8080/rig-data/runs/<id>/manifest.yaml` → 200.
+8. **Read-only**: `rig_actuate: false` → no buttons anywhere; a hand-made submit answers
+   `actuation disabled`. **No agent** (`rig_agent` absent): no Rig tab, `type: rig` widgets show
+   `no rig agent`, nothing errors.
+9. **Restart**: kill the agent container mid-job → the tab shows `offline · grace`; after restart the
+   job record is still listed (re-attached or `failed: runner exited while the agent was down`).
 
 ## Fast UI iteration (no rebuild)
 

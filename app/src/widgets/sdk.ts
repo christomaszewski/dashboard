@@ -34,6 +34,13 @@ export { changeState, LifecycleError } from "../lifecycle/changeState";
 export type { ChangeStateResult } from "../lifecycle/changeState";
 export type { LifecycleService, LifecycleDescriptor } from "../lifecycle/types";
 
+// The rig deployment (vehicle-side agent, docs/RIG_AGENT.md): rows, open run, jobs
+export { useRigContext } from "../rig/RigContext";
+export { submitJob, cancelJob, listRuns, getRun, RigError } from "../rig/client";
+export { rowActions, rowPill } from "../rig/actions";
+export type { RowAction } from "../rig/actions";
+export type { RigAgent, RigState, RigStackRow, RigJob, RigJobRequest, RigSubmitReply, RigRunRow } from "../rig/types";
+
 // ROS 2 service calls over zenoh (dynamic typing)
 export { callService, ServiceCallError } from "../services/callService";
 export type { ServiceCallResult, CallServiceOptions } from "../services/callService";

@@ -1,0 +1,43 @@
+# Overlay applied by dash-up ONLY when the instance YAML sets `rig_agent: true`: the vehicle-side rig
+# agent (docs/RIG_AGENT.md) as a third service. Opt-in on purpose — it holds the host's docker socket
+# (root-equivalent on the vehicle) and drives `rig` for the whole deployment.
+#
+# Mount rules (see deploy/README.md):
+#   * IDENTITY mounts — the same absolute path inside the container as on the host — because rig hands
+#     `docker compose` HOST paths (the launchers' bind mounts) and the agent talks to the HOST daemon.
+#   * the deployment tree read-only, but its var/ read-write: rig renders configs and mints its
+#     deployment id there on every verb, and the agent keeps its job records under var/ too.
+#   * run as the invoking user on Linux (dash-up sets DASH_AGENT_USER/DASH_DOCKER_GID) so the files rig
+#     writes stay operator-owned; a detached job container (`docker run`, no compose labels) inherits
+#     the same mounts and uid via the RIG_AGENT_* env.
+services:
+  dashboard-rig-agent:
+    image: ${DASH_AGENT_IMAGE:-dashboard-rig-agent:local}
+    build:
+      context: ..                              # repo root: Dockerfile.rig-agent needs agent/
+      dockerfile: deploy/Dockerfile.rig-agent
+    network_mode: host                         # reach localhost:7447 (router); jobs use host networking too
+    user: "${DASH_AGENT_USER:-0:0}"
+    group_add:
+      - "${DASH_DOCKER_GID:-0}"                # the docker socket's group
+    environment:
+      RIG_ROOT: ${DASH_RIG_ROOT}
+      RIG_MOUNT: ${DASH_RIG_MOUNT}
+      RIG_DATA_DIR: ${DASH_RIG_DATA:-}
+      RIG_VEHICLE_LOCAL: /etc/rig/vehicle.local.yaml
+      RIG_VEHICLE_LOCAL_HOST: ${DASH_RIG_LOCAL:-}
+      ZENOH_CONNECT: ${DASH_ZENOH_CONNECT:-tcp/localhost:7447}
+      RIG_AGENT_IMAGE: ${DASH_AGENT_IMAGE:-dashboard-rig-agent:local}
+      RIG_AGENT_PROJECT: ${COMPOSE_PROJECT_NAME:-dashboard}
+      RIG_AGENT_USER: ${DASH_AGENT_USER:-}
+      RIG_AGENT_GROUPS: ${DASH_DOCKER_GID:-}
+      RIG_AGENT_ACTUATE: ${DASH_RIG_ACTUATE:-1}
+      RIG_AGENT_POLL_S: ${DASH_RIG_POLL_S:-10}
+      RIG_AGENT_LOG: ${DASH_RIG_LOG:-INFO}
+      HOME: ${DASH_RIG_ROOT}/var/dashboard-rig-agent/home
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${DASH_RIG_MOUNT}:${DASH_RIG_MOUNT}:ro
+      - ${DASH_RIG_ROOT}/var:${DASH_RIG_ROOT}/var
+      - ${DASH_RIG_LOCAL:-/dev/null}:/etc/rig/vehicle.local.yaml:ro   # /dev/null when absent (not a file → rig skips it)
+    restart: unless-stopped

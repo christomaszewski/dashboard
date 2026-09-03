@@ -66,6 +66,40 @@ export interface LifecycleWidgetConfig extends BaseWidgetConfig {
   run_id?: string; // passed with activate (recording run prefix suffix)
 }
 
+export interface RigWidgetConfig extends BaseWidgetConfig {
+  type: "rig";
+  /** Only these vehicle.yaml rows (default: every enabled row). */
+  stacks?: string[];
+  /** Show standby/activate/up/down buttons (default true). */
+  actions?: boolean;
+  /** Show New run / End run controls (default true). */
+  runs?: boolean;
+  confirm?: boolean; // two-step click before any verb
+  /** Pass the open run's label as run_id to lifecycle activate (default true). */
+  use_run_label?: boolean;
+}
+
+defineWidget<RigWidgetConfig>({
+  type: "rig",
+  description: "rig deployment summary: open run + per-row state with standby/activate + run controls",
+  panelCapable: true,
+  defaultSpan: 2,
+  label: (w) => w.label ?? "rig",
+  parse: (raw: Obj) => {
+    const stacks = raw["stacks"];
+    if (stacks !== undefined && !(Array.isArray(stacks) && stacks.every((s) => typeof s === "string" && s !== "")))
+      throw new Error("'stacks' must be a list of row names");
+    return {
+      label: optStr(raw, "label"),
+      stacks: stacks as string[] | undefined,
+      actions: optBool(raw, "actions"),
+      runs: optBool(raw, "runs"),
+      confirm: optBool(raw, "confirm"),
+      use_run_label: optBool(raw, "use_run_label"),
+    };
+  },
+});
+
 defineWidget<StatusWidgetConfig>({
   type: "status",
   description: "presence / rate indicator: a stream's liveliness, a ROS node, or a topic's Hz",

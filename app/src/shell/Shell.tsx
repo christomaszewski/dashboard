@@ -5,7 +5,8 @@ import { LifecycleServicesCard } from "../lifecycle/LifecycleServicesCard";
 import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
 import { HomeTab } from "../home/HomeTab";
-import type { TabVisibility } from "../config/schema";
+import { RigTab } from "../rig/RigTab";
+import { TAB_DEFAULT_VISIBLE, type TabVisibility } from "../config/schema";
 import { TabBar } from "./TabBar";
 import { TAB_IDS, useHashRoute, type TabId } from "./useHashRoute";
 
@@ -22,7 +23,7 @@ const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
  */
 export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility }) {
   const { status, error, locator } = useTransportContext();
-  const enabled = TAB_IDS.filter((id) => tabs?.[id] !== false);
+  const enabled = TAB_IDS.filter((id) => (tabs?.[id] ?? TAB_DEFAULT_VISIBLE[id]) !== false);
   const visible = enabled.length > 0 ? enabled : (["home"] as TabId[]);
   const { routed, navigate } = useHashRoute();
   const tab = routed !== null && visible.includes(routed) ? routed : visible[0];
@@ -66,6 +67,11 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       {visible.includes("ros") && (
         <main className={panelClass("ros")}>
           <RosExplorer />
+        </main>
+      )}
+      {visible.includes("rig") && (
+        <main className={panelClass("rig")}>
+          <RigTab />
         </main>
       )}
       {visible.includes("clouds") && visited.current.has("clouds") && (

@@ -1,6 +1,6 @@
 # app — dashboard frontend (Vite + React + TS)
 
-Tabbed operator frontend (Home / Cameras / ROS / Bus debug). Talks Zenoh from the browser via
+Tabbed operator frontend (Home / Cameras / ROS / Rig / Clouds / Bus debug). Talks Zenoh from the browser via
 `zenoh-ts` → the `dashboard-zenoh` remote-api sidecar. Builds to `app/dist`;
 `deploy/Dockerfile.web` bakes it into the `dashboard-web` image. The Home tab is laid out from the
 instance config YAML served at `/config/dashboard.yaml` (see `config/infra/dashboard.example.yaml`);
@@ -51,8 +51,17 @@ src/
   lifecycle/                # service lifecycle control plane (camera-service recording standby/active):
                             #   types.ts (keys + descriptor contract), discovery.ts (liveliness +
                             #   descriptor get + state publications), changeState.ts (change_state
-                            #   query client), LifecycleContext/useLifecycle, LifecycleCard (+compact),
-                            #   LifecycleServicesCard (zero-config card on the Cameras tab)
+                            #   query client), useLifecycleAction (the button state machine, shared
+                            #   with the Rig tab), LifecycleContext/useLifecycle, LifecycleCard
+                            #   (+compact), LifecycleServicesCard (zero-config card on the Cameras tab)
+  rig/                      # the rig deployment via the vehicle-side agent (docs/RIG_AGENT.md — the
+                            #   same shape as lifecycle/): types.ts (keys + documents + parsers),
+                            #   discovery.ts (liveliness + descriptor/state/jobs gets + state and
+                            #   job-event publications), client.ts (submit/cancel/runs/run queries),
+                            #   RigContext/useRig, actions.ts (PURE: lifecycle-vs-rig-trio button rule
+                            #   per row), useRigSubmit (verb button state machine), RigTab + parts
+                            #   (OpenRunBanner, DeploymentTable/RowActions, JobPanel, RunBrowser +
+                            #   DirTree over Caddy's /rig-data listing: runsData.ts), format.ts
   clouds/                   # Clouds tab: React chrome (CloudsTab/CloudsList/useCloudLoader) over a
                             #   VENDORED framework-free point-cloud viewer core (vendor/ — see
                             #   vendor/VENDORED.md for provenance/deltas/re-sync). Lazy-loaded:

@@ -1,0 +1,20 @@
+# dashboard-rig-agent: the vehicle-side producer of docs/RIG_AGENT.md — polls `rig status`, mirrors the
+# run registry, runs rig verbs as detached jobs. Build context = the repo ROOT (needs agent/).
+#
+# What rig needs at runtime is all here: python3 + PyYAML (rig_cli is NOT bundled — the agent runs the
+# deployment TREE's own rig_cli/, version-locked with the tree), the docker CLI + compose plugin (rig
+# launchers drive `docker compose` against the host daemon through the mounted socket), bash + coreutils
+# (launcher scripts, du/df). The docker binaries come from the official multi-arch cli image, so this
+# builds natively on arm64 with no apt repository.
+FROM python:3.12-slim-bookworm
+
+COPY --from=docker:27-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --from=docker:27-cli /usr/local/libexec/docker/cli-plugins/docker-compose /usr/local/libexec/docker/cli-plugins/docker-compose
+
+COPY agent/requirements.txt /opt/rig-agent/requirements.txt
+RUN pip install --no-cache-dir -r /opt/rig-agent/requirements.txt
+COPY agent/rig_agent /opt/rig-agent/rig_agent
+
+ENV PYTHONPATH=/opt/rig-agent PYTHONUNBUFFERED=1
+ENTRYPOINT ["python3", "-m", "rig_agent"]
+CMD ["serve"]
