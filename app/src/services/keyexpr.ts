@@ -1,8 +1,11 @@
-// Service query keyexprs for rmw_zenoh (Jazzy). Services are NOT DDS-era rq/rr topic pairs: the
-// server declares one queryable and clients `get` it, on a key built by the same scheme as topic
+// Service query keyexprs for rmw_zenoh. Services are NOT DDS-era rq/rr topic pairs: the server
+// declares one queryable and clients `get` it, on a key built by the same four-part scheme as topic
 // data keys (graph.ts dataKeyexpr):
 //
 //   <domain_id>/<service name, leading slash stripped, inner slashes literal>/<pkg::srv::dds_::Name_>/<RIHS01_hash>
+//
+// EXACT, with no wildcard tail: the buffer-backend chunk lyrical appends to topic data keys is a
+// publisher thing, so a queryable's key is the plain four parts on every version seen so far.
 //
 // The SS liveliness token carries all four pieces verbatim.
 import type { LivelinessEntity, RosGraph, ServiceEntry } from "../ros/graph";
