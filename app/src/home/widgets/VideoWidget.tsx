@@ -1,5 +1,6 @@
 import type { VideoWidgetConfig } from "../../config/schema";
 import { useStreamsContext } from "../../streams/StreamsContext";
+import { sourceChip } from "../../streams/types";
 import { useStreamSession } from "../../streams/pool/useStreamSession";
 import { resolveStreamRef } from "../resolveStream";
 
@@ -26,6 +27,7 @@ export function VideoWidget({ widget }: { widget: VideoWidgetConfig }) {
   }
 
   const state = snapshot?.state ?? "opening";
+  const chip = sourceChip(stream.descriptor.source);
   const label = widget.label ?? stream.descriptor.role ?? stream.descriptor.id;
   const dims =
     stream.descriptor.width && stream.descriptor.height ? `${stream.descriptor.width}×${stream.descriptor.height}` : "";
@@ -38,6 +40,7 @@ export function VideoWidget({ widget }: { widget: VideoWidgetConfig }) {
         <div className="tile-overlay">
           <strong>{label}</strong>
           <span className="meta">
+            {chip && <span className={`chip ${chip.playback ? "info" : "ok"} source-chip`}>{chip.text}</span>}
             {stream.descriptor.codec ?? "?"} {dims}
           </span>
         </div>

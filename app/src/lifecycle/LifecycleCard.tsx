@@ -1,4 +1,4 @@
-import type { LifecycleService } from "./types";
+import { recordingFiles, type LifecycleService } from "./types";
 import { useLifecycleAction } from "./useLifecycleAction";
 
 const STATE_LEVEL: Record<string, string> = {
@@ -101,12 +101,20 @@ export function LifecycleCard({
               <dd>{rec.prefix}</dd>
             </>
           )}
+          {rec.started_unix_s !== undefined && (
+            <>
+              <dt>recording</dt>
+              <dd>
+                for {since(rec.started_unix_s)}
+                {recordingFiles(rec) !== undefined ? ` · ${recordingFiles(rec)} file${recordingFiles(rec) === 1 ? "" : "s"}` : ""}
+              </dd>
+            </>
+          )}
           {rec.frames !== undefined && (
             <>
               <dt>frames</dt>
               <dd>
                 {rec.frames.toLocaleString()}
-                {rec.segments !== undefined ? ` · ${rec.segments} segment${rec.segments === 1 ? "" : "s"}` : ""}
                 {rec.skipped_awaiting_keyframe ? ` · ${rec.skipped_awaiting_keyframe} skipped (keyframe wait)` : ""}
               </dd>
             </>

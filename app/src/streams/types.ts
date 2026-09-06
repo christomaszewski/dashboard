@@ -15,6 +15,17 @@ export interface StreamDescriptor {
   pixel_format?: string;
   ros_topic?: string;
   recording?: string;
+  /** What kind of source the stream fronts: live (gige | usb | rtsp) or playback (pcap | replay).
+   *  A label only — the capability to control playback is advertised separately (PLAYBACK.md). */
+  source?: string;
+}
+
+/** The source chip a tile shows: LIVE for a camera, the playback kind for a feed, nothing if unknown. */
+export function sourceChip(source: string | undefined): { text: string; playback: boolean } | null {
+  if (!source) return null;
+  const s = source.toLowerCase();
+  if (s === "pcap" || s === "replay") return { text: s.toUpperCase(), playback: true };
+  return { text: "LIVE", playback: false };
 }
 
 export interface DiscoveredStream {

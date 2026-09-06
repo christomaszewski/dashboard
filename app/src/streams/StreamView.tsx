@@ -1,4 +1,5 @@
 import type { DiscoveredStream } from "./types";
+import { sourceChip } from "./types";
 import { useStreamSession } from "./pool/useStreamSession";
 
 export type ViewMode = "grid" | "focused" | "thumb";
@@ -28,6 +29,7 @@ export function StreamView({
 
   const { descriptor } = stream;
   const label = descriptor.role || descriptor.id;
+  const chip = sourceChip(descriptor.source);
   const dims = descriptor.width && descriptor.height ? `${descriptor.width}×${descriptor.height}` : "";
   const statusText =
     state === "offline" ? "offline — will resume" : state === "reconnecting" ? "reconnecting…" : state;
@@ -45,6 +47,7 @@ export function StreamView({
           <strong>{label}</strong>
           {mode !== "thumb" && (
             <span className="meta">
+              {chip && <span className={`chip ${chip.playback ? "info" : "ok"} source-chip`}>{chip.text}</span>}
               {descriptor.codec ?? "?"} {dims}
             </span>
           )}

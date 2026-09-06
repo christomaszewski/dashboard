@@ -20,7 +20,9 @@ export interface LifecycleRecording {
   output_dir?: string;
   started_unix_s?: number;
   frames?: number;
-  segments?: number;
+  segments?: number; // CLOSED files
+  /** The file being written right now (null once finalized): files on disk = segments + (open_fragment ? 1 : 0). */
+  open_fragment?: string | null;
   skipped_awaiting_keyframe?: number;
   encoder?: string;
   segment_seconds?: number;
@@ -84,4 +86,10 @@ export function parseLifecycleDescriptor(bytes: Uint8Array): LifecycleDescriptor
   } catch {
     return null;
   }
+}
+
+/** Files a recording session has on disk right now: the closed ones plus the one being written. */
+export function recordingFiles(rec: LifecycleRecording | undefined): number | undefined {
+  if (!rec || rec.segments === undefined) return undefined;
+  return rec.segments + (rec.open_fragment ? 1 : 0);
 }
