@@ -424,6 +424,76 @@ body {
   bottom: 0.55rem;
 }
 
+/* ── Overlaid controls (camera tile) ──
+   Bottom-left: ONE always-visible state pill (recording / standby / offline / paused) and, on hover,
+   the control strip beside it. Bottom-right stays the window actions. The top bar stays label-only. */
+.tile-state {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  z-index: 2;
+}
+.tile-state .pill {
+  background: rgba(11, 14, 20, 0.78);
+  backdrop-filter: blur(4px);
+}
+.tile-state .pill.rec::before {
+  background: #ef4444;
+  animation: rec-blink 1.2s steps(2, start) infinite;
+}
+@keyframes rec-blink {
+  to { opacity: 0.25; }
+}
+.tile-controls {
+  display: flex;
+  gap: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.stream-view:hover .tile-controls,
+.tile-controls:focus-within {
+  opacity: 1;
+}
+.tile-controls .icon-btn.rec {
+  color: #ef4444;
+}
+.tile-controls .icon-btn.rec.on {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+.tile-controls .icon-btn.confirm {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+.tile-controls .icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tile-flash {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 2.6rem;
+  max-width: calc(100% - 1.1rem);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(11, 14, 20, 0.85);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile-flash.err { color: #f87171; }
+.tile-flash.warn { color: #fbbf24; }
+.tile-flash.ok { color: #4ade80; }
+.tile-overlay .meta .source-chip {
+  margin-right: 0.4rem;
+}
+
 /* ── Tables ── */
 .data-table {
   width: 100%;

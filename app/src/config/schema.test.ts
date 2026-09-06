@@ -102,6 +102,26 @@ describe("parseHome widget isolation", () => {
     expect(home.widgets.filter((w) => !w.ok)).toHaveLength(2);
   });
 
+  it("camera: controls defaults to auto, an unknown value is that widget's error, stream is required", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "camera", stream: "cam0", run_id: "survey", confirm: true },
+        { type: "camera", stream: "cam0", controls: "record" },
+        { type: "camera", stream: "cam0", controls: "scrub" },
+        { type: "camera", label: "no stream" },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: { type: "camera", stream: "cam0", controls: "auto", run_id: "survey", confirm: true },
+    });
+    expect(home.widgets[1]).toMatchObject({ ok: true, widget: { controls: "record" } });
+    expect(home.widgets[2]).toMatchObject({ ok: false, index: 2 });
+    if (!home.widgets[2].ok) expect(home.widgets[2].message).toMatch(/controls.*auto \| record \| playback \| none.*scrub/);
+    expect(home.widgets[3]).toMatchObject({ ok: false, index: 3 });
+    if (!home.widgets[3].ok) expect(home.widgets[3].message).toMatch(/'stream' is required/);
+  });
+
   it("unsupported version is fatal (banner + default Home), widgets dropped", () => {
     const home = parseHome({ version: 2, widgets: [{ type: "video", stream: "cam0" }] });
     expect(home.fatal).toMatch(/version 2/);

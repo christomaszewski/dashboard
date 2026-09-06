@@ -93,3 +93,12 @@ export function recordingFiles(rec: LifecycleRecording | undefined): number | un
   if (!rec || rec.segments === undefined) return undefined;
   return rec.segments + (rec.open_fragment ? 1 : 0);
 }
+
+/** "12s" / "1m12s" / "1h05m" since a unix-seconds instant; "" when unknown. */
+export function sinceText(unixS: number | undefined, nowMs: number = Date.now()): string {
+  if (unixS === undefined) return "";
+  const s = Math.max(0, Math.floor(nowMs / 1000 - unixS));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m${String(s % 60).padStart(2, "0")}s`;
+  return `${Math.floor(s / 3600)}h${String(Math.floor((s % 3600) / 60)).padStart(2, "0")}m`;
+}

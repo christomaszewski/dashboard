@@ -1,4 +1,4 @@
-import { recordingFiles, type LifecycleService } from "./types";
+import { recordingFiles, sinceText, type LifecycleService } from "./types";
 import { useLifecycleAction } from "./useLifecycleAction";
 
 const STATE_LEVEL: Record<string, string> = {
@@ -14,13 +14,7 @@ function stateLevel(state: string, lastError: string | null | undefined, alive: 
   return STATE_LEVEL[state] ?? "warn";
 }
 
-function since(unixS: number | undefined): string {
-  if (unixS === undefined) return "";
-  const s = Math.max(0, Math.floor(Date.now() / 1000 - unixS));
-  if (s < 60) return `${s}s`;
-  if (s < 3600) return `${Math.floor(s / 60)}m`;
-  return `${Math.floor(s / 3600)}h${Math.floor((s % 3600) / 60)}m`;
-}
+const since = sinceText;
 
 /**
  * One lifecycle-controlled service: state pill, what it is doing (recording run, health), and a

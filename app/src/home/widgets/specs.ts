@@ -33,6 +33,19 @@ export interface VideoWidgetConfig extends BaseWidgetConfig {
   type: "video";
   stream: string;
 }
+export type CameraControls = "auto" | "record" | "playback" | "none";
+/** A camera tile with its controls OVERLAID: the record strip (the stream's lifecycle, paired by the
+ *  one <instance> both contracts share) and, when the producer advertises playback, the playback
+ *  strip. `video` is the passive fixture; this is the one you drive. */
+export interface CameraWidgetConfig extends BaseWidgetConfig {
+  type: "camera";
+  stream: string;
+  confirm?: boolean; // two-step click before a recording transition
+  run_id?: string; // passed with activate (recording run prefix suffix)
+  /** auto (default) = whatever the service advertises; record / playback = only that strip; none = a plain tile. */
+  controls: CameraControls;
+}
+const CAMERA_CONTROLS: readonly CameraControls[] = ["auto", "record", "playback", "none"];
 
 export interface TopicValueWidgetConfig extends BaseWidgetConfig, Thresholds {
   type: "topic_value";
@@ -144,6 +157,26 @@ defineWidget<VideoWidgetConfig>({
   defaultSpan: 2,
   label: (w) => w.label ?? w.stream,
   parse: (raw: Obj) => ({ stream: reqStr(raw, "stream"), label: optStr(raw, "label") }),
+});
+
+defineWidget<CameraWidgetConfig>({
+  type: "camera",
+  description: "camera tile with overlaid recording (and, for playback feeds, playback) controls",
+  defaultSpan: 2,
+  label: (w) => w.label ?? w.stream,
+  parse: (raw: Obj) => {
+    const controls = optStr(raw, "controls") ?? "auto";
+    if (!(CAMERA_CONTROLS as readonly string[]).includes(controls)) {
+      throw new Error(`'controls' must be one of ${CAMERA_CONTROLS.join(" | ")}, got '${controls}'`);
+    }
+    return {
+      stream: reqStr(raw, "stream"),
+      label: optStr(raw, "label"),
+      confirm: optBool(raw, "confirm"),
+      run_id: optStr(raw, "run_id"),
+      controls: controls as CameraControls,
+    };
+  },
 });
 
 defineWidget<TopicValueWidgetConfig>({
