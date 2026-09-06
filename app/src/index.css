@@ -493,6 +493,45 @@ body {
 .tile-overlay .meta .source-chip {
   margin-right: 0.4rem;
 }
+/* the playback strip: beside the record strip when both render, else in the corner itself */
+.tile-state.tile-playback.beside {
+  left: auto;
+  right: 5.4rem;         /* clear of the window actions on the console tile */
+}
+.tile-state.tile-playback .pill.info { color: #60a5fa; }
+.tile-controls .icon-btn.speed {
+  width: auto;
+  padding: 0 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+.tile-controls .icon-btn.on {
+  background: rgba(96, 165, 250, 0.22);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+.tile-flash.pb { bottom: 4.2rem; }
+/* the full playback card (Cameras tab) */
+.playback-position {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  margin: 0.25rem 0;
+}
+.playback-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.playback-bar-fill {
+  height: 100%;
+  background: #60a5fa;
+  transition: width 0.3s linear;
+}
+.playback-actions { flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.playback-speed { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-dim); }
+.playback-speed select { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.15rem 0.3rem; }
 
 /* ── Tables ── */
 .data-table {

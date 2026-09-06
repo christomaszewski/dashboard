@@ -30,6 +30,7 @@ export { resolveStreamRef } from "../home/resolveStream";
 
 // Service lifecycle control plane (camera-service recording standby/active)
 export { useLifecycleContext } from "../lifecycle/LifecycleContext";
+export { usePlaybackContext } from "../playback/PlaybackContext";
 export { changeState, LifecycleError } from "../lifecycle/changeState";
 export type { ChangeStateResult } from "../lifecycle/changeState";
 export type { LifecycleService, LifecycleDescriptor } from "../lifecycle/types";

@@ -2,6 +2,7 @@ import { Suspense, lazy, useRef } from "react";
 import { useTransportContext } from "../transport/TransportContext";
 import { CameraConsole } from "../streams/CameraConsole";
 import { LifecycleServicesCard } from "../lifecycle/LifecycleServicesCard";
+import { PlaybackServicesCard } from "../playback/PlaybackServicesCard";
 import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
 import { HomeTab } from "../home/HomeTab";
@@ -61,6 +62,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       {visible.includes("cameras") && (
         <main className={panelClass("cameras")}>
           <LifecycleServicesCard />
+          <PlaybackServicesCard />
           <CameraConsole />
         </main>
       )}

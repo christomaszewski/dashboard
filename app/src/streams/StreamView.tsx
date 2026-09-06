@@ -2,6 +2,7 @@ import type { DiscoveredStream } from "./types";
 import { sourceChip } from "./types";
 import { TileControls } from "./TileControls";
 import { useLifecycleContext } from "../lifecycle/LifecycleContext";
+import { usePlaybackContext } from "../playback/PlaybackContext";
 import { useStreamSession } from "./pool/useStreamSession";
 
 export type ViewMode = "grid" | "focused" | "thumb";
@@ -27,7 +28,9 @@ export function StreamView({
 }) {
   const { snapshot, videoRef } = useStreamSession(stream.key);
   const { find } = useLifecycleContext();
+  const { find: findPlayback } = usePlaybackContext();
   const service = find(stream.sensorId);
+  const playback = findPlayback(stream.sensorId) ?? null;
   const state = snapshot?.state ?? "opening";
   const err = snapshot?.error ?? "";
 
@@ -71,7 +74,7 @@ export function StreamView({
           </div>
         )}
         {mode !== "thumb" && state !== "playing" && <span className={`pill ${pillClass} tile-status`}>{statusText}</span>}
-        {mode !== "thumb" && state === "playing" && <TileControls service={service} playback={null} />}
+        {mode !== "thumb" && state === "playing" && <TileControls service={service} playback={playback} />}
       </div>
     </div>
   );

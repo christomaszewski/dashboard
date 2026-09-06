@@ -1,5 +1,6 @@
 import type { CameraWidgetConfig } from "../../config/schema";
 import { useLifecycleContext } from "../../lifecycle/LifecycleContext";
+import { usePlaybackContext } from "../../playback/PlaybackContext";
 import { useStreamsContext } from "../../streams/StreamsContext";
 import { useStreamSession } from "../../streams/pool/useStreamSession";
 import { TileControls } from "../../streams/TileControls";
@@ -15,6 +16,7 @@ import { resolveStreamRef } from "../resolveStream";
 export function CameraWidget({ widget }: { widget: CameraWidgetConfig }) {
   const { streams } = useStreamsContext();
   const { find } = useLifecycleContext();
+  const { find: findPlayback } = usePlaybackContext();
   const stream = resolveStreamRef(streams, widget.stream);
   const { snapshot, videoRef } = useStreamSession(stream?.key ?? null);
 
@@ -30,6 +32,8 @@ export function CameraWidget({ widget }: { widget: CameraWidgetConfig }) {
   }
 
   const service = widget.controls === "none" || widget.controls === "playback" ? undefined : find(stream.sensorId);
+  // Playback controls appear iff the producer ADVERTISES playback (the token), never from the chip.
+  const playback = widget.controls === "none" || widget.controls === "record" ? null : (findPlayback(stream.sensorId) ?? null);
   const state = snapshot?.state ?? "opening";
   const chip = sourceChip(stream.descriptor.source);
   const label = widget.label ?? stream.descriptor.role ?? stream.descriptor.id;
@@ -50,7 +54,7 @@ export function CameraWidget({ widget }: { widget: CameraWidgetConfig }) {
         </div>
         {state !== "playing" && <span className="pill warn tile-status">{statusText}</span>}
         {state === "playing" && (
-          <TileControls service={service} playback={null} confirm={widget.confirm} runId={widget.run_id} />
+          <TileControls service={service} playback={playback} confirm={widget.confirm} runId={widget.run_id} />
         )}
       </div>
     </div>

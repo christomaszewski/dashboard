@@ -4,6 +4,7 @@ import { TransportProvider } from "./transport/TransportContext";
 import { StreamsProvider } from "./streams/StreamsContext";
 import { RosGraphProvider } from "./ros/RosGraphContext";
 import { LifecycleProvider } from "./lifecycle/LifecycleContext";
+import { PlaybackProvider } from "./playback/PlaybackContext";
 import { RigProvider } from "./rig/RigContext";
 import { Shell } from "./shell/Shell";
 
@@ -20,9 +21,11 @@ function ConnectedApp() {
       <StreamsProvider>
         <RosGraphProvider>
           <LifecycleProvider>
-            <RigProvider>
-              <Shell title={title} tabs={tabs} />
-            </RigProvider>
+            <PlaybackProvider>
+              <RigProvider>
+                <Shell title={title} tabs={tabs} />
+              </RigProvider>
+            </PlaybackProvider>
           </LifecycleProvider>
         </RosGraphProvider>
       </StreamsProvider>
