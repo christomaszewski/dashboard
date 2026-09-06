@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { isPanelWidget, parseDashboardConfig, parseHome, parseLayout, parseTabs } from "./schema";
+import { isPanelWidget, parseDashboardConfig, parseHome, parseLayout, parseTabs, visibleTabs, TAB_DEFAULT_VISIBLE } from "./schema";
 
 const FULL = `
 service: dashboard
@@ -154,14 +154,39 @@ describe("parseTabs", () => {
     });
   });
 
-  it("rejects non-mapping values", () => {
-    expect(parseTabs(["debug"])).toBeUndefined();
-    expect(parseTabs("debug")).toBeUndefined();
+  it("accepts the list form: every listed tab on, unknown/non-string entries ignored", () => {
+    expect(parseTabs(["cameras", "ros"])).toEqual({ cameras: true, ros: true });
+    expect(parseTabs(["cameras", "future_tab", 3, null])).toEqual({ cameras: true });
+    expect(parseTabs([])).toEqual({});
   });
 
-  it("flows through parseDashboardConfig", () => {
-    const cfg = parseDashboardConfig("name: d\ntabs:\n  debug: false\n");
-    expect(cfg.tabs).toEqual({ debug: false });
+  it("rejects scalar values", () => {
+    expect(parseTabs("debug")).toBeUndefined();
+    expect(parseTabs(true)).toBeUndefined();
+  });
+
+  it("flows through parseDashboardConfig in both spellings", () => {
+    expect(parseDashboardConfig("name: d\ntabs:\n  debug: false\n").tabs).toEqual({ debug: false });
+    expect(parseDashboardConfig("name: d\ntabs: [cameras, ros]\n").tabs).toEqual({ cameras: true, ros: true });
+    expect(parseDashboardConfig("name: d\nrig_agent: true\ntabs: [cameras]\n").tabs).toEqual({ cameras: true, rig: true });
+  });
+});
+
+describe("visibleTabs", () => {
+  it("is Home only when the config says nothing — every other tab is opt-in", () => {
+    expect(visibleTabs(undefined)).toEqual(["home"]);
+    expect(visibleTabs({})).toEqual(["home"]);
+    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, cameras: false, ros: false, rig: false, clouds: false, debug: false });
+  });
+
+  it("adds the opted-in tabs in display order, whatever order the config lists them", () => {
+    expect(visibleTabs(parseTabs(["debug", "cameras"]))).toEqual(["home", "cameras", "debug"]);
+    expect(visibleTabs({ ros: true, rig: true })).toEqual(["home", "ros", "rig"]);
+  });
+
+  it("lets the map form switch Home off, but never renders an empty shell", () => {
+    expect(visibleTabs({ home: false, cameras: true })).toEqual(["cameras"]);
+    expect(visibleTabs({ home: false })).toEqual(["home"]);
   });
 });
 

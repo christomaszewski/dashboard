@@ -29,20 +29,39 @@ export const HOME_SCHEMA_VERSION = 1;
 export const TAB_IDS = ["home", "cameras", "ros", "rig", "clouds", "debug"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
-/** Visibility when `tabs:` says nothing. Every tab is shown except Rig, which is useless without
- *  the vehicle-side agent — `rig_agent: true` (the same YAML) turns it on; `tabs: { rig: … }`
- *  always wins. Resolved into `tabs` by parseDashboardConfig; the Shell applies it for no-config. */
-export const TAB_DEFAULT_VISIBLE: Record<TabId, boolean> = { home: true, cameras: true, ros: true, rig: false, clouds: true, debug: true };
+/** Visibility when `tabs:` says nothing: Home only. Every other tab is OPT-IN — a deployment lists
+ *  the ones it uses and never has to know about the rest to keep them off. `rig_agent: true` (the
+ *  same YAML) implies `rig` (the tab is that agent's UI); an explicit `tabs.rig` always wins.
+ *  Resolved into `tabs` by parseDashboardConfig; visibleTabs applies it (no-config included). */
+export const TAB_DEFAULT_VISIBLE: Record<TabId, boolean> = { home: true, cameras: false, ros: false, rig: false, clouds: false, debug: false };
 
-/** `tabs:` block — per-tab visibility. Lenient: non-boolean values and unknown keys are ignored
- *  (forward compat). */
+/** `tabs:` block — per-tab visibility. Two spellings: a LIST of the tabs to show (`[cameras, ros]`;
+ *  the common case) or a MAP of booleans (`{ cameras: true, home: false }`; the only way to say
+ *  `false`, e.g. to hide Rig despite `rig_agent`). Lenient: unknown ids, non-boolean map values
+ *  and non-string list entries are ignored (forward compat). */
 export type TabVisibility = Partial<Record<TabId, boolean>>;
 
 export function parseTabs(value: unknown): TabVisibility | undefined {
-  if (!isObj(value)) return undefined;
   const out: TabVisibility = {};
+  if (Array.isArray(value)) {
+    for (const v of value) if (typeof v === "string" && isTabId(v)) out[v] = true;
+    return out;
+  }
+  if (!isObj(value)) return undefined;
   for (const id of TAB_IDS) if (typeof value[id] === "boolean") out[id] = value[id] as boolean;
   return out;
+}
+
+function isTabId(v: string): v is TabId {
+  return (TAB_IDS as readonly string[]).includes(v);
+}
+
+/** The tabs to render, in display order: `tabs:` over TAB_DEFAULT_VISIBLE. Never empty — a config
+ *  that switches everything off (`home: false` and nothing else on) still gets Home, so the app
+ *  always has a page. */
+export function visibleTabs(tabs?: TabVisibility): TabId[] {
+  const on = TAB_IDS.filter((id) => (tabs?.[id] ?? TAB_DEFAULT_VISIBLE[id]) !== false);
+  return on.length > 0 ? on : ["home"];
 }
 
 /** Any registered widget's parsed config. Narrow with the registry / type guards, never a switch. */

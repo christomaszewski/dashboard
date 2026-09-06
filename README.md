@@ -7,8 +7,8 @@ per project from the instance config YAML), a **Cameras** console (WebRTC), a **
 operational state with standby/activate/up/down, the open run with new-run/end-run, live job
 logs, and a run-registry browser with downloads — backed by the vehicle-side `dashboard-rig-agent`,
 [docs/RIG_AGENT.md](docs/RIG_AGENT.md)), a **Clouds** point-cloud viewer (vendored from
-github.com/christomaszewski/cloud-viewer, lazy-loaded), and a raw **Bus debug** tab. Tabs are
-per-project switchable from the same YAML (`tabs:`). Runs as an optional sidecar next to the
+github.com/christomaszewski/cloud-viewer, lazy-loaded), and a raw **Bus debug** tab. Tabs beyond
+Home are opt-in per project from the same YAML (`tabs: [cameras, ros]`). Runs as an optional sidecar next to the
 vehicle's rmw_zenoh router; one generic service — projects customize only their instance YAML.
 
 - Transport: browser `zenoh-ts` → `remote-api` (the `dashboard-zenoh` sidecar, a Zenoh **client**

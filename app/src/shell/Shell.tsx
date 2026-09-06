@@ -7,9 +7,9 @@ import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
 import { HomeTab } from "../home/HomeTab";
 import { RigTab } from "../rig/RigTab";
-import { TAB_DEFAULT_VISIBLE, type TabVisibility } from "../config/schema";
+import { visibleTabs, type TabVisibility } from "../config/schema";
 import { TabBar } from "./TabBar";
-import { TAB_IDS, useHashRoute, type TabId } from "./useHashRoute";
+import { useHashRoute, type TabId } from "./useHashRoute";
 
 // Lazy: three.js + the BPF loaders live in their own chunk, downloaded on first visit only.
 const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
@@ -18,14 +18,13 @@ const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
  * The tabbed shell. All ACTIVE panels stay MOUNTED across tab switches — the inactive ones are
  * hidden with CSS only (`.hidden-tab`), so switching never tears down WebRTC sessions, zenoh
  * subscriptions, scroll positions, or <details> state. (Not the `hidden` attribute — `.page
- * { display:flex }` overrides it.) Two config-driven exceptions: tabs disabled in the instance
- * YAML are not rendered at all, and the heavy Clouds tab mounts on FIRST visit (kept mounted
- * after) so its chunk only loads when someone opens it.
+ * { display:flex }` overrides it.) Two config-driven exceptions: tabs the instance YAML does not
+ * opt into (`tabs:` — Home is the only default) are not rendered at all, and the heavy Clouds tab
+ * mounts on FIRST visit (kept mounted after) so its chunk only loads when someone opens it.
  */
 export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility }) {
   const { status, error, locator } = useTransportContext();
-  const enabled = TAB_IDS.filter((id) => (tabs?.[id] ?? TAB_DEFAULT_VISIBLE[id]) !== false);
-  const visible = enabled.length > 0 ? enabled : (["home"] as TabId[]);
+  const visible = visibleTabs(tabs);
   const { routed, navigate } = useHashRoute();
   const tab = routed !== null && visible.includes(routed) ? routed : visible[0];
 
@@ -56,7 +55,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       )}
       {visible.includes("home") && (
         <main className={panelClass("home")}>
-          <HomeTab navigate={navigate} />
+          <HomeTab navigate={navigate} tabs={visible} />
         </main>
       )}
       {visible.includes("cameras") && (

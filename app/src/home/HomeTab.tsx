@@ -52,7 +52,7 @@ function gridStyle(layout: HomeLayout | undefined): CSSProperties | undefined {
  * banner — the page never blanks. A structurally unusable home block (or unparseable config)
  * degrades to a banner + the built-in DefaultHome.
  */
-export function HomeTab({ navigate }: { navigate: (tab: TabId) => void }) {
+export function HomeTab({ navigate, tabs }: { navigate: (tab: TabId) => void; tabs: readonly TabId[] }) {
   const config = useConfig();
 
   if (config.phase === "loading") return null;
@@ -60,21 +60,21 @@ export function HomeTab({ navigate }: { navigate: (tab: TabId) => void }) {
     return (
       <>
         <div className="error-box">{config.message}</div>
-        <DefaultHome navigate={navigate} />
+        <DefaultHome navigate={navigate} tabs={tabs} />
       </>
     );
   }
   const home = config.phase === "ready" ? config.config.home : undefined;
-  if (!home) return <DefaultHome navigate={navigate} />;
+  if (!home) return <DefaultHome navigate={navigate} tabs={tabs} />;
   if (home.fatal !== undefined) {
     return (
       <>
         <div className="error-box">home config: {home.fatal}</div>
-        <DefaultHome navigate={navigate} />
+        <DefaultHome navigate={navigate} tabs={tabs} />
       </>
     );
   }
-  if (home.widgets.length === 0) return <DefaultHome navigate={navigate} />;
+  if (home.widgets.length === 0) return <DefaultHome navigate={navigate} tabs={tabs} />;
 
   return (
     <>

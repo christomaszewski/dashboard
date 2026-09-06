@@ -33,7 +33,8 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 ## Verify (browser on the mesh)
 
 Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Rig / Clouds / Bus debug,
-hash-routed — `#/ros` deep-links; Rig only with `rig_agent: true`); all tabs stay mounted, so
+hash-routed — `#/ros` deep-links). Tabs beyond Home are OPT-IN — `tabs: [cameras, ros, clouds, debug]`
+in the instance YAML; Rig comes with `rig_agent: true` — and all opted-in tabs stay mounted, so
 switching never drops video or subscriptions:
 1. **status: connected** (topbar) — transport reached the sidecar.
 2. **Home** with no config mounted = the built-in default (connection, discovered-stream and graph
@@ -58,8 +59,9 @@ switching never drops video or subscriptions:
    z/x/y tile tree locally (`python3 -m http.server 8000` → `tiles: http://localhost:8000/...`).
    Tab away/back must re-render the map full-size (no gray half-tiles). Panning pauses follow;
    ⌖ resumes.
-7. **Tabs config**: `tabs: { debug: false }` removes the tab and `#/debug` falls back to the first
-   visible tab.
+7. **Tabs config**: no `tabs:` = Home alone, no tab bar, and the built-in Home offers no Cameras/ROS
+   shortcuts; `tabs: [cameras, debug]` adds exactly those; `#/ros` (not listed) falls back to the
+   first visible tab; `tabs: { debug: false }` (map form) is still honoured.
 8. **Bus debug** → **Liveliness** shows the raw keyspace: the rmw_zenoh graph tokens + the
    `fleet/.../media/...` discovery token. The data-subscription box can sample any keyexpr; its
    **attachment** column decodes each sample's rmw attachment (`rmw ✓ seq N` = the service-call

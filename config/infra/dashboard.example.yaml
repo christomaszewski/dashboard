@@ -31,16 +31,20 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # rig_poll_s: 10                   # `rig status` cadence
 
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
-# Per-tab visibility. Available: home, cameras, ros, rig, clouds, debug. Everything omitted is shown
-# except `rig`, which follows `rig_agent:` (useless without the agent); an explicit `tabs.rig`
-# always wins. The Clouds tab is lazy-loaded (its three.js chunk only downloads when opened), so
-# leaving it enabled costs nothing until used. A hidden tab's deep link falls back to the first
-# visible tab.
+# Tabs beyond Home are OPT-IN: list the ones this deployment uses and the rest never appear (nor do
+# you need to know they exist). With no `tabs:` at all the app is Home alone, tab bar hidden.
+# Available: cameras, ros, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
+# implies `rig` (that tab is the agent's UI); an explicit `tabs.rig` always wins. The Clouds tab is
+# lazy-loaded (its three.js chunk only downloads when opened). A deep link to a tab that is not
+# listed falls back to the first visible tab.
 #
-# tabs:
-#   debug: false      # e.g. hide the bus debugger in operator deployments
-#   clouds: false
-#   rig: true         # force the tab on/off regardless of rig_agent
+# tabs: [cameras, ros, debug]     # the list form: exactly these, plus Home
+#
+# tabs:                           # the map form: the only way to say `false`
+#   cameras: true
+#   ros: true
+#   rig: false        # hide the Rig tab despite rig_agent (its home widgets still work)
+#   home: false       # Home off too (the first listed tab becomes the landing page)
 
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic

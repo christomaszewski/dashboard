@@ -3,8 +3,10 @@ import { useStreamsContext } from "../streams/StreamsContext";
 import { useRosGraphContext } from "../ros/RosGraphContext";
 import type { TabId } from "../shell/useHashRoute";
 
-/** Built-in Home when the instance config has no `home:` block (or none is mounted at all). */
-export function DefaultHome({ navigate }: { navigate: (tab: TabId) => void }) {
+/** Built-in Home when the instance config has no `home:` block (or none is mounted at all).
+ *  `tabs` is the Shell's visible list: a shortcut to a tab the config did not opt into would be a
+ *  button that goes nowhere, so it is not offered. */
+export function DefaultHome({ navigate, tabs }: { navigate: (tab: TabId) => void; tabs: readonly TabId[] }) {
   const { status, locator } = useTransportContext();
   const { streams } = useStreamsContext();
   const { graph } = useRosGraphContext();
@@ -31,9 +33,11 @@ export function DefaultHome({ navigate }: { navigate: (tab: TabId) => void }) {
             {streams.length} discovered · {liveStreams} live
           </span>
           <span className="spacer" />
-          <button className="btn" onClick={() => navigate("cameras")}>
-            Open console →
-          </button>
+          {tabs.includes("cameras") && (
+            <button className="btn" onClick={() => navigate("cameras")}>
+              Open console →
+            </button>
+          )}
         </div>
         {streams.length > 0 && (
           <div className="card-body">
@@ -49,9 +53,11 @@ export function DefaultHome({ navigate }: { navigate: (tab: TabId) => void }) {
             {graph.nodes.length} nodes · {graph.topics.length} topics · {graph.services.length} services
           </span>
           <span className="spacer" />
-          <button className="btn" onClick={() => navigate("ros")}>
-            Explore →
-          </button>
+          {tabs.includes("ros") && (
+            <button className="btn" onClick={() => navigate("ros")}>
+              Explore →
+            </button>
+          )}
         </div>
       </section>
 
@@ -60,7 +66,9 @@ export function DefaultHome({ navigate }: { navigate: (tab: TabId) => void }) {
           <p className="dim">
             This is the built-in Home. To lay out project-specific status pills, service buttons, video streams, and
             topic readouts here, add a <span className="mono">home:</span> block to this instance&apos;s config YAML —
-            see <span className="mono">config/infra/dashboard.example.yaml</span>.
+            see <span className="mono">config/infra/dashboard.example.yaml</span>. The other tabs are opt-in from the
+            same file: <span className="mono">tabs: [cameras, ros, clouds, debug]</span> lists the ones this
+            deployment uses.
           </p>
         </div>
       </section>

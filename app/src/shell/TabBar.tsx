@@ -19,6 +19,8 @@ export function TabBar({
   tab: TabId;
   navigate: (tab: TabId) => void;
 }) {
+  // Home alone (the no-`tabs:` default) needs no bar: one button that goes nowhere is noise.
+  if (tabs.length < 2) return null;
   return (
     <nav className="tabs" aria-label="dashboard sections">
       {tabs.map((id) => (
