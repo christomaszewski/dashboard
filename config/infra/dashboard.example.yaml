@@ -102,6 +102,36 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #       # confirm: false       # true = two-step click for destructive actions
 #       # timeout_s: 5
 #
+#     # -- camera: a tile you DRIVE (the video chrome + overlaid record / playback controls) ------
+#     # `stream` is a DEFAULT: the tile's picker changes it at runtime and the choice is remembered
+#     # per widget (label it!). Omit `stream` to pick from discovery — the only stream auto-selects,
+#     # several offer the picker in the tile's place. `lock: true` pins the config, picker gone.
+#     - type: camera
+#       label: Front camera
+#       stream: cam0
+#       # lock: true           # operator deployments: this stream and only it
+#       # controls: auto       # auto | record | playback | none
+#       # confirm: true        # two-step click before a recording transition
+#       # run_id: survey       # sent with activate -> recording run prefix suffix
+#       # span: 2
+#
+#     # -- cameras: several feeds in one widget ------------------------------------------------
+#     # `focus` = one large feed with the rest as live thumbnails in a carousel (click one to bring
+#     # it up, ←/→ cycle, Esc / ⊞ to the grid); `grid` = all tiled. The set is `streams:` or, when
+#     # omitted, every discovered stream; the picker adds feeds and a tile's ✕ removes one unless
+#     # `lock`. Layout, focus and the set are remembered per widget. Every feed is a WebRTC session
+#     # AND a vehicle-side encode (shared with other tiles of that stream, not free): six thumbnails
+#     # are six encodes on the vehicle.
+#     - type: cameras
+#       label: Cameras
+#       # streams: [cam0, cam1, thermal]   # omit = every discovered stream
+#       # layout: focus        # focus | grid
+#       # focus: cam1          # the feed in focus at first (default: the first)
+#       # columns: 2           # grid only (default: as many as fit)
+#       # lock: true           # exactly `streams`: no picker, no ✕
+#       # controls: auto       # on every tile
+#       # span: full           # (cameras default full)
+#
 #     # -- video: embedded live stream ----------------------------------------------------------
 #     # Shares ONE WebRTC session (and one vehicle-side encode) with the Cameras tab.
 #     - type: video

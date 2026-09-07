@@ -17,6 +17,7 @@ export type {
   ServiceButtonWidgetConfig,
   VideoWidgetConfig,
   CameraWidgetConfig,
+  CamerasWidgetConfig,
   TopicValueWidgetConfig,
   MapWidgetConfig,
   LifecycleWidgetConfig,

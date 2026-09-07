@@ -1806,3 +1806,64 @@ ul.plain {
   gap: 0.15rem;
   width: 100%;
 }
+
+
+/* ---- stream picker + the cameras deck widget ---------------------------------------------------- */
+
+.stream-picker {
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.4rem;
+  max-width: 14rem;
+}
+
+.tile-actions .stream-picker {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.widget-video-empty .stream-picker {
+  margin-left: 0.4rem;
+}
+
+.widget-cameras {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* the card is a column flexbox aligned flex-start: the head row and the deck must take its width */
+.widget-cameras .widget-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.1rem 0;
+  width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.widget-cameras .widget-head .spacer {
+  flex: 1;
+}
+
+.widget-cameras .btn.small {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+}
+
+.widget-cameras .console-focus,
+.widget-cameras .console-grid {
+  padding: 0.6rem 1.1rem 1rem;
+  width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.widget-cameras .empty {
+  padding: 0.8rem 1.1rem 1rem;
+}

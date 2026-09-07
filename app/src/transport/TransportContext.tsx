@@ -10,16 +10,17 @@ export interface TransportContextValue {
   locator: string;
 }
 
-const Ctx = createContext<TransportContextValue | null>(null);
+/** The raw context — for tests and extensions that provide a value without the live provider. */
+export const TransportCtx = createContext<TransportContextValue | null>(null);
 
 /** One zenoh session for the app; the locator is resolved by the caller (config-aware). */
 export function TransportProvider({ locator, children }: { locator: string; children: ReactNode }) {
   const { transport, status, error } = useTransport(locator);
-  return <Ctx.Provider value={{ transport, status, error, locator }}>{children}</Ctx.Provider>;
+  return <TransportCtx.Provider value={{ transport, status, error, locator }}>{children}</TransportCtx.Provider>;
 }
 
 export function useTransportContext(): TransportContextValue {
-  const v = useContext(Ctx);
+  const v = useContext(TransportCtx);
   if (!v) throw new Error("useTransportContext must be used inside <TransportProvider>");
   return v;
 }

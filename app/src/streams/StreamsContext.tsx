@@ -12,7 +12,8 @@ export interface StreamsContextValue {
   pool: StreamSessionPool;
 }
 
-const Ctx = createContext<StreamsContextValue | null>(null);
+/** The raw context — for tests and extensions that provide a value without the live provider. */
+export const StreamsCtx = createContext<StreamsContextValue | null>(null);
 
 export function StreamsProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
@@ -21,11 +22,11 @@ export function StreamsProvider({ children }: { children: ReactNode }) {
   useEffect(() => pool.updateStreams(streams), [pool, streams]);
   useEffect(() => () => pool.closeAll(), [pool]);
   const value = useMemo(() => ({ streams, pool }), [streams, pool]);
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <StreamsCtx.Provider value={value}>{children}</StreamsCtx.Provider>;
 }
 
 export function useStreamsContext(): StreamsContextValue {
-  const v = useContext(Ctx);
+  const v = useContext(StreamsCtx);
   if (!v) throw new Error("useStreamsContext must be used inside <StreamsProvider>");
   return v;
 }

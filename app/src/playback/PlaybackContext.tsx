@@ -10,7 +10,8 @@ export interface PlaybackContextValue {
   find: (ref: string) => PlaybackService | undefined;
 }
 
-const Ctx = createContext<PlaybackContextValue | null>(null);
+/** The raw context — for tests and extensions that provide a value without the live provider. */
+export const PlaybackCtx = createContext<PlaybackContextValue | null>(null);
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
@@ -30,11 +31,11 @@ export function PlaybackProvider({ children }: { children: ReactNode }) {
     }),
     [services],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <PlaybackCtx.Provider value={value}>{children}</PlaybackCtx.Provider>;
 }
 
 export function usePlaybackContext(): PlaybackContextValue {
-  const v = useContext(Ctx);
+  const v = useContext(PlaybackCtx);
   if (!v) throw new Error("usePlaybackContext must be used inside <PlaybackProvider>");
   return v;
 }

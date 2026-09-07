@@ -10,7 +10,8 @@ export interface LifecycleContextValue {
   find: (ref: string) => LifecycleService | undefined;
 }
 
-const Ctx = createContext<LifecycleContextValue | null>(null);
+/** The raw context — for tests and extensions that provide a value without the live provider. */
+export const LifecycleCtx = createContext<LifecycleContextValue | null>(null);
 
 export function LifecycleProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
@@ -30,11 +31,11 @@ export function LifecycleProvider({ children }: { children: ReactNode }) {
     }),
     [services],
   );
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <LifecycleCtx.Provider value={value}>{children}</LifecycleCtx.Provider>;
 }
 
 export function useLifecycleContext(): LifecycleContextValue {
-  const v = useContext(Ctx);
+  const v = useContext(LifecycleCtx);
   if (!v) throw new Error("useLifecycleContext must be used inside <LifecycleProvider>");
   return v;
 }

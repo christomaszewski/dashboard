@@ -3,6 +3,7 @@ import { sourceChip } from "./types";
 import { TileControls } from "./TileControls";
 import { useLifecycleContext } from "../lifecycle/LifecycleContext";
 import { usePlaybackContext } from "../playback/PlaybackContext";
+import type { CameraControls } from "../home/widgets/specs";
 import { useStreamSession } from "./pool/useStreamSession";
 
 export type ViewMode = "grid" | "focused" | "thumb";
@@ -19,18 +20,25 @@ export function StreamView({
   onFocus,
   onRestore,
   onClose,
+  controls = "auto",
+  confirm,
+  runId,
 }: {
   stream: DiscoveredStream;
   mode: ViewMode;
   onFocus: () => void;
   onRestore: () => void;
-  onClose: () => void;
+  onClose?: () => void;
+  /** Which strips the tile carries (the `camera` widget's knob): auto = whatever the services advertise. */
+  controls?: CameraControls;
+  confirm?: boolean;
+  runId?: string;
 }) {
   const { snapshot, videoRef } = useStreamSession(stream.key);
   const { find } = useLifecycleContext();
   const { find: findPlayback } = usePlaybackContext();
-  const service = find(stream.sensorId);
-  const playback = findPlayback(stream.sensorId) ?? null;
+  const service = controls === "none" || controls === "playback" ? undefined : find(stream.sensorId);
+  const playback = controls === "none" || controls === "record" ? null : (findPlayback(stream.sensorId) ?? null);
   const state = snapshot?.state ?? "opening";
   const err = snapshot?.error ?? "";
 
@@ -68,14 +76,16 @@ export function StreamView({
             >
               {mode === "focused" ? "⤡" : "⤢"}
             </button>
-            <button className="icon-btn" title="unsubscribe" onClick={onClose}>
-              ✕
-            </button>
+            {onClose && (
+              <button className="icon-btn" title="unsubscribe" onClick={onClose}>
+                ✕
+              </button>
+            )}
           </div>
         )}
         {mode !== "thumb" && state !== "playing" && <span className={`pill ${pillClass} tile-status`}>{statusText}</span>}
         {mode !== "thumb" && (state === "playing" || state === "reconnecting") && (
-          <TileControls service={service} playback={playback} />
+          <TileControls service={service} playback={playback} confirm={confirm} runId={runId} />
         )}
       </div>
     </div>

@@ -30,6 +30,18 @@ export function optSpan(o: Obj): WidgetSpan | undefined {
   return v === 1 || v === 2 || v === "full" ? v : undefined;
 }
 
+/** A list of non-empty strings (a lone string counts as a one-item list); undefined when absent or
+ *  wrong-typed; a thrown message when the list holds anything but non-empty strings. */
+export function optStrList(o: Obj, key: string): string[] | undefined {
+  const v = o[key];
+  if (typeof v === "string") return v !== "" ? [v] : undefined;
+  if (!Array.isArray(v)) return undefined;
+  if (!v.every((x) => typeof x === "string" && x !== "")) {
+    throw new Error(`'${key}' must be a list of non-empty strings`);
+  }
+  return v as string[];
+}
+
 /** Required non-empty string, or a thrown message naming the key. */
 export function reqStr(o: Obj, key: string): string {
   const v = optStr(o, key);

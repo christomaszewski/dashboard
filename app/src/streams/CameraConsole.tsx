@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import { StreamDeck } from "./StreamDeck";
 import { useStreamsContext } from "./StreamsContext";
-import { StreamView } from "./StreamView";
 
 const STORE_KEY = "dashboard.cameras.subscribed";
 
@@ -45,23 +45,6 @@ export function CameraConsole() {
     setSubscribed((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
     if (focusKey === key) setFocusKey(null);
   };
-
-  // Keyboard: Esc exits focus, ←/→ cycle the focused feed.
-  useEffect(() => {
-    if (focused === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFocusKey(null);
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        const keys = subStreams.map((s) => s.key);
-        const i = keys.indexOf(focused);
-        if (i === -1 || keys.length < 2) return;
-        setFocusKey(keys[(i + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length]);
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [focused, subStreams]);
 
   const watching = subStreams.length;
   return (
@@ -111,18 +94,16 @@ export function CameraConsole() {
       {streams.length > 0 && watching === 0 && <p className="empty">Select a camera above to start watching.</p>}
 
       {watching > 0 && (
-        <div className={focused !== null ? "console-focus" : "console-grid"}>
-          {subStreams.map((s) => (
-            <StreamView
-              key={s.key}
-              stream={s}
-              mode={focused === null ? "grid" : s.key === focused ? "focused" : "thumb"}
-              onFocus={() => setFocusKey(s.key)}
-              onRestore={() => setFocusKey(null)}
-              onClose={() => toggle(s.key)}
-            />
-          ))}
-        </div>
+        <StreamDeck
+          streams={subStreams}
+          layout={focused !== null ? "focus" : "grid"}
+          focusKey={focused}
+          onFocus={setFocusKey}
+          onLayout={(l) => {
+            if (l === "grid") setFocusKey(null);
+          }}
+          onClose={toggle}
+        />
       )}
     </section>
   );

@@ -2,7 +2,7 @@
 // React, no browser APIs — so the config schema and its tests can import this in node. The
 // components attach in widgets/builtins.tsx. Importing this module registers the specs.
 import { defineWidget, type BaseWidgetConfig } from "../../widgets/registry";
-import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type Thresholds } from "../../widgets/parse";
+import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type Thresholds, optStrList } from "../../widgets/parse";
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
 
 export type { GaugeWidgetConfig, SparklineWidgetConfig, IndicatorWidgetConfig, TextWidgetConfig } from "./primitives/specs";
@@ -39,13 +39,36 @@ export type CameraControls = "auto" | "record" | "playback" | "none";
  *  strip. `video` is the passive fixture; this is the one you drive. */
 export interface CameraWidgetConfig extends BaseWidgetConfig {
   type: "camera";
-  stream: string;
+  /** The DEFAULT stream (sensor id, descriptor id, or key). Omit to pick from discovery: the only
+   *  stream auto-selects, several offer a picker. The tile's picker changes it at runtime and the
+   *  choice is remembered per widget (label) unless `lock`. */
+  stream?: string;
+  lock?: boolean; // no picker: the configured stream, and only it (operator deployments)
   confirm?: boolean; // two-step click before a recording transition
   run_id?: string; // passed with activate (recording run prefix suffix)
   /** auto (default) = whatever the service advertises; record / playback = only that strip; none = a plain tile. */
   controls: CameraControls;
 }
 const CAMERA_CONTROLS: readonly CameraControls[] = ["auto", "record", "playback", "none"];
+
+export type CamerasLayout = "focus" | "grid";
+const CAMERAS_LAYOUTS: readonly CamerasLayout[] = ["focus", "grid"];
+
+/** Several feeds in one widget: `focus` = one large feed with the rest as live thumbnails in a
+ *  carousel (click one to bring it up), `grid` = all tiled. The set comes from `streams:` or, when
+ *  omitted, from discovery; the picker adds/removes at runtime unless `lock`. Every feed is a WebRTC
+ *  session AND a vehicle-side encode (shared with every other tile of that stream, but not free). */
+export interface CamerasWidgetConfig extends BaseWidgetConfig {
+  type: "cameras";
+  streams?: string[]; // omit = every discovered stream
+  layout: CamerasLayout;
+  focus?: string; // the feed in focus at first (default: the first)
+  columns?: number; // grid only (default: as many as fit)
+  lock?: boolean; // no picker, no close: exactly `streams`
+  confirm?: boolean;
+  run_id?: string;
+  controls: CameraControls; // on every tile (the focused one carries them in `focus`)
+}
 
 export interface TopicValueWidgetConfig extends BaseWidgetConfig, Thresholds {
   type: "topic_value";
@@ -159,22 +182,53 @@ defineWidget<VideoWidgetConfig>({
   parse: (raw: Obj) => ({ stream: reqStr(raw, "stream"), label: optStr(raw, "label") }),
 });
 
+function parseControls(raw: Obj): CameraControls {
+  const controls = optStr(raw, "controls") ?? "auto";
+  if (!(CAMERA_CONTROLS as readonly string[]).includes(controls)) {
+    throw new Error(`'controls' must be one of ${CAMERA_CONTROLS.join(" | ")}, got '${controls}'`);
+  }
+  return controls as CameraControls;
+}
+
 defineWidget<CameraWidgetConfig>({
   type: "camera",
   description: "camera tile with overlaid recording (and, for playback feeds, playback) controls",
   defaultSpan: 2,
-  label: (w) => w.label ?? w.stream,
+  label: (w) => w.label ?? w.stream ?? "camera",
+  parse: (raw: Obj) => ({
+    stream: optStr(raw, "stream"),
+    lock: optBool(raw, "lock"),
+    label: optStr(raw, "label"),
+    confirm: optBool(raw, "confirm"),
+    run_id: optStr(raw, "run_id"),
+    controls: parseControls(raw),
+  }),
+});
+
+defineWidget<CamerasWidgetConfig>({
+  type: "cameras",
+  description: "several camera feeds: one in focus with a carousel of the rest, or a grid",
+  defaultSpan: "full",
+  label: (w) => w.label ?? "cameras",
   parse: (raw: Obj) => {
-    const controls = optStr(raw, "controls") ?? "auto";
-    if (!(CAMERA_CONTROLS as readonly string[]).includes(controls)) {
-      throw new Error(`'controls' must be one of ${CAMERA_CONTROLS.join(" | ")}, got '${controls}'`);
+    const layout = optStr(raw, "layout") ?? "focus";
+    if (!(CAMERAS_LAYOUTS as readonly string[]).includes(layout)) {
+      throw new Error(`'layout' must be one of ${CAMERAS_LAYOUTS.join(" | ")}, got '${layout}'`);
+    }
+    const columns = optNum(raw, "columns");
+    if (columns !== undefined && (!Number.isInteger(columns) || columns < 1)) {
+      throw new Error(`'columns' must be a positive integer, got ${columns}`);
     }
     return {
-      stream: reqStr(raw, "stream"),
+      streams: optStrList(raw, "streams"),
+      layout: layout as CamerasLayout,
+      focus: optStr(raw, "focus"),
+      columns,
+      lock: optBool(raw, "lock"),
       label: optStr(raw, "label"),
       confirm: optBool(raw, "confirm"),
       run_id: optStr(raw, "run_id"),
-      controls: controls as CameraControls,
+      controls: parseControls(raw),
     };
   },
 });

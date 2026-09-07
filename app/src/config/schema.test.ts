@@ -102,13 +102,14 @@ describe("parseHome widget isolation", () => {
     expect(home.widgets.filter((w) => !w.ok)).toHaveLength(2);
   });
 
-  it("camera: controls defaults to auto, an unknown value is that widget's error, stream is required", () => {
+  it("camera: controls defaults to auto, an unknown value is that widget's error, stream is a default (optional), lock", () => {
     const home = parseHome({
       widgets: [
         { type: "camera", stream: "cam0", run_id: "survey", confirm: true },
         { type: "camera", stream: "cam0", controls: "record" },
         { type: "camera", stream: "cam0", controls: "scrub" },
-        { type: "camera", label: "no stream" },
+        { type: "camera", label: "pick one" },
+        { type: "camera", stream: "cam0", lock: true },
       ],
     });
     expect(home.widgets[0]).toMatchObject({
@@ -118,8 +119,31 @@ describe("parseHome widget isolation", () => {
     expect(home.widgets[1]).toMatchObject({ ok: true, widget: { controls: "record" } });
     expect(home.widgets[2]).toMatchObject({ ok: false, index: 2 });
     if (!home.widgets[2].ok) expect(home.widgets[2].message).toMatch(/controls.*auto \| record \| playback \| none.*scrub/);
-    expect(home.widgets[3]).toMatchObject({ ok: false, index: 3 });
-    if (!home.widgets[3].ok) expect(home.widgets[3].message).toMatch(/'stream' is required/);
+    expect(home.widgets[3]).toMatchObject({ ok: true, widget: { type: "camera", label: "pick one" } });
+    if (home.widgets[3].ok) expect((home.widgets[3].widget as { stream?: string }).stream).toBeUndefined();
+    expect(home.widgets[4]).toMatchObject({ ok: true, widget: { lock: true } });
+  });
+
+  it("cameras: the deck — streams optional, layout focus|grid, columns a positive integer, controls shared", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "cameras", streams: ["cam0", "cam1"], focus: "cam1", columns: 2, controls: "record", lock: true },
+        { type: "cameras", label: "all", layout: "grid" },
+        { type: "cameras", layout: "carousel" },
+        { type: "cameras", columns: 0 },
+        { type: "cameras", streams: ["cam0", 3] },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: { type: "cameras", streams: ["cam0", "cam1"], layout: "focus", focus: "cam1", columns: 2, controls: "record", lock: true },
+    });
+    expect(home.widgets[1]).toMatchObject({ ok: true, widget: { layout: "grid", label: "all", controls: "auto" } });
+    if (home.widgets[1].ok) expect((home.widgets[1].widget as { streams?: string[] }).streams).toBeUndefined();
+    for (const i of [2, 3, 4]) expect(home.widgets[i]).toMatchObject({ ok: false, index: i });
+    if (!home.widgets[2].ok) expect(home.widgets[2].message).toMatch(/layout.*focus \| grid.*carousel/);
+    if (!home.widgets[3].ok) expect(home.widgets[3].message).toMatch(/columns.*positive integer/);
+    if (!home.widgets[4].ok) expect(home.widgets[4].message).toMatch(/streams.*non-empty strings/);
   });
 
   it("unsupported version is fatal (banner + default Home), widgets dropped", () => {

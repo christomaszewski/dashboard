@@ -30,6 +30,16 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 > The React bundle is **baked into the `dashboard-web` image** (`deploy/Dockerfile.web`) — `--build`
 > produces it locally; `rig build` produces + pushes it. No bundle mount, nothing to vendor.
 
+## Unit + component tests (no vehicle)
+
+`cd app && npx vitest run` — 39 files. Pure logic (schema, discovery, the stream pool, playback
+control, ROS graph parsing) runs in node; the **component tests** (`src/**/*.test.tsx`: the tab bar,
+tile controls, the playback card, the `camera` / `cameras` widgets, the Cameras console) opt into
+jsdom per file (`// @vitest-environment jsdom`) and render through `src/test/harness.tsx`: the
+app's contexts provided with plain values around a REAL `StreamSessionPool` with fake sources, so a
+tile's acquire/attach/release runs for real and only media negotiation is stubbed. `npx tsc
+--noEmit -p .` typechecks tests too.
+
 ## Verify (browser on the mesh)
 
 Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Rig / Clouds / Bus debug,
@@ -59,6 +69,10 @@ switching never drops video or subscriptions:
    z/x/y tile tree locally (`python3 -m http.server 8000` → `tiles: http://localhost:8000/...`).
    Tab away/back must re-render the map full-size (no gray half-tiles). Panning pauses follow;
    ⌖ resumes.
+6b. **Camera widgets**: a `camera` tile with no `stream` shows the picker when several streams are
+   discovered (the only one auto-selects) and remembers the pick across reloads; `cameras` shows one
+   feed in focus with a carousel — click a thumbnail to swap, ⊞/▣ toggles the grid, ✕ removes a
+   feed, "add a feed…" adds one; `lock: true` removes all of that.
 7. **Tabs config**: no `tabs:` = Home alone, no tab bar, and the built-in Home offers no Cameras/ROS
    shortcuts; `tabs: [cameras, debug]` adds exactly those; `#/ros` (not listed) falls back to the
    first visible tab; `tabs: { debug: false }` (map form) is still honoured.
