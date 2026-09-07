@@ -7,8 +7,11 @@
 //   - exponential retry backoff (1 s → 10 s), single pending retry, offline short-circuit
 //   - backoff reset + state=playing on an attached element's `playing` event (frames rendering is
 //     the health signal, not session open); fallback when nothing is attached: first track unmute
-//   - stall watchdog: currentTime frozen for STALL_MS (above the ZR30's ~6 s ride-through output
-//     gaps) → retry; sampled from the first non-paused attached element
+//   - stall watchdog: no new decoded frame (currentTime, for elements without a frame counter)
+//     for STALL_MS (above the ZR30's ~6 s ride-through output gaps) → retry; sampled from the
+//     first non-paused attached element. Decoded frames, not currentTime: a HELD playback source
+//     (paused / finished / playing through silence) keeps its last frame on the wire at ~1 Hz —
+//     new frames, a near-frozen clock — and must not read as a dead session
 //   - liveliness flap via updateStreams: alive→true resumes immediately (fresh descriptor — ports/
 //     geometry may have changed across a producer restart); true→false drops the session, offline
 import type { DiscoveredStream, StreamDescriptor } from "../types";
@@ -30,6 +33,10 @@ export type VideoLike = {
   srcObject: MediaProvider | null;
   currentTime: number;
   paused: boolean;
+  /** Decoded-frame counter (HTMLMediaElement): the stall signal when present — a held playback
+   *  source re-publishes its last frame at ~1 Hz, which decodes as new frames while currentTime
+   *  barely moves; currentTime is the fallback for elements without it. */
+  getVideoPlaybackQuality?(): { totalVideoFrames: number };
   play(): Promise<void>;
   addEventListener(type: "playing", cb: () => void): void;
   removeEventListener(type: "playing", cb: () => void): void;
@@ -335,8 +342,9 @@ export class StreamSessionPool {
         entry.stallLastAdvance = Date.now();
         return;
       }
-      if (video.currentTime !== entry.stallLastTime) {
-        entry.stallLastTime = video.currentTime;
+      const progress = video.getVideoPlaybackQuality?.()?.totalVideoFrames ?? video.currentTime;
+      if (progress !== entry.stallLastTime) {
+        entry.stallLastTime = progress;
         entry.stallLastAdvance = Date.now();
       } else if (Date.now() - entry.stallLastAdvance > this.stallMs) {
         console.warn("[stream-pool] video stalled — reconnecting", entry.key);

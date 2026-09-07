@@ -74,7 +74,9 @@ export function StreamView({
           </div>
         )}
         {mode !== "thumb" && state !== "playing" && <span className={`pill ${pillClass} tile-status`}>{statusText}</span>}
-        {mode !== "thumb" && state === "playing" && <TileControls service={service} playback={playback} />}
+        {mode !== "thumb" && (state === "playing" || state === "reconnecting") && (
+          <TileControls service={service} playback={playback} />
+        )}
       </div>
     </div>
   );

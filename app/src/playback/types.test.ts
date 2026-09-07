@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parsePlaybackDescriptor, parsePlaybackKey, positionText, speedText } from "./types";
+import { sessionText } from "./types";
 
 const enc = (v: unknown) => new TextEncoder().encode(JSON.stringify(v));
 const PLAYING = {
@@ -31,5 +32,15 @@ describe("playback keys + descriptors (PLAYBACK.md)", () => {
     expect(speedText(1)).toBe("×1");
     expect(speedText(0)).toBe("max");       // the contract's 0 = as fast as it drains
     expect(speedText(undefined)).toBe("");
+  });
+});
+
+describe("sessionText", () => {
+  const base = { schema_version: 1, service: "camera-service", instance: "cam", source: "replay", state: "playing", controls: [] };
+  it("names the session being played and its place in the run", () => {
+    expect(sessionText({ ...base, source_path: "/data/runs/x/recordings/cam/cam-20260907-101612", session: 1, sessions: 3 }))
+      .toBe("cam-20260907-101612 · session 2/3");
+    expect(sessionText({ ...base, source_path: "/r/cam-1", session: 0, sessions: 1 })).toBe("cam-1");
+    expect(sessionText({ ...base })).toBe("");
   });
 });

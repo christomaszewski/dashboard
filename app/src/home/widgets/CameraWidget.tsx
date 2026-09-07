@@ -53,7 +53,7 @@ export function CameraWidget({ widget }: { widget: CameraWidgetConfig }) {
           </span>
         </div>
         {state !== "playing" && <span className="pill warn tile-status">{statusText}</span>}
-        {state === "playing" && (
+        {(state === "playing" || state === "reconnecting") && (
           <TileControls service={service} playback={playback} confirm={widget.confirm} runId={widget.run_id} />
         )}
       </div>

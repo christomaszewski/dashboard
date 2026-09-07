@@ -30,6 +30,22 @@ export interface PlaybackDescriptor {
   frames?: number;
   since_unix_s?: number;
   last_error?: string | null;
+  /** What is playing RIGHT NOW (a replay: the recorded session's prefix path). */
+  source_path?: string | null;
+  /** A replay plays a run's sessions in order: this one (0-based) of how many. */
+  session?: number | null;
+  sessions?: number | null;
+  /** The timeline zero position_s counts from (unix ns); null = the data's own first frame. */
+  epoch_unix_ns?: number | null;
+}
+
+/** "cam-20260907-101612 · session 2/3" for a replay with several sessions; the prefix alone
+ *  for one; "" when the producer says nothing. */
+export function sessionText(d: PlaybackDescriptor): string {
+  const name = d.source_path ? d.source_path.split("/").filter(Boolean).pop() ?? "" : "";
+  const many = typeof d.session === "number" && typeof d.sessions === "number" && d.sessions > 1;
+  const which = many ? `session ${(d.session ?? 0) + 1}/${d.sessions}` : "";
+  return [name, which].filter(Boolean).join(" · ");
 }
 
 export interface PlaybackService {

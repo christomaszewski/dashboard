@@ -1,5 +1,5 @@
 import { usePlaybackAction } from "./usePlaybackAction";
-import { SPEED_PRESETS, positionText, speedText, type PlaybackService } from "./types";
+import { SPEED_PRESETS, positionText, sessionText, speedText, type PlaybackService } from "./types";
 
 const STATE_LEVEL: Record<string, string> = { playing: "ok", paused: "warn", finished: "idle" };
 
@@ -33,6 +33,7 @@ export function PlaybackCard({ service, title }: { service: PlaybackService; tit
         {d.cycle !== undefined && <span className="dim">cycle {d.cycle}</span>}
         {d.frames !== undefined && <span className="dim">{d.frames.toLocaleString()} frames</span>}
       </div>
+      {sessionText(d) && <div className="dim mono playback-session" title={d.source_path ?? undefined}>{sessionText(d)}</div>}
       {pct !== null && (
         <div className="playback-bar" aria-hidden="true">
           <div className="playback-bar-fill" style={{ width: `${pct}%` }} />

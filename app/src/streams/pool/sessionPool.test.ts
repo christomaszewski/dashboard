@@ -211,6 +211,24 @@ describe("StreamSessionPool", () => {
     expect(pool.getSnapshot(KEY)?.error).toBe("video stalled");
   });
 
+  it("stall watchdog counts decoded frames when the element can: a held source's 1 Hz stills keep it alive", () => {
+    const h = pool.acquire(KEY);
+    const v = fakeVideo() as ReturnType<typeof fakeVideo> & { frames: number; getVideoPlaybackQuality(): { totalVideoFrames: number } };
+    v.frames = 0;
+    v.getVideoPlaybackQuality = () => ({ totalVideoFrames: v.frames });
+    h.attach(v);
+    sources[0].hooks!.onStream(fakeMedia());
+    v.firePlaying();
+    for (let i = 0; i < 8; i++) {
+      v.frames += 1; // one still per poll, currentTime frozen
+      vi.advanceTimersByTime(3000);
+    }
+    expect(sources).toHaveLength(1);
+    expect(pool.getSnapshot(KEY)?.state).toBe("playing");
+    vi.advanceTimersByTime(15_000); // frames frozen too → a real stall
+    expect(pool.getSnapshot(KEY)?.state).toBe("reconnecting");
+  });
+
   it("stall watchdog idles with zero live attachments instead of false-positiving", () => {
     const h = pool.acquire(KEY);
     const v = fakeVideo();
