@@ -551,3 +551,46 @@ describe("rmw_attachment", () => {
     expect(() => parseDashboardConfig("rmw_attachment: jazzy\n")).toThrow(/rmw_attachment must be plain \| labelled, got 'jazzy'/);
   });
 });
+
+describe("readout format lines", () => {
+  it("topic_value: 'format' is a line with {field} placeholders, parsed at config time; exclusive with field; no unit / precision / thresholds", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "topic_value", label: "Fix", topic: "/gps/fix", format: "lat {latitude:.6f} lon {longitude:.6f}" },
+        { type: "topic_value", label: "x", topic: "/t", field: "a", format: "{a}" },
+        { type: "topic_value", label: "x", topic: "/t" },
+        { type: "topic_value", label: "x", topic: "/t", format: "{a}", unit: "m", warn_below: 1 },
+        { type: "topic_value", label: "x", topic: "/t", format: "lat {latitude" },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: { type: "topic_value", format: "lat {latitude:.6f} lon {longitude:.6f}", template: { paths: ["latitude", "longitude"] } },
+    });
+    if (home.widgets[0].ok) expect((home.widgets[0].widget as { field?: string }).field).toBeUndefined();
+    for (const i of [1, 2, 3, 4]) expect(home.widgets[i]).toMatchObject({ ok: false, index: i });
+    if (!home.widgets[1].ok) expect(home.widgets[1].message).toMatch(/'field' and 'format' are exclusive/);
+    if (!home.widgets[2].ok) expect(home.widgets[2].message).toMatch(/needs a 'field' \(one value\) or a 'format'/);
+    if (!home.widgets[3].ok) expect(home.widgets[3].message).toMatch(/'unit', 'warn_below' only apply to a 'field' row/);
+    if (!home.widgets[4].ok) expect(home.widgets[4].message).toMatch(/format: unclosed '\{'/);
+  });
+
+  it("panel: a readout shorthand may be a format row — inherits the panel topic, labelled by name (default: the topic); a bad one is one red row", () => {
+    const home = parseHome({
+      widgets: [
+        {
+          type: "panel",
+          topic: "/gps/fix",
+          items: [{ name: "Fix", format: "lat {latitude:.6f}" }, { format: "{status.status}" }, { name: "bad", format: "{a" }, { name: "sats", field: "status.satellites_used" }],
+        },
+      ],
+    });
+    const pw = home.widgets[0];
+    if (!pw.ok || !isPanelWidget(pw.widget)) throw new Error("expected a panel");
+    expect(pw.widget.items[0]).toMatchObject({ ok: true, item: { type: "topic_value", label: "Fix", topic: "/gps/fix", format: "lat {latitude:.6f}", template: { paths: ["latitude"] } } });
+    expect(pw.widget.items[1]).toMatchObject({ ok: true, item: { label: "/gps/fix", topic: "/gps/fix" } });
+    expect(pw.widget.items[2]).toMatchObject({ ok: false, index: 2 });
+    if (!pw.widget.items[2].ok) expect(pw.widget.items[2].message).toMatch(/items\[2\]: format: unclosed/);
+    expect(pw.widget.items[3]).toMatchObject({ ok: true, item: { label: "sats", field: "status.satellites_used" } });
+  });
+});

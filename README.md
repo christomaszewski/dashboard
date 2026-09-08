@@ -25,7 +25,8 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   where a bag session starts and ends stays rig's call.
 - Home widget schema: the commented `home:` block in
   [config/infra/dashboard.example.yaml](config/infra/dashboard.example.yaml) — status pills,
-  service buttons, video, map, lifecycle control, readouts, gauges, sparklines, rule-driven
+  service buttons, video, map, lifecycle control, readouts (one field, or a `format:` line
+  interpolating several fields of one message), gauges, sparklines, rule-driven
   indicators, notes, grouped panels. Projects can add their own widget types in React
   ([app/src/extensions/README.md](app/src/extensions/README.md)) — compiled into the image,
   registered through the same registry as the built-ins.

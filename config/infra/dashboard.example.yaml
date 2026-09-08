@@ -177,6 +177,10 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #         - field: latitude    # dot-path into the decoded message
 #           name: Lat          # row label (default: the field path); `label:` also accepted
 #           precision: 6
+#         - name: Fix          # OR a format line: several values of ONE message on one row —
+#           format: "lat {latitude:.6f}  lon {longitude:.6f}  alt {altitude:.1f} m"
+#                              #   {field} / {field:.Nf} placeholders, {{ }} literal braces; units
+#                              #   and decimals live in the string; a missing field shows `?`
 #         - field: status.satellites_used
 #           name: Sats
 #         - field: voltage
@@ -283,11 +287,14 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #     # -- custom widgets: projects can add their own types (React, compiled into the image) ---
 #     # See app/src/extensions/README.md — the shipped example is `type: example_compass`.
 #
-#     # -- topic_value: live single-field readout -----------------------------------------------
+#     # -- topic_value: live readout — one field, or a format line ------------------------------
 #     - type: topic_value
 #       label: Battery
 #       topic: /battery_state
 #       field: voltage         # dot-path into the decoded message; numeric segments index arrays
+#       # format: "{voltage:.1f} V  {current:.1f} A"   # INSTEAD of field: a line interpolating
+#       #                      #   several fields of the message ({field} / {field:.Nf}); no unit /
+#       #                      #   precision / thresholds on a format row — they live in the string
 #       # precision: 1         # decimals (default: raw value)
 #       # unit: V
 #       # warn_below: 22.0     # threshold coloring; any subset of warn/err below/above

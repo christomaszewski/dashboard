@@ -32,7 +32,7 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 ## Unit + component tests (no vehicle)
 
-`cd app && npx vitest run` — 40 files. Pure logic (schema, discovery, the stream pool, playback
+`cd app && npx vitest run` — 41 files. Pure logic (schema, discovery, the stream pool, playback
 control, ROS graph parsing) runs in node; the **component tests** (`src/**/*.test.tsx`: the tab bar,
 tile controls, the playback card, the `camera` / `cameras` / `bag_recorders` widgets, the Cameras
 console) opt into

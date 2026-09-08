@@ -2,6 +2,7 @@
 // React, no browser APIs — so the config schema and its tests can import this in node. The
 // components attach in widgets/builtins.tsx. Importing this module registers the specs.
 import { defineWidget, type BaseWidgetConfig } from "../../widgets/registry";
+import { parseTemplate, type Template } from "../template";
 import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type Thresholds, optStrList } from "../../widgets/parse";
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
 
@@ -91,9 +92,35 @@ export interface TopicValueWidgetConfig extends BaseWidgetConfig, Thresholds {
   type: "topic_value";
   label: string;
   topic: string;
-  field: string; // dot-path into the decoded message, numeric segments index arrays
-  precision?: number;
-  unit?: string;
+  /** ONE of: a dot-path into the decoded message (numeric segments index arrays) … */
+  field?: string;
+  /** … or a format string: literal text with `{dot.path}` / `{dot.path:.Nf}` placeholders, several
+   *  values of one message on one line ("lat {latitude:.6f} lon {longitude:.6f}"). */
+  format?: string;
+  /** `format` parsed at config time (present iff `format` is). */
+  template?: Template;
+  precision?: number; // field rows only
+  unit?: string; // field rows only
+}
+
+const FIELD_ONLY = ["precision", "unit", "warn_below", "warn_above", "err_below", "err_above"] as const;
+
+/** The readout body shared by `topic_value` and the panel's readout shorthand: exactly one of
+ *  `field` / `format`; precision, unit and thresholds belong to a field row (a format row has no
+ *  single value to threshold — write units and decimals into the string). */
+export function parseReadout(raw: Obj): Pick<TopicValueWidgetConfig, "field" | "format" | "template" | "precision" | "unit" | keyof Thresholds> {
+  const field = optStr(raw, "field");
+  const format = optStr(raw, "format");
+  if (field !== undefined && format !== undefined) throw new Error("'field' and 'format' are exclusive: one value, or one formatted line");
+  if (field === undefined && format === undefined) throw new Error("needs a 'field' (one value) or a 'format' (a line with {field} placeholders)");
+  if (format !== undefined) {
+    const extra = FIELD_ONLY.filter((k) => raw[k] !== undefined);
+    if (extra.length) {
+      throw new Error(`${extra.map((k) => `'${k}'`).join(", ")} only apply to a 'field' row: put units and decimals in the format string ({x:.2f} m)`);
+    }
+    return { format, template: parseTemplate(format) };
+  }
+  return { field, precision: optNum(raw, "precision"), unit: optStr(raw, "unit"), ...optThresholds(raw) };
 }
 
 export interface MapWidgetConfig extends BaseWidgetConfig {
@@ -275,15 +302,12 @@ defineWidget<BagRecordersWidgetConfig>({
 
 defineWidget<TopicValueWidgetConfig>({
   type: "topic_value",
-  description: "live single-field readout with unit and thresholds",
+  description: "live readout: one field with unit and thresholds, or a format line interpolating several",
   panelCapable: true,
   parse: (raw: Obj) => ({
     label: reqStr(raw, "label"),
     topic: reqStr(raw, "topic"),
-    field: reqStr(raw, "field"),
-    precision: optNum(raw, "precision"),
-    unit: optStr(raw, "unit"),
-    ...optThresholds(raw),
+    ...parseReadout(raw),
   }),
 });
 

@@ -7,9 +7,10 @@
 // Only a structurally unusable block (wrong version, widgets not a list) is fatal — and fatal
 // still means "banner + built-in default Home", never a blank page.
 import { parse as parseYaml } from "yaml";
+import { parseReadout } from "../home/widgets/specs";
 import { ATTACHMENT_LAYOUTS, type AttachmentLayout } from "../services/attachment";
 import { defineWidget, getWidget, panelItemTypes, widgetTypes, type BaseWidgetConfig } from "../widgets/registry";
-import { isObj, optNum, optSpan, optStr, optThresholds, type Obj, type WidgetSpan } from "../widgets/parse";
+import { isObj, optNum, optSpan, optStr, type Obj, type WidgetSpan } from "../widgets/parse";
 import "../home/widgets/specs"; // registers the built-in widget specs (pure)
 
 export type { WidgetSpan } from "../widgets/parse";
@@ -229,7 +230,7 @@ export function parseWidget(raw: unknown): WidgetConfig {
 }
 
 function panelItemHint(): string {
-  return `${panelItemTypes().join(" | ")}, or a readout with 'field'`;
+  return `${panelItemTypes().join(" | ")}, or a readout with 'field' / 'format'`;
 }
 
 function parsePanelItem(raw: unknown, index: number, panelTopic: string | undefined): ParsedPanelItem {
@@ -249,22 +250,23 @@ function parsePanelItem(raw: unknown, index: number, panelTopic: string | undefi
     }
   }
   // Readout shorthand: no type → a topic_value row. `name:` is the documented label key.
-  const field = optStr(raw, "field");
-  if (field === undefined) return fail("needs a 'type' or a readout 'field'");
+  if (raw["field"] === undefined && raw["format"] === undefined) return fail("needs a 'type' or a readout 'field' / 'format'");
   const topic = optStr(raw, "topic") ?? panelTopic;
   if (topic === undefined) return fail("'topic' is required (set it on the item or on the panel)");
-  return {
-    ok: true,
-    item: {
-      type: "topic_value",
-      label: optStr(raw, "name") ?? optStr(raw, "label") ?? field,
-      topic,
-      field,
-      precision: optNum(raw, "precision"),
-      unit: optStr(raw, "unit"),
-      ...optThresholds(raw),
-    } as PanelItemWidgetConfig,
-  };
+  try {
+    const body = parseReadout(raw);
+    return {
+      ok: true,
+      item: {
+        type: "topic_value",
+        label: optStr(raw, "name") ?? optStr(raw, "label") ?? body.field ?? topic,
+        topic,
+        ...body,
+      } as PanelItemWidgetConfig,
+    };
+  } catch (e) {
+    return fail(e instanceof Error ? e.message : String(e));
+  }
 }
 
 // The panel is structural (it parses OTHER widgets), so its spec lives here with the schema.
