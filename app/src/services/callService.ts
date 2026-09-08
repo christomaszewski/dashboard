@@ -2,6 +2,7 @@
 // (bundled schema or dynamic get_type_description). Reply channels are per-query in zenoh-ts, so no
 // request/response correlation is needed — the reply attachment's sequence number is only checked
 // softly for diagnostics.
+import type { MessageDefinition } from "@foxglove/message-definition";
 import type { Transport } from "../transport/types";
 import type { RosGraph, ServiceEntry } from "../ros/graph";
 import type { DecodedMessage } from "../schema/types";
@@ -51,6 +52,29 @@ function findEntry(graph: RosGraph, serviceName: string, domainId?: number): Ser
     serviceName,
     `${entries.length} distinct servers advertise ${serviceName} (different domain or type) — pass domainId`,
   );
+}
+
+export interface ServiceShape {
+  typeName: string;
+  typeHash: string;
+  /** Root-first request definitions (see services/fields.ts for turning them into a form). */
+  requestDefs: MessageDefinition[];
+}
+
+/** Resolve a service's type WITHOUT calling it — for request forms. Same resolution (and cache)
+ *  as callService: bundled schema or the serving node's ~/get_type_description. */
+export async function describeService(
+  transport: Transport,
+  graph: RosGraph,
+  serviceName: string,
+  opts?: CallServiceOptions,
+): Promise<ServiceShape> {
+  const entry = findEntry(graph, serviceName, opts?.domainId);
+  const server = pickServer(entry, opts?.domainId);
+  if (!server)
+    throw new ServiceCallError("no-server", serviceName, `no server for ${serviceName} in domain ${opts?.domainId}`);
+  const codec = await resolverFor(transport).resolve(graph, server);
+  return { typeName: codec.typeName, typeHash: codec.typeHash, requestDefs: codec.requestDefs };
 }
 
 export async function callService(

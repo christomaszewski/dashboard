@@ -23,6 +23,9 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   `…/pause` + `…/is_paused` services, one per bag_logger namespace) with a recording/paused pill
   and pause / resume / split / snapshot over the recorder's own services — writing control only;
   where a bag session starts and ends stays rig's call.
+- Services: `service_button` (one click, fixed request) and `services` (several services with
+  server status, a request form built from the live type — nested messages as JSON — and the
+  response kept on the row).
 - Home widget schema: the commented `home:` block in
   [config/infra/dashboard.example.yaml](config/infra/dashboard.example.yaml) — status pills,
   service buttons, video, map, lifecycle control, readouts (one field, or a `format:` line

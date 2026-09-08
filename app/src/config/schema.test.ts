@@ -594,3 +594,36 @@ describe("readout format lines", () => {
     expect(pw.widget.items[3]).toMatchObject({ ok: true, item: { label: "sats", field: "status.satellites_used" } });
   });
 });
+
+describe("services widget", () => {
+  it("services: a non-empty list of names or mappings; request a mapping; timeout positive; index in every error", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "services", label: "Ops", services: ["/bag/pause", { service: "/bag/resume", label: "Resume", request: { resume_mode: 1 }, confirm: true, timeout_s: 2, srv_type: "rosbag2_interfaces/srv/Resume" }] },
+        { type: "services", services: [] },
+        { type: "services", services: [{ label: "x" }] },
+        { type: "services", services: [{ service: "/a", request: 3 }] },
+        { type: "services", services: [{ service: "/a", timeout_s: 0 }] },
+        { type: "services", services: [""] },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: {
+        type: "services",
+        label: "Ops",
+        services: [
+          { service: "/bag/pause" },
+          { service: "/bag/resume", label: "Resume", request: { resume_mode: 1 }, confirm: true, timeout_s: 2, srv_type: "rosbag2_interfaces/srv/Resume" },
+        ],
+      },
+    });
+    for (const i of [1, 2, 3, 4, 5]) expect(home.widgets[i]).toMatchObject({ ok: false, index: i });
+    const msg = (i: number) => (home.widgets[i].ok ? "" : home.widgets[i].message);
+    expect(msg(1)).toMatch(/'services' is required: a non-empty list/);
+    expect(msg(2)).toMatch(/services\[0\]: .*'service'/);
+    expect(msg(3)).toMatch(/services\[0\]: 'request' must be a mapping/);
+    expect(msg(4)).toMatch(/services\[0\]: 'timeout_s' must be positive/);
+    expect(msg(5)).toMatch(/services\[0\]: empty service name/);
+  });
+});

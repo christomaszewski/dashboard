@@ -20,6 +20,8 @@ const GTD_TIMEOUT_MS = 5000;
 export interface SrvCodec {
   typeName: string;
   typeHash: string;
+  /** Root-first request definitions — what encodeRequest writes; request forms are built from them. */
+  requestDefs: MessageDefinition[];
   encodeRequest(msg: Record<string, unknown>): Uint8Array;
   decodeResponse(bytes: Uint8Array): DecodedMessage;
   /** Trailing-bytes diagnostic for the most recent decodeResponse. */
@@ -38,6 +40,7 @@ function buildCodec(typeName: string, typeHash: string, defs: StaticSrvDef): Srv
   return {
     typeName,
     typeHash,
+    requestDefs: defs.requestDefs as MessageDefinition[],
     encodeRequest: (msg) => writer.writeMessage(msg), // omitted fields zero-fill
     decodeResponse: (bytes) => reader.readMessage(bytes) as DecodedMessage,
     lastResponseWarning: () =>

@@ -32,9 +32,9 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 ## Unit + component tests (no vehicle)
 
-`cd app && npx vitest run` — 41 files. Pure logic (schema, discovery, the stream pool, playback
+`cd app && npx vitest run` — 43 files. Pure logic (schema, discovery, the stream pool, playback
 control, ROS graph parsing) runs in node; the **component tests** (`src/**/*.test.tsx`: the tab bar,
-tile controls, the playback card, the `camera` / `cameras` / `bag_recorders` widgets, the Cameras
+tile controls, the playback card, the `camera` / `cameras` / `bag_recorders` / `services` widgets, the Cameras
 console) opt into
 jsdom per file (`// @vitest-environment jsdom`) and render through `src/test/harness.tsx`: the
 app's contexts provided with plain values around a REAL `StreamSessionPool` with fake sources, so a
@@ -123,7 +123,14 @@ switching never drops video or subscriptions:
    button flashes the response (`success — ...`). `timeout: ...` against a stopped server.
 3. **Dynamic typing**: `ros2 service list | grep get_type_description` (Jazzy nodes serve it per
    node); a `service_button` for a vendor-typed service must resolve + call with no bundled schema.
-4. **Shared sessions**: put the same camera on Home (`type: video`) and subscribe it in Cameras →
+4. **Services widget**: a `services` widget listing a rosbag2 recorder's `…/pause` and
+   `…/resume` → both rows `ready` with their types (resolved dynamically — neither is bundled);
+   `resume` shows `resume_time` as JSON (`{"sec":0,"nanosec":0}`), `resume_mode`, and
+   `tracking_topic_name` inputs, `pause` no form. Type `x` into `resume_mode` → call → the row
+   says `request: resume_mode: an integer (int32)` and nothing was sent. Fix it → call → the
+   reply (`return_code: 0`) stays on the row with its round-trip time; stop the recorder → the
+   pill flips to `no server`, the button disables, the last reply stays.
+5. **Shared sessions**: put the same camera on Home (`type: video`) and subscribe it in Cameras →
    `chrome://webrtc-internals` shows **one** peer connection for that camera. Switch tabs during
    playback → no renegotiation events. Producer restart → tile goes offline → auto-resumes. Freeze
    the producer (SIGSTOP) → recovery within ~15 s of unfreeze.

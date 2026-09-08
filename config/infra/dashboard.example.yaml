@@ -111,6 +111,24 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # confirm: false       # true = two-step click for destructive actions
 #       # timeout_s: 5
 #
+#     # -- services: several services — server status, a request form, call, the response --------
+#     # Rows are `services:` entries: a name, or a mapping. The request FORM comes from the live
+#     # type (bundled, or the serving node's ~/get_type_description): bools, numbers and strings as
+#     # inputs, arrays / nested messages as JSON; `request:` pre-fills it, `reset fields` restores
+#     # it. The response (or the error) stays on the row until the next call. `service_button`
+#     # above stays the one-click, fixed-request form.
+#     - type: services
+#       label: Recorder
+#       services:
+#         - /bag_logger/rosbag2_recorder/pause            # no request fields: just the button
+#         - service: /bag_logger/rosbag2_recorder/resume
+#           label: Resume
+#           request: { resume_mode: 0 }                   # form defaults (omitted fields zero-fill)
+#           # confirm: true        # two-step click
+#           # timeout_s: 5
+#           # srv_type: rosbag2_interfaces/srv/Resume    # optional cross-check against the graph
+#       # span: 2
+#
 #     # -- camera: a tile you DRIVE (the video chrome + overlaid record / playback controls) ------
 #     # `stream` is a DEFAULT: the tile's picker changes it at runtime and the choice is remembered
 #     # per widget (label it!). Omit `stream` to pick from discovery — the only stream auto-selects,

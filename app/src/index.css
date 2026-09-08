@@ -1914,3 +1914,62 @@ ul.plain {
   overflow-wrap: anywhere;
   text-align: right;
 }
+
+/* ---- services: rows of service + form + response ---------------------------------------------- */
+
+.widget-services .service-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  align-self: stretch;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.widget-services .service-row:first-of-type {
+  border-top: 0;
+}
+
+.widget-services .service-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.widget-services .service-head .service-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-services .service-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.6rem;
+  align-items: center;
+}
+
+.widget-services .service-fields label {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.widget-services .service-fields input.field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.widget-services .service-response {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.widget-services .service-response.is-err {
+  color: var(--err);
+}

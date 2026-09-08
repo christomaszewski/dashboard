@@ -21,6 +21,8 @@ export type {
   CameraWidgetConfig,
   CamerasWidgetConfig,
   BagRecordersWidgetConfig,
+  ServicesWidgetConfig,
+  ServiceCallSpec,
   TopicValueWidgetConfig,
   MapWidgetConfig,
   LifecycleWidgetConfig,

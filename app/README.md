@@ -45,7 +45,7 @@ src/
                             #   README.md = "writing a widget"
   home/                     # config-driven Home tab: HomeTab (grid-area layout, registry-rendered),
                             #   DefaultHome, widgets/specs.ts (built-in specs, pure), widgets/
-                            #   (status, service_button, video, camera, cameras, bag_recorders, topic_value,
+                            #   (status, service_button, services, video, camera, cameras, bag_recorders, topic_value,
                             #   map, lifecycle, panel;
                             #   primitives/: gauge, sparkline, indicator, text + rules.ts/series.ts),
                             #   rate.ts, pluck.ts, value.ts, geo.ts, resolveStream.ts (pure helpers)

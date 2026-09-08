@@ -30,6 +30,26 @@ export interface ServiceButtonWidgetConfig extends BaseWidgetConfig {
   timeout_s?: number;
 }
 
+/** One row of a `services` widget. */
+export interface ServiceCallSpec {
+  service: string;
+  label?: string; // default: the service name
+  /** Optional cross-check only — the type comes from the live graph. */
+  srv_type?: string;
+  /** Pre-fills the request form (omitted fields start at the type's zero / declared default). */
+  request?: Record<string, unknown>;
+  confirm?: boolean;
+  timeout_s?: number;
+}
+
+/** Several services in one card: server status, a request form built from the live type, a call
+ *  button, and the last response kept on the row. `service_button` is the one-click fixed-request
+ *  form of the same thing. */
+export interface ServicesWidgetConfig extends BaseWidgetConfig {
+  type: "services";
+  services: ServiceCallSpec[];
+}
+
 export interface VideoWidgetConfig extends BaseWidgetConfig {
   type: "video";
   stream: string;
@@ -216,6 +236,44 @@ defineWidget<ServiceButtonWidgetConfig>({
       confirm: optBool(raw, "confirm"),
       timeout_s: optNum(raw, "timeout_s"),
     };
+  },
+});
+
+defineWidget<ServicesWidgetConfig>({
+  type: "services",
+  description: "several services: server status, a request form from the live type, call, and the response",
+  defaultSpan: 2,
+  panelCapable: false,
+  label: (w) => w.label ?? "services",
+  parse: (raw: Obj) => {
+    const list = raw["services"];
+    if (!Array.isArray(list) || list.length === 0) {
+      throw new Error("'services' is required: a non-empty list of service names or { service, label, request, confirm, timeout_s }");
+    }
+    const services: ServiceCallSpec[] = list.map((item: unknown, i: number) => {
+      if (typeof item === "string") {
+        if (!item.trim()) throw new Error(`services[${i}]: empty service name`);
+        return { service: item.trim() };
+      }
+      if (!isObj(item)) throw new Error(`services[${i}]: a service name or a mapping with 'service'`);
+      const request = item["request"];
+      if (request !== undefined && !isObj(request)) throw new Error(`services[${i}]: 'request' must be a mapping of field: value`);
+      const timeout = optNum(item, "timeout_s");
+      if (timeout !== undefined && !(timeout > 0)) throw new Error(`services[${i}]: 'timeout_s' must be positive`);
+      try {
+        return {
+          service: reqStr(item, "service"),
+          label: optStr(item, "label"),
+          srv_type: optStr(item, "srv_type"),
+          request: request as Record<string, unknown> | undefined,
+          confirm: optBool(item, "confirm"),
+          timeout_s: timeout,
+        };
+      } catch (e) {
+        throw new Error(`services[${i}]: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    });
+    return { services, label: optStr(raw, "label") };
   },
 });
 
