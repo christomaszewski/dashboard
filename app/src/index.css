@@ -1867,3 +1867,35 @@ ul.plain {
 .widget-cameras .empty {
   padding: 0.8rem 1.1rem 1rem;
 }
+
+
+/* ---- bag recorders ------------------------------------------------------------------------------ */
+
+.bag-recorders .recorder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.bag-recorders .recorder-row:first-of-type {
+  border-top: 0;
+}
+
+.bag-recorders .recorder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bag-recorders .recorder-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.bag-recorders .recorder-note {
+  font-size: 0.78rem;
+}

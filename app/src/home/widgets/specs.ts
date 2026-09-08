@@ -70,6 +70,23 @@ export interface CamerasWidgetConfig extends BaseWidgetConfig {
   controls: CameraControls; // on every tile (the focused one carries them in `focus`)
 }
 
+export type BagRecorderAction = "pause" | "resume" | "split" | "snapshot";
+const BAG_ACTIONS: readonly BagRecorderAction[] = ["pause", "resume", "split", "snapshot"];
+
+/** Every rosbag2 recorder on the graph, with its writing paused or resumed from here. Discovery is
+ *  by the recorder's own services (a node offering `…/pause` AND `…/is_paused`), state by polling
+ *  `is_paused`. Deliberately NOT session control: a bag session is a rig run's, and where a run
+ *  starts and ends stays rig's call from the vehicle. */
+export interface BagRecordersWidgetConfig extends BaseWidgetConfig {
+  type: "bag_recorders";
+  /** Recorder node bases (e.g. /bag_logger/rosbag2_recorder). Omit = every recorder discovered. */
+  recorders?: string[];
+  /** The buttons offered (default: pause, resume, split). */
+  actions: BagRecorderAction[];
+  poll_s: number; // is_paused polling period (default 3)
+  confirm?: boolean; // two-step click before pause / split / snapshot
+}
+
 export interface TopicValueWidgetConfig extends BaseWidgetConfig, Thresholds {
   type: "topic_value";
   label: string;
@@ -108,7 +125,8 @@ export interface RigWidgetConfig extends BaseWidgetConfig {
   stacks?: string[];
   /** Show standby/activate/up/down buttons (default true). */
   actions?: boolean;
-  /** Show New run / End run controls (default true). */
+  /** Show New run / End run controls. OPT-IN (default false): where a run starts and ends stays
+   *  rig's call from the vehicle unless a deployment says otherwise. */
   runs?: boolean;
   confirm?: boolean; // two-step click before any verb
   /** Pass the open run's label as run_id to lifecycle activate (default true). */
@@ -229,6 +247,28 @@ defineWidget<CamerasWidgetConfig>({
       confirm: optBool(raw, "confirm"),
       run_id: optStr(raw, "run_id"),
       controls: parseControls(raw),
+    };
+  },
+});
+
+defineWidget<BagRecordersWidgetConfig>({
+  type: "bag_recorders",
+  description: "every rosbag2 recorder on the graph: recording/paused state, pause / resume / split / snapshot",
+  defaultSpan: 2,
+  panelCapable: false,
+  label: (w) => w.label ?? "bag recorders",
+  parse: (raw: Obj) => {
+    const actions = optStrList(raw, "actions") ?? ["pause", "resume", "split"];
+    const bad = actions.filter((a) => !(BAG_ACTIONS as readonly string[]).includes(a));
+    if (bad.length) throw new Error(`'actions' must be from ${BAG_ACTIONS.join(" | ")}, got '${bad.join(", ")}'`);
+    const poll = optNum(raw, "poll_s") ?? 3;
+    if (!(poll > 0)) throw new Error(`'poll_s' must be a positive number of seconds, got ${poll}`);
+    return {
+      recorders: optStrList(raw, "recorders"),
+      actions: actions as BagRecorderAction[],
+      poll_s: poll,
+      confirm: optBool(raw, "confirm"),
+      label: optStr(raw, "label"),
     };
   },
 });

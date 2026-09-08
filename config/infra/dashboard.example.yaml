@@ -8,6 +8,12 @@ name: dashboard       # instance name -> compose project (rig requires it unique
 web_port: 8080        # http: the React bundle        -> http://<vehicle-ip>:<web_port>
 ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws_port>
 
+# rmw_attachment: plain   # the rmw_zenoh attachment layout this page SENDS on service calls:
+                          #   plain = rmw_zenoh 0.10 (ROS 2 Lyrical, the fleet's; default),
+                          #   labelled = rmw_zenoh 0.2 (Jazzy). MUST match the vehicle's nodes: a
+                          #   server given the other layout crashes. Bus debug's attachment column
+                          #   names the layout live samples carry — check it before the first call.
+
 # clouds_dir: /data/clouds   # optional: host dir of point-cloud files (.bpf) served read-only at
                              #   /clouds/ for the Clouds tab (relative paths resolve against this
                              #   config's directory). Omit -> the tab still works via drag & drop.
@@ -27,7 +33,10 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #                                  #   into dashboard-web at /rig-data/ for the run browser + downloads
 # rig_mount: /home/uxv/ws          # a WIDER read-only mount when the catalog points at ../sibling
 #                                  #   checkouts (dev workspaces); default: rig_root
-# rig_actuate: false               # read-only agent: no verbs, no buttons (state + runs still shown)
+rig_actuate: false                 # read-only agent: no verbs, no buttons (state + runs still shown).
+#                                  #   Flip to true only when operators may drive the deployment from
+#                                  #   the dashboard; recording itself is controlled elsewhere (the
+#                                  #   lifecycle strips, the bag_recorders widget)
 # rig_poll_s: 10                   # `rig status` cadence
 
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
@@ -132,6 +141,20 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #       # controls: auto       # on every tile
 #       # span: full           # (cameras default full)
 #
+#     # -- bag_recorders: every rosbag2 recorder on the graph, its WRITING controlled here ------
+#     # Recorders are found by their own services (a node serving .../pause AND .../is_paused:
+#     # rosbag2's recorder, one per bag_logger namespace) and driven through them: pause / resume
+#     # the writing of the open session, split the bag file, take a snapshot (snapshot-mode
+#     # recorders). State is polled from .../is_paused. NOT session control: a bag session is a
+#     # rig run's, and where a run starts and ends stays rig's call from the vehicle.
+#     - type: bag_recorders
+#       label: Bag recorders
+#       # recorders: [/bag_logger/rosbag2_recorder]   # omit = every recorder discovered
+#       # actions: [pause, resume, split]   # from pause | resume | split | snapshot
+#       # poll_s: 3            # is_paused polling period (seconds)
+#       # confirm: true        # two-step click before pause / split / snapshot
+#       # span: 2
+#
 #     # -- video: embedded live stream ----------------------------------------------------------
 #     # Shares ONE WebRTC session (and one vehicle-side encode) with the Cameras tab.
 #     - type: video
@@ -191,7 +214,8 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #       label: Deployment
 #       # stacks: [cam_front, lidar]   # only these rows (default: every enabled row)
 #       # actions: true          # per-row buttons
-#       # runs: true             # New run / End run controls
+#       # runs: true             # New run / End run controls — OPT-IN (default false: where a run
+#       #                        #   starts and ends stays rig's call from the vehicle)
 #       # confirm: true          # two-step click before any verb
 #       # use_run_label: true    # lifecycle activate carries the open run's label as run_id
 #       # span: 2                # (rig default 2)

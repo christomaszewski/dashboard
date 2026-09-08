@@ -146,6 +146,32 @@ describe("parseHome widget isolation", () => {
     if (!home.widgets[4].ok) expect(home.widgets[4].message).toMatch(/streams.*non-empty strings/);
   });
 
+  it("bag_recorders: recorders optional, actions from pause|resume|split|snapshot (default pause/resume/split), poll_s positive", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "bag_recorders", recorders: ["/bag_logger/rosbag2_recorder"], actions: ["pause", "resume", "snapshot"], poll_s: 1, confirm: true },
+        { type: "bag_recorders", label: "bags" },
+        { type: "bag_recorders", actions: ["pause", "stop"] },
+        { type: "bag_recorders", poll_s: 0 },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: {
+        type: "bag_recorders",
+        recorders: ["/bag_logger/rosbag2_recorder"],
+        actions: ["pause", "resume", "snapshot"],
+        poll_s: 1,
+        confirm: true,
+      },
+    });
+    expect(home.widgets[1]).toMatchObject({ ok: true, widget: { label: "bags", actions: ["pause", "resume", "split"], poll_s: 3 } });
+    if (home.widgets[1].ok) expect((home.widgets[1].widget as { recorders?: string[] }).recorders).toBeUndefined();
+    for (const i of [2, 3]) expect(home.widgets[i]).toMatchObject({ ok: false, index: i });
+    if (!home.widgets[2].ok) expect(home.widgets[2].message).toMatch(/actions.*pause \| resume \| split \| snapshot.*'stop'/);
+    if (!home.widgets[3].ok) expect(home.widgets[3].message).toMatch(/poll_s.*positive/);
+  });
+
   it("unsupported version is fatal (banner + default Home), widgets dropped", () => {
     const home = parseHome({ version: 2, widgets: [{ type: "video", stream: "cam0" }] });
     expect(home.fatal).toMatch(/version 2/);
@@ -514,5 +540,14 @@ describe("panel widget", () => {
     if (!empty.widgets[0].ok) expect(empty.widgets[0].message).toMatch(/'items' must not be empty/);
     expect(missing.widgets[0].ok).toBe(false);
     expect(empty.widgets[0].ok).toBe(false);
+  });
+});
+
+describe("rmw_attachment", () => {
+  it("is optional (plain by default), accepts plain | labelled, and refuses anything else loudly", () => {
+    expect(parseDashboardConfig("name: d\n").rmw_attachment).toBeUndefined();
+    expect(parseDashboardConfig("rmw_attachment: labelled\n").rmw_attachment).toBe("labelled");
+    expect(parseDashboardConfig("rmw_attachment: plain\n").rmw_attachment).toBe("plain");
+    expect(() => parseDashboardConfig("rmw_attachment: jazzy\n")).toThrow(/rmw_attachment must be plain \| labelled, got 'jazzy'/);
   });
 });

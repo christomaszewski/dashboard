@@ -4,11 +4,13 @@
 // attach / release path runs for real and only the media negotiation is stubbed. Each test file
 // opts into jsdom itself (`// @vitest-environment jsdom`); the unit suites stay in node.
 import { render, type RenderResult } from "@testing-library/react";
-import type { ReactElement } from "react";
+import type { ComponentProps, ReactElement } from "react";
 import type { LifecycleService } from "../lifecycle/types";
 import { LifecycleCtx } from "../lifecycle/LifecycleContext";
 import type { PlaybackDescriptor, PlaybackService } from "../playback/types";
 import { PlaybackCtx } from "../playback/PlaybackContext";
+import { EMPTY_GRAPH, type RosGraph } from "../ros/graph";
+import { RosGraphCtx } from "../ros/RosGraphContext";
 import { StreamSessionPool } from "../streams/pool/sessionPool";
 import type { StreamSource, StreamSourceHooks } from "../streams/source/types";
 import { StreamsCtx } from "../streams/StreamsContext";
@@ -117,10 +119,17 @@ export function playback(instance: string, d: Partial<PlaybackDescriptor> = {}):
   };
 }
 
+type TransportValue = NonNullable<ComponentProps<typeof TransportCtx.Provider>["value"]>;
+
 export interface World {
   streams?: DiscoveredStream[];
   services?: LifecycleService[];
   playbacks?: PlaybackService[];
+  /** The ROS graph as liveliness would have built it (services, nodes, topics). Default: empty. */
+  graph?: RosGraph;
+  /** A transport handle — null (the default) renders every service-calling control disabled; tests
+   *  that mock `callService` pass any object to stand in for a connected session. */
+  transport?: TransportValue["transport"];
 }
 
 function finder<T extends { instance: string; vehicleId: string }>(items: T[]) {
@@ -140,12 +149,14 @@ export function renderWith(ui: ReactElement, world: World = {}): RenderResult & 
   const services = world.services ?? [];
   const playbacks = world.playbacks ?? [];
   const result = render(
-    <TransportCtx.Provider value={{ transport: null, status: "connected", error: "", locator: "ws://test" }}>
-      <StreamsCtx.Provider value={{ streams, pool }}>
-        <LifecycleCtx.Provider value={{ services, find: finder(services) }}>
-          <PlaybackCtx.Provider value={{ services: playbacks, find: finder(playbacks) }}>{ui}</PlaybackCtx.Provider>
-        </LifecycleCtx.Provider>
-      </StreamsCtx.Provider>
+    <TransportCtx.Provider value={{ transport: world.transport ?? null, status: "connected", error: "", locator: "ws://test" }}>
+      <RosGraphCtx.Provider value={{ graph: world.graph ?? EMPTY_GRAPH, resolver: null, store: null }}>
+        <StreamsCtx.Provider value={{ streams, pool }}>
+          <LifecycleCtx.Provider value={{ services, find: finder(services) }}>
+            <PlaybackCtx.Provider value={{ services: playbacks, find: finder(playbacks) }}>{ui}</PlaybackCtx.Provider>
+          </LifecycleCtx.Provider>
+        </StreamsCtx.Provider>
+      </RosGraphCtx.Provider>
     </TransportCtx.Provider>,
   );
   return Object.assign(result, { pool });

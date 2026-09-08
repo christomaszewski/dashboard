@@ -15,7 +15,8 @@ export interface RosGraphContextValue {
   store: TopicStore | null;
 }
 
-const Ctx = createContext<RosGraphContextValue | null>(null);
+/** The raw context — for tests and extensions that provide a value without the live provider. */
+export const RosGraphCtx = createContext<RosGraphContextValue | null>(null);
 
 export function RosGraphProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
@@ -27,11 +28,11 @@ export function RosGraphProvider({ children }: { children: ReactNode }) {
   );
   useEffect(() => () => store?.closeAll(), [store]);
   const value = useMemo(() => ({ graph, resolver, store }), [graph, resolver, store]);
-  return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
+  return <RosGraphCtx.Provider value={value}>{children}</RosGraphCtx.Provider>;
 }
 
 export function useRosGraphContext(): RosGraphContextValue {
-  const v = useContext(Ctx);
+  const v = useContext(RosGraphCtx);
   if (!v) throw new Error("useRosGraphContext must be used inside <RosGraphProvider>");
   return v;
 }

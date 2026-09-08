@@ -2,6 +2,7 @@
 // at /config/dashboard.yaml, bypassing the SPA fallback so absence is a real 404). fetch is
 // injectable for node-env tests.
 import { parseDashboardConfig, type DashboardConfig } from "./schema";
+import { setAttachmentLayout } from "../services/attachment";
 
 export const CONFIG_URL = "/config/dashboard.yaml";
 
@@ -21,7 +22,9 @@ export async function loadDashboardConfig(fetchFn: typeof fetch = fetch): Promis
     return { phase: "absent" };
   }
   try {
-    return { phase: "ready", config: parseDashboardConfig(text) };
+    const config = parseDashboardConfig(text);
+    setAttachmentLayout(config.rmw_attachment ?? "plain"); // before any service call can happen
+    return { phase: "ready", config };
   } catch (e) {
     return { phase: "error", message: `config YAML is unparseable: ${e instanceof Error ? e.message : String(e)}` };
   }

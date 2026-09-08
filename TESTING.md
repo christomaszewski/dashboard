@@ -32,9 +32,10 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 ## Unit + component tests (no vehicle)
 
-`cd app && npx vitest run` — 39 files. Pure logic (schema, discovery, the stream pool, playback
+`cd app && npx vitest run` — 40 files. Pure logic (schema, discovery, the stream pool, playback
 control, ROS graph parsing) runs in node; the **component tests** (`src/**/*.test.tsx`: the tab bar,
-tile controls, the playback card, the `camera` / `cameras` widgets, the Cameras console) opt into
+tile controls, the playback card, the `camera` / `cameras` / `bag_recorders` widgets, the Cameras
+console) opt into
 jsdom per file (`// @vitest-environment jsdom`) and render through `src/test/harness.tsx`: the
 app's contexts provided with plain values around a REAL `StreamSessionPool` with fake sources, so a
 tile's acquire/attach/release runs for real and only media negotiation is stubbed. `npx tsc
@@ -78,8 +79,10 @@ switching never drops video or subscriptions:
    first visible tab; `tabs: { debug: false }` (map form) is still honoured.
 8. **Bus debug** → **Liveliness** shows the raw keyspace: the rmw_zenoh graph tokens + the
    `fleet/.../media/...` discovery token. The data-subscription box can sample any keyexpr; its
-   **attachment** column decodes each sample's rmw attachment (`rmw ✓ seq N` = the service-call
-   wire format is confirmed against live traffic; `⚠` = the attachment layout assumption is wrong).
+   **attachment** column decodes each sample's rmw attachment (`rmw ✓ seq N · plain` = the nodes
+   speak the layout this page sends, so service calls are safe; `⚠ nodes speak the labelled layout…`
+   = set `rmw_attachment:` to what it names BEFORE any service call — a server given the wrong
+   layout crashes).
 
 ## Home tab / config delivery
 
@@ -107,9 +110,15 @@ switching never drops video or subscriptions:
 
 ## Service calls / shared sessions (on-vehicle acceptance)
 
-1. **Attachment wire format** (highest-risk assumption): Bus debug → subscribe `**` while any topic
-   publishes → the attachment column must show `rmw ✓ seq N`. If it shows `⚠`, fix
-   `app/src/services/attachment.ts` against the vehicle's `rmw_zenoh` version before trusting calls.
+1. **Attachment wire format** (do this FIRST on a new fleet — a mismatch KILLS the server node):
+   Bus debug → subscribe `**` while any topic publishes → the attachment column must show
+   `rmw ✓ seq N · plain`. rmw_zenoh 0.10 (Lyrical) attaches 33 unlabelled bytes (`plain`, the
+   default); Jazzy's 0.2 attaches 77 labelled bytes (`labelled`). `⚠ nodes speak the labelled
+   layout…` → set `rmw_attachment: labelled` in the instance config and reload before any call.
+   Measured on the bench: a rosbag2 recorder on 0.10.5 terminated with `zenoh::ZException:
+   Incorrect sequence size` on the first labelled query (rmw_zenoh parses the attachment in its
+   query callback and the exception is uncaught). A layout neither decodes as → fix
+   `app/src/services/attachment.ts` against the vehicle's `rmw_zenoh` before trusting calls.
 2. **Bundled-type call**: a `service_button` for any `std_srvs/srv/Trigger` service → click → the
    button flashes the response (`success — ...`). `timeout: ...` against a stopped server.
 3. **Dynamic typing**: `ros2 service list | grep get_type_description` (Jazzy nodes serve it per
@@ -118,6 +127,23 @@ switching never drops video or subscriptions:
    `chrome://webrtc-internals` shows **one** peer connection for that camera. Switch tabs during
    playback → no renegotiation events. Producer restart → tile goes offline → auto-resumes. Freeze
    the producer (SIGSTOP) → recovery within ~15 s of unfreeze.
+
+## Bag recorders (rosbag2 — bench or on-vehicle acceptance)
+
+A `bag_recorders` Home widget drives every rosbag2 recorder's WRITING through the recorder's own
+services (`…/pause`, `…/resume`, `…/is_paused`, `…/split_bagfile`, `…/snapshot`) — not the
+session: where a run starts and ends stays rig's call. Any recorder on the mesh will do:
+
+1. Start one (`ros2 bag record -a` in a `fleet-ros` container on the router's domain, or a rig
+   run's `bag_logger`) → the widget lists it by namespace with a `recording` pill within `poll_s`
+   (3 s default). A node serving `/pause` without `/is_paused` must NOT be listed.
+2. **pause** → pill `paused`, `ros2 service call …/is_paused` agrees, the bag stops growing; the
+   row now offers **resume** instead of pause. **resume** → `recording`, growth resumes.
+3. **split** → a new bag file appears in the bag directory; a recorder with no bag open answers
+   with a non-zero `return_code` and the row shows its `error_string` as an error note.
+4. `recorders: [/bag_logger/rosbag2_recorder]` lists only that one; a base not on the graph shows
+   "none of … is on the graph". `confirm: true` arms pause / split / snapshot on the first click.
+5. Stop the recorder → the row disappears with its liveliness tokens; nothing is polled for it.
 
 ## Lifecycle control plane (camera-service recording — on-vehicle acceptance)
 

@@ -1,15 +1,18 @@
 import { useEffect, useRef, useState } from "react";
 import type { Subscription } from "../transport/types";
 import { useTransportContext } from "../transport/TransportContext";
-import { decodeAttachment } from "../services/attachment";
+import { attachmentLayout, decodeAttachment } from "../services/attachment";
 
 /** Probe a sample's rmw attachment: verifies the service-call wire format against live traffic
- *  (rmw_zenoh publishers attach the same struct to every topic sample). */
-function describeAttachment(attachment: Uint8Array | undefined): string {
+ *  (rmw_zenoh publishers attach the same struct to every topic sample). The layout the nodes speak
+ *  must be the one the page SENDS (`rmw_attachment:`) — a server given the other one dies. */
+export function describeAttachment(attachment: Uint8Array | undefined): string {
   if (!attachment) return "";
   try {
     const a = decodeAttachment(attachment);
-    return `rmw ✓ seq ${a.sequenceNumber}`;
+    if (a.layout !== attachmentLayout())
+      return `⚠ nodes speak the ${a.layout} layout, this page sends ${attachmentLayout()} — set rmw_attachment: ${a.layout} (seq ${a.sequenceNumber})`;
+    return `rmw ✓ seq ${a.sequenceNumber} · ${a.layout}`;
   } catch (e) {
     return `⚠ ${e instanceof Error ? e.message : String(e)}`;
   }

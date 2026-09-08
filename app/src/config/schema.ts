@@ -7,6 +7,7 @@
 // Only a structurally unusable block (wrong version, widgets not a list) is fatal — and fatal
 // still means "banner + built-in default Home", never a blank page.
 import { parse as parseYaml } from "yaml";
+import { ATTACHMENT_LAYOUTS, type AttachmentLayout } from "../services/attachment";
 import { defineWidget, getWidget, panelItemTypes, widgetTypes, type BaseWidgetConfig } from "../widgets/registry";
 import { isObj, optNum, optSpan, optStr, optThresholds, type Obj, type WidgetSpan } from "../widgets/parse";
 import "../home/widgets/specs"; // registers the built-in widget specs (pure)
@@ -18,6 +19,7 @@ export type {
   VideoWidgetConfig,
   CameraWidgetConfig,
   CamerasWidgetConfig,
+  BagRecordersWidgetConfig,
   TopicValueWidgetConfig,
   MapWidgetConfig,
   LifecycleWidgetConfig,
@@ -116,6 +118,10 @@ export interface DashboardConfig {
   rig_agent?: boolean;
   tabs?: TabVisibility;
   home?: ParsedHome;
+  /** The rmw_zenoh attachment layout this page SENDS on service calls: `plain` (rmw_zenoh 0.10 /
+   *  Lyrical — default) or `labelled` (Jazzy). Must match the vehicle's nodes: a server given the
+   *  other layout crashes. Bus debug shows which one live samples carry. */
+  rmw_attachment?: AttachmentLayout;
 }
 
 // ---- layout ----------------------------------------------------------------------------------
@@ -330,6 +336,11 @@ export function parseHome(value: unknown): ParsedHome {
 export function parseDashboardConfig(yamlText: string): DashboardConfig {
   const doc: unknown = parseYaml(yamlText);
   if (!isObj(doc)) return {};
+  const layout = doc["rmw_attachment"];
+  if (layout !== undefined && !(ATTACHMENT_LAYOUTS as readonly unknown[]).includes(layout)) {
+    // loud on purpose: the wrong layout kills the node that receives it
+    throw new Error(`rmw_attachment must be ${ATTACHMENT_LAYOUTS.join(" | ")}, got '${String(layout)}'`);
+  }
   const rigAgent = doc["rig_agent"] === true || doc["rig_agent"] === "true";
   const tabs = doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined;
   const resolvedTabs: TabVisibility | undefined =
@@ -341,6 +352,7 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     rig_agent: rigAgent || undefined,
     tabs: resolvedTabs,
     home: doc["home"] !== undefined ? parseHome(doc["home"]) : undefined,
+    rmw_attachment: layout as AttachmentLayout | undefined,
   };
 }
 

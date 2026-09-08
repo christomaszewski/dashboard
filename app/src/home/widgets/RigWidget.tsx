@@ -48,7 +48,7 @@ export function RigWidget({ widget, compact = false }: { widget: RigWidgetConfig
         <span className={`dot ${agent.alive ? "ok" : ""}`} /> {label}
         <span className="dim mono lifecycle-vehicle">{agent.vehicleId}</span>
       </span>
-      {widget.runs !== false && <OpenRunBanner compact confirm={widget.confirm} />}
+      {widget.runs === true && <OpenRunBanner compact confirm={widget.confirm} />}
       <div className="rig-widget-rows">
         {rows.map((row) => (
           <div className="panel-row rig-widget-row" key={row.name} title={row.project}>

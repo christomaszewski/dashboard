@@ -45,7 +45,8 @@ src/
                             #   README.md = "writing a widget"
   home/                     # config-driven Home tab: HomeTab (grid-area layout, registry-rendered),
                             #   DefaultHome, widgets/specs.ts (built-in specs, pure), widgets/
-                            #   (status, service_button, video, topic_value, map, lifecycle, panel;
+                            #   (status, service_button, video, camera, cameras, bag_recorders, topic_value,
+                            #   map, lifecycle, panel;
                             #   primitives/: gauge, sparkline, indicator, text + rules.ts/series.ts),
                             #   rate.ts, pluck.ts, value.ts, geo.ts, resolveStream.ts (pure helpers)
   lifecycle/                # service lifecycle control plane (camera-service recording standby/active):
@@ -73,7 +74,8 @@ src/
     useTransport.ts         # opens/holds the Transport for the app
     TransportContext.tsx    # app-wide session
   services/                 # ROS2 service calls over zenoh (rmw_zenoh wire format)
-    attachment.ts           # rmw client attachment encode/decode (seq/timestamp/gid)
+    attachment.ts           # rmw attachment encode/decode (seq/timestamp/gid): plain (rmw_zenoh 0.10)
+                            #   default, labelled (Jazzy) via rmw_attachment:; decode sniffs the layout
     keyexpr.ts              # SS token → service query keyexpr; gtd server picker
     srvDefs.ts              # hand-bundled schemas: GetTypeDescription bootstrap + std_srvs
     typeDescription.ts      # TypeDescription → foxglove MessageDefinitions
