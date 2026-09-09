@@ -13,6 +13,11 @@ export interface Recorder {
 }
 
 const RECORDER_SERVICES = ["pause", "resume", "is_paused", "split_bagfile", "snapshot", "stop"];
+/** Services only rosbag2's PLAYER advertises (`ros2 bag play`; the ros2-bag-player row a `rig replay`
+ *  brings up). The player ALSO serves pause / resume / is_paused / stop, so the recorder pair alone
+ *  reads a player as a recorder -- and the widget would offer to pause the replay. A node serving
+ *  any of these is a player, never a recorder. */
+const PLAYER_ONLY_SERVICES = ["play", "play_next", "play_for", "burst", "seek", "set_rate", "get_rate", "toggle_paused"];
 const ACTION_SERVICE: Record<BagRecorderAction, string> = {
   pause: "pause",
   resume: "resume",
@@ -21,23 +26,24 @@ const ACTION_SERVICE: Record<BagRecorderAction, string> = {
 };
 
 /** Recorders on the graph: a node base is a recorder when it serves BOTH `…/pause` and
- *  `…/is_paused` (rosbag2's recorder does; nothing else does). Namespaced per logger instance. */
+ *  `…/is_paused` and NONE of the player-only services (rosbag2's player serves the same pair --
+ *  it is the one lookalike). Namespaced per logger instance. */
 export function discoverRecorders(graph: RosGraph, only?: string[]): Recorder[] {
-  const bases = new Map<string, Set<string>>();
+  const bases = new Map<string, Set<string>>(); // every served leaf per base, player-only ones included
   for (const s of graph.services) {
     if (s.servers.length === 0) continue;
     const slash = s.name.lastIndexOf("/");
     if (slash <= 0) continue;
     const base = s.name.slice(0, slash);
     const leaf = s.name.slice(slash + 1);
-    if (!RECORDER_SERVICES.includes(leaf)) continue;
+    if (!RECORDER_SERVICES.includes(leaf) && !PLAYER_ONLY_SERVICES.includes(leaf)) continue;
     let set = bases.get(base);
     if (!set) bases.set(base, (set = new Set()));
     set.add(leaf);
   }
   const found = [...bases.entries()]
-    .filter(([, set]) => set.has("pause") && set.has("is_paused"))
-    .map(([base, services]) => ({ base, services }))
+    .filter(([, set]) => set.has("pause") && set.has("is_paused") && !PLAYER_ONLY_SERVICES.some((p) => set.has(p)))
+    .map(([base, set]) => ({ base, services: new Set([...set].filter((leaf) => RECORDER_SERVICES.includes(leaf))) }))
     .sort((a, b) => a.base.localeCompare(b.base));
   return only ? found.filter((r) => only.includes(r.base)) : found;
 }
@@ -171,7 +177,7 @@ export function BagRecordersWidget({ widget }: { widget: BagRecordersWidgetConfi
         <p className="empty">
           {widget.recorders
             ? `none of ${widget.recorders.join(", ")} is on the graph`
-            : "no rosbag2 recorder on the graph (a node serving …/pause and …/is_paused)"}
+            : "no rosbag2 recorder on the graph (a node serving …/pause and …/is_paused; a bag player is not one)"}
         </p>
       ) : (
         recorders.map((r) => <RecorderRow key={r.base} rec={r} widget={widget} />)

@@ -21,15 +21,20 @@ beforeEach(() => {
 
 const LOGGER = "/bag_logger/rosbag2_recorder";
 const AUX = "/aux/rosbag2_recorder";
+const PLAYER = "/rosbag2_player"; // where `ros2 bag play` (rig replay's ros2-bag-player row) sits
+/** What rosbag2's player advertises: the recorder's pause/resume/is_paused/stop PLUS its own. */
+const PLAYER_SERVICES = ["pause", "resume", "is_paused", "stop", "play", "play_next", "burst", "seek", "set_rate", "get_rate", "toggle_paused"];
 const srv = (name: string, servers = 1): ServiceEntry =>
   ({ name, typeName: "rosbag2_interfaces/srv/X", servers: Array(servers).fill("n"), clients: [] }) as unknown as ServiceEntry;
 /** Two recorders: the logger serving everything, aux only the pair + resume; plus lookalikes that
- *  are NOT recorders (a `/pause` without `/is_paused`, and a recorder with no server left). */
+ *  are NOT recorders (a `/pause` without `/is_paused`, a recorder with no server left, and the bag
+ *  PLAYER a `rig replay` brings up -- it serves the recorder's pair too). */
 const graph = (): RosGraph => ({
   ...EMPTY_GRAPH,
   services: [
     ...["pause", "resume", "is_paused", "split_bagfile", "snapshot", "stop"].map((s) => srv(`${LOGGER}/${s}`)),
     ...["pause", "resume", "is_paused"].map((s) => srv(`${AUX}/${s}`)),
+    ...PLAYER_SERVICES.map((s) => srv(`${PLAYER}/${s}`)),
     srv("/motor/pause"),
     srv("/gone/rosbag2_recorder/pause", 0),
     srv("/gone/rosbag2_recorder/is_paused", 0),
@@ -64,6 +69,20 @@ describe("discoverRecorders", () => {
     expect([...found[1].services].sort()).toEqual(["is_paused", "pause", "resume", "snapshot", "split_bagfile", "stop"]);
     expect(discoverRecorders(graph(), [LOGGER]).map((r) => r.base)).toEqual([LOGGER]);
     expect(discoverRecorders(graph(), ["/nope"])).toEqual([]);
+  });
+
+  it("a bag player is not a recorder, however completely it serves the recorder's pair", () => {
+    // THE REGRESSION: under `rig replay` the ros2-bag-player serves /rosbag2_player/{pause,resume,
+    // is_paused,stop} like a recorder does, and the widget listed it -- offering to pause the replay.
+    // Its own services (play, seek, set_rate, ...) are what tell it apart; asking for it by name
+    // must not resurrect it either.
+    expect(discoverRecorders(graph()).map((r) => r.base)).not.toContain(PLAYER);
+    expect(discoverRecorders(graph(), [PLAYER])).toEqual([]);
+    const playerOnly: RosGraph = { ...EMPTY_GRAPH, services: PLAYER_SERVICES.map((s) => srv(`${PLAYER}/${s}`)) };
+    expect(discoverRecorders(playerOnly)).toEqual([]);
+    // one player-only service is enough -- a player with a trimmed service set is still a player
+    const trimmed: RosGraph = { ...EMPTY_GRAPH, services: ["pause", "is_paused", "seek"].map((s) => srv(`${PLAYER}/${s}`)) };
+    expect(discoverRecorders(trimmed)).toEqual([]);
   });
 });
 
@@ -138,6 +157,13 @@ describe("BagRecordersWidget", () => {
     cleanup();
     renderWith(<BagRecordersWidget widget={widget()} />, {});
     expect(screen.getByText(/no rosbag2 recorder on the graph/)).toBeTruthy();
+    cleanup();
+    // a replay session: the player is on the graph, no recorder -- the widget must say so, not list it
+    const playerOnly: RosGraph = { ...EMPTY_GRAPH, services: PLAYER_SERVICES.map((s) => srv(`${PLAYER}/${s}`)) };
+    renderWith(<BagRecordersWidget widget={widget()} />, { graph: playerOnly, transport });
+    expect(screen.getByText("0 on the graph")).toBeTruthy();
+    expect(document.querySelector(`[data-recorder="${PLAYER}"]`)).toBeNull();
+    expect(call).not.toHaveBeenCalled();
     cleanup();
     renderWith(<BagRecordersWidget widget={widget({ recorders: ["/x/rosbag2_recorder"] })} />, { graph: graph() });
     expect(screen.getByText(/none of \/x\/rosbag2_recorder is on the graph/)).toBeTruthy();
