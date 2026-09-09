@@ -2,6 +2,9 @@
 // (main.tsx) BEFORE anything renders; the specs themselves live in home/widgets/specs.ts (and
 // primitives/specs.ts) so the config schema stays React-free.
 import "../home/widgets/specs";
+import { lazy, Suspense } from "react";
+import type { PointCloudWidgetConfig } from "../ros3d/spec";
+import type { RosbagPlaybackWidgetConfig } from "../playback/rosbagSpec";
 import { attachWidgetComponent } from "./registry";
 import { StatusWidget } from "../home/widgets/StatusWidget";
 import { ServiceButtonWidget } from "../home/widgets/ServiceButtonWidget";
@@ -36,3 +39,9 @@ attachWidgetComponent("gauge", GaugeWidget);
 attachWidgetComponent("sparkline", SparklineWidget);
 attachWidgetComponent("indicator", IndicatorWidget);
 attachWidgetComponent("text", TextWidget);
+const PointCloudWidget = lazy(() => import("../ros3d/PointCloudWidget"));
+const RosbagPlaybackWidget = lazy(() => import("../playback/RosbagPlaybackWidget"));
+attachWidgetComponent("rosbag_playback", ({ widget }: { widget: RosbagPlaybackWidgetConfig }) =>
+  <Suspense fallback={<div className="widget-card">Loading replay controls…</div>}><RosbagPlaybackWidget widget={widget} /></Suspense>);
+attachWidgetComponent("pointcloud", ({ widget }: { widget: PointCloudWidgetConfig }) =>
+  <Suspense fallback={<div className="widget-card">Loading 3D view…</div>}><PointCloudWidget widget={widget} /></Suspense>);

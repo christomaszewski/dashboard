@@ -9,6 +9,7 @@
 import type { Subscription, Transport } from "../transport/types";
 import type { DecodedMessage, Decoder, SchemaResolver } from "../schema/types";
 import { RateMonitor } from "../home/rate";
+import { topicStreams } from "./topicStreamPool";
 
 export interface TopicKeyInfo {
   /** The store key — the rmw_zenoh data keyexpr (embeds domain/name/type/hash). */
@@ -192,7 +193,7 @@ export class TopicStore {
 
   private open(entry: Entry): void {
     entry.flushTimer = setInterval(() => this.flush(entry), this.flushMs);
-    this.transport
+    topicStreams(this.transport)
       .subscribe(entry.key, (s) => {
         if (s.kind !== "put") return;
         entry.latest = { payload: s.payload, latched: false };

@@ -10,9 +10,11 @@ import { RigTab } from "../rig/RigTab";
 import { visibleTabs, type TabVisibility } from "../config/schema";
 import { TabBar } from "./TabBar";
 import { useHashRoute, type TabId } from "./useHashRoute";
+import { TabActivity } from "./TabActivity";
 
 // Lazy: three.js + the BPF loaders live in their own chunk, downloaded on first visit only.
 const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
+const Ros3DTab = lazy(() => import("../ros3d/Ros3DTab"));
 
 /**
  * The tabbed shell. All ACTIVE panels stay MOUNTED across tab switches — the inactive ones are
@@ -55,7 +57,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       )}
       {visible.includes("home") && (
         <main className={panelClass("home")}>
-          <HomeTab navigate={navigate} tabs={visible} />
+          <TabActivity.Provider value={tab === "home"}><HomeTab navigate={navigate} tabs={visible} /></TabActivity.Provider>
         </main>
       )}
       {visible.includes("cameras") && (
@@ -73,6 +75,11 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       {visible.includes("rig") && (
         <main className={panelClass("rig")}>
           <RigTab />
+        </main>
+      )}
+      {visible.includes("ros3d") && visited.current.has("ros3d") && (
+        <main className={panelClass("ros3d")}>
+          <Suspense fallback={<p className="empty">Loading 3D view…</p>}><Ros3DTab active={tab === "ros3d"} /></Suspense>
         </main>
       )}
       {visible.includes("clouds") && visited.current.has("clouds") && (

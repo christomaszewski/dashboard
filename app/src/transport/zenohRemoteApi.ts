@@ -5,6 +5,7 @@ import {
   KeyExpr,
   QueryTarget,
   ReplyError,
+  ReplyKeyExpr,
   SampleKind,
   Session,
   Sample as ZSample,
@@ -36,6 +37,9 @@ function mapSample(s: ZSample): Sample {
 
 /** Transport backed by zenoh-ts over the remote-api WebSocket plugin. */
 export class ZenohRemoteApiTransport implements Transport {
+  private nextEndpoint = 1;
+  // Remote clients can share one server session; allocate a distinct ROS node identity per client.
+  private readonly nodeId = String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   private constructor(private readonly session: Session) {}
 
   static async open(locator: string): Promise<ZenohRemoteApiTransport> {
@@ -49,6 +53,14 @@ export class ZenohRemoteApiTransport implements Transport {
     return { close: () => sub.undeclare() };
   }
 
+  async declareRosSubscriber(topic: Parameters<NonNullable<Transport["declareRosSubscriber"]>>[0]): Promise<Subscription> {
+    const prefix = `@ros2_lv/${topic.domainId}/${(await this.session.info()).zid()}/${this.nodeId}/${this.nextEndpoint++}/MS/%/%/dashboard_3d`;
+    const mangle = (s: string) => s.replaceAll("/", "%");
+    const qos = `2:${topic.transientLocal ? "1" : "2"}:1,100:,:,:,,`;
+    const token = await this.session.liveliness().declareToken(`${prefix}/${mangle(topic.name)}/${mangle(topic.typeDds)}/${mangle(topic.typeHash)}/${qos}${topic.bufferAware ? "/backends:cpu:" : ""}`);
+    return { close: () => token.undeclare() };
+  }
+
   async get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]> {
     const zopts: NonNullable<Parameters<Session["get"]>[1]> = {};
     if (opts?.payload) zopts.payload = opts.payload;
@@ -56,15 +68,19 @@ export class ZenohRemoteApiTransport implements Transport {
     if (opts?.timeoutMs !== undefined) zopts.timeout = Duration.milliseconds.of(opts.timeoutMs);
     if (opts?.target !== undefined) zopts.target = TARGET[opts.target];
     if (opts?.consolidation !== undefined) zopts.consolidation = CONSOLIDATION[opts.consolidation];
+    if (opts?.acceptReplies !== undefined) zopts.acceptReplies = opts.acceptReplies === "any" ? ReplyKeyExpr.ANY : ReplyKeyExpr.MATCHING_QUERY;
     const receiver = await this.session.get(keyexpr, Object.keys(zopts).length > 0 ? zopts : undefined);
     const out: GetReply[] = [];
+    let bytes = 0;
     if (!receiver) return out;
     for await (const reply of receiver as AsyncIterable<Reply>) {
       const r = reply.result();
       if (r instanceof ZSample) {
+        const payload = r.payload().toBytes(); bytes += payload.byteLength;
+        if (bytes > (opts?.maxReplyBytes ?? Infinity) || out.length >= (opts?.maxReplies ?? Infinity)) throw new Error("query reply budget exceeded");
         out.push({
           keyexpr: r.keyexpr().toString(),
-          payload: r.payload().toBytes(),
+          payload,
           attachment: r.attachment()?.toBytes(),
         });
       } else if (r instanceof ReplyError) {

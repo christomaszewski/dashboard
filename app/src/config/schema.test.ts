@@ -226,7 +226,7 @@ describe("visibleTabs", () => {
   it("is Home only when the config says nothing — every other tab is opt-in", () => {
     expect(visibleTabs(undefined)).toEqual(["home"]);
     expect(visibleTabs({})).toEqual(["home"]);
-    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, cameras: false, ros: false, rig: false, clouds: false, debug: false });
+    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, cameras: false, ros: false, ros3d: false, rig: false, clouds: false, debug: false });
   });
 
   it("adds the opted-in tabs in display order, whatever order the config lists them", () => {

@@ -27,6 +27,10 @@ export interface GetReply {
 }
 
 export interface TransportGetOptions {
+  maxReplyBytes?: number;
+  maxReplies?: number;
+  /** Advanced publication-cache replies use the original topic key. */
+  acceptReplies?: "any" | "matching-query";
   payload?: Uint8Array;
   /** Raw attachment bytes (rmw_zenoh service calls put the client attachment here). */
   attachment?: Uint8Array;
@@ -39,6 +43,8 @@ export interface TransportGetOptions {
 }
 
 export interface Transport {
+  /** Announce a ROS endpoint so Lyrical buffer-aware publishers activate CPU delivery. */
+  declareRosSubscriber?(topic: { domainId: number; name: string; typeDds: string; typeHash: string; transientLocal: boolean; bufferAware: boolean }): Promise<Subscription>;
   subscribe(keyexpr: string, onSample: (s: Sample) => void): Promise<Subscription>;
   /** Query (also used for ROS2 service calls: payload = CDR request, attachment = rmw client meta). */
   get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]>;

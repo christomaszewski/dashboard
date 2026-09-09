@@ -19,6 +19,9 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 - Camera widgets: `camera` (one tile you drive — its `stream` is a default the tile's picker can
   change, or omitted to pick from discovery) and `cameras` (several feeds: one in focus with a
   carousel of live thumbnails, or a grid — the same deck the Cameras tab uses).
+- ROS 3D: `pointcloud` Home widget and opt-in `ros3d` tab show timestamped PointCloud2 overlays
+  and accumulated scans through TF. They follow live data or external playback; optional central
+  controls use a separate `rosbag_playback` widget. See [docs/ROS_3D.md](docs/ROS_3D.md).
 - Bag recorders: `bag_recorders` lists every rosbag2 recorder on the graph (found by its own
   `…/pause` + `…/is_paused` services, one per bag_logger namespace) with a recording/paused pill
   and pause / resume / split / snapshot over the recorder's own services — writing control only;

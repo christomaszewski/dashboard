@@ -4,6 +4,7 @@ const LABELS: Record<TabId, string> = {
   home: "Home",
   cameras: "Cameras",
   ros: "ROS",
+  ros3d: "3D",
   rig: "Rig",
   clouds: "Clouds",
   debug: "Bus debug",

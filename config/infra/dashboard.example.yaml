@@ -42,7 +42,7 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
 # Tabs beyond Home are OPT-IN: list the ones this deployment uses and the rest never appear (nor do
 # you need to know they exist). With no `tabs:` at all the app is Home alone, tab bar hidden.
-# Available: cameras, ros, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
+# Available: cameras, ros, ros3d, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
 # implies `rig` (that tab is the agent's UI); an explicit `tabs.rig` always wins. The Clouds tab is
 # lazy-loaded (its three.js chunk only downloads when opened). A deep link to a tab that is not
 # listed falls back to the first visible tab.
@@ -55,6 +55,17 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #   rig: false        # hide the Rig tab despite rig_agent (its home widgets still work)
 #   home: false       # Home off too (the first listed tab becomes the landing page)
 
+# ROS PointCloud2 / TF visualization (docs/ROS_3D.md). Both 3D surfaces are read-only viewers.
+# ros3d:
+#   fixed_frame: map             # choose a frame in your TF tree
+#   time_source: live            # ros_clock for externally controlled playback
+#   tf_topics: [/tf]
+#   tf_static_topics: [/tf_static]
+#   displays:
+#     - { id: ouster, topic: /ouster/points, history_s: 3, color: {mode: height} }
+# Add {type: pointcloud, label: Lidar} under home.widgets for a compact view.
+# Optional central controls: {type: rosbag_playback, label: Replay controls}.
+#
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic
 # readouts, grouped panels. Omit the whole block for the built-in default Home (connection +

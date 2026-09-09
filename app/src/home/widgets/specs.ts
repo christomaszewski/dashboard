@@ -5,6 +5,8 @@ import { defineWidget, type BaseWidgetConfig } from "../../widgets/registry";
 import { parseTemplate, type Template } from "../template";
 import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type Thresholds, optStrList } from "../../widgets/parse";
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
+import "../../ros3d/spec";
+import "../../playback/rosbagSpec";
 
 export type { GaugeWidgetConfig, SparklineWidgetConfig, IndicatorWidgetConfig, TextWidgetConfig } from "./primitives/specs";
 

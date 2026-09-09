@@ -1,0 +1,24 @@
+.ros3d-view { display:flex; flex-direction:column; min-width:0; width:100%; border:1px solid var(--border,#273348); border-radius:8px; overflow:hidden; background:var(--bg,#0b0e14); }
+.ros3d-toolbar,.ros3d-playback { display:flex; flex-wrap:wrap; gap:8px; align-items:center; padding:10px 12px; border-bottom:1px solid var(--border,#273348); }
+.ros3d-view label { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--muted,#9aa9bc); }
+.ros3d-view select,.ros3d-view input:not([type=checkbox]):not([type=range]):not([type=color]) { min-width:0; max-width:100%; border:1px solid var(--border,#273348); border-radius:4px; padding:5px 7px; background:var(--bg,#0b0e14); color:var(--text,#dce6f4); font:inherit; }
+.ros3d-toolbar input:not([type=checkbox]) { width:150px; }.ros3d-view input[type=checkbox] { width:auto; flex:none; }.ros3d-body { display:flex; min-height:420px; flex:1; min-width:0; }
+.ros3d-viewport { position:relative; flex:1; min-width:0; min-height:420px; overflow:hidden; background:#0b111d; }
+.ros3d-viewport canvas { display:block; position:absolute; inset:0; width:100%; height:100%; outline:none; }
+.ros3d-empty { position:absolute; z-index:2; inset:0; display:flex; align-items:center; justify-content:center; flex-direction:column; padding:24px; text-align:center; gap:10px; pointer-events:none; color:#a7b7d0; }
+.ros3d-empty strong { font-weight:500; font-size:15px; }.ros3d-empty span { font-size:12px; color:#71829c; }
+.ros3d-viewport-status { position:absolute; left:12px; bottom:10px; z-index:2; pointer-events:none; padding:4px 7px; border-radius:4px; background:#0b111dcc; color:#9db0ca; font:11px ui-monospace,monospace; }
+.ros3d-sidebar { width:310px; max-width:45%; border-left:1px solid var(--border,#273348); background:var(--panel,#121923); }
+.ros3d-sidebar>summary { padding:12px; cursor:pointer; font-size:12px; font-weight:600; }.ros3d-sidebar:not([open]) { width:auto; writing-mode:vertical-rl; }
+.ros3d-settings { display:flex; flex-direction:column; gap:12px; padding:0 12px 12px; max-height:65vh; overflow:auto; }.ros3d-settings>label { justify-content:space-between; }
+.ros3d-layer { border:1px solid var(--border,#273348); border-radius:6px; padding:10px; display:flex; flex-direction:column; gap:9px; }
+.ros3d-layer-heading { display:flex; align-items:center; justify-content:space-between; gap:4px; }.ros3d-layer-heading label { overflow-wrap:anywhere; color:var(--text,#dce6f4); }.ros3d-layer-heading .btn { padding:0 7px; }
+.ros3d-layer label select { flex:1; }.ros3d-layer input[type=range] { width:100px; flex:1; }.ros3d-layer input[type=number] { width:65px; }.ros3d-layer-status { font-size:11px; color:#81c8a7; overflow-wrap:anywhere; }.ros3d-layer small { color:#8292a9; font-size:10px; overflow-wrap:anywhere; }
+.ros3d-view .warning { color:#e6b86c; }.ros3d-error { color:#efad8d; font-size:12px; overflow-wrap:anywhere; }.ros3d-add { display:flex; gap:6px; }.ros3d-add select { flex:1; }
+.ros3d-settings details { font-size:11px; }.ros3d-settings details summary { cursor:pointer; }.ros3d-settings table { width:100%; font-size:10px; margin:8px 0; }.ros3d-settings td { overflow-wrap:anywhere; padding:4px; }.ros3d-settings th { text-align:left; }
+.ros3d-footer { display:flex; flex-wrap:wrap; gap:8px 16px; padding:7px 12px; border-top:1px solid var(--border,#273348); color:#8191a8; font-size:10px; }.ros3d-footer span:last-child { margin-left:auto; }
+.ros3d-frame-labels { position:absolute; inset:0; pointer-events:none; overflow:hidden; }.ros3d-frame-labels span { position:absolute; top:0; left:0; font-size:10px; color:#c8d7e9; background:#0b111d99; padding:1px 3px; border-radius:2px; }
+.ros3d-compact .ros3d-body,.ros3d-compact .ros3d-viewport { min-height:340px; }.ros3d-compact .ros3d-sidebar[open] { width:270px; }.ros3d-playback { border-top:1px solid var(--border,#273348); border-bottom:0; }.ros3d-playback input { width:180px; }
+.ros3d-tab { flex:1; min-width:0; }.ros3d-tab .ros3d-body,.ros3d-tab .ros3d-viewport { min-height:60vh; }.widget-pointcloud { width:100%; min-width:0; }.widget-pointcloud>.widget-label { display:block; margin-bottom:8px; }
+.ros3d-playback-status,.ros3d-playback-range { padding:8px 12px; font-size:11px; color:var(--muted,#9aa9bc); }.rosbag-playback .ros3d-playback { border:0; padding:8px 0; }.rosbag-playback select,.rosbag-playback input { background:var(--bg,#0b0e14); color:var(--text,#dce6f4); border:1px solid var(--border,#273348); border-radius:4px; padding:6px; }
+@media(max-width:800px) { .ros3d-body { flex-direction:column; }.ros3d-sidebar,.ros3d-compact .ros3d-sidebar[open] { width:100%; max-width:100%; border-left:0; border-top:1px solid var(--border,#273348); }.ros3d-sidebar:not([open]) { writing-mode:horizontal-tb; }.ros3d-settings { max-height:360px; }.ros3d-toolbar { gap:6px; } }
