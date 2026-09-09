@@ -1,5 +1,5 @@
 # Overlay applied by dash-up ONLY when the instance YAML sets `clouds_dir:` (unlike the
-# always-applied external-config overlay): bind-mounts a directory of point-cloud files (.bpf)
+# always-applied external-config overlay): bind-mounts a directory of point-cloud files (.bpf, .las)
 # read-only for the Clouds tab. Caddy serves it at /clouds/ with a browsable/JSON listing.
 services:
   dashboard-web:

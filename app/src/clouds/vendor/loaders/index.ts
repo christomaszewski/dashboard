@@ -1,4 +1,5 @@
 import { parseBpf } from './bpf';
+import { parseLas } from './las';
 import type { PointCloudData } from './types';
 
 export type ParseFn = (buffer: ArrayBuffer, name: string) => PointCloudData | Promise<PointCloudData>;
@@ -8,7 +9,10 @@ export type ParseFn = (buffer: ArrayBuffer, name: string) => PointCloudData | Pr
  * a parser producing PointCloudData and register it here — the viewer and UI
  * never see format specifics.
  */
-const registry = new Map<string, ParseFn>([['bpf', parseBpf]]);
+const registry = new Map<string, ParseFn>([
+  ['bpf', parseBpf],
+  ['las', parseLas],
+]);
 
 export function supportedExtensions(): string[] {
   return [...registry.keys()];

@@ -1,14 +1,14 @@
 # Vendored point-cloud viewer
 
 Source: `github.com/christomaszewski/cloud-viewer` (local checkout `~/ws/cloud_viewer`),
-commit `95aface` ("Add eye-dome lighting, color-scale tone controls, and global opacity",
-2026-08-31; previously `0c3fd40`).
+commit `41de5a9` ("Add a LAS loader (1.0–1.4, point formats 0–10; LAZ refused with a hint)",
+2026-09-09; previously `95aface`, `0c3fd40`).
 
 Copied VERBATIM (keep it that way — verbatim files make re-syncing a plain copy):
 - `core/{PointCloudViewer,colormaps,utm,BasemapLayer}.ts`  ← upstream `src/core/`
-- `loaders/{types,bpf,index,loadWorker}.ts`                ← upstream `src/loaders/`
-- `bpf.test.ts`, `utm.test.ts`                             ← upstream `tests/` (import paths adapted)
-- `bpfWrite.mjs`                                           ← upstream `tools/` (test-only BPF writer)
+- `loaders/{types,bpf,las,index,loadWorker}.ts`            ← upstream `src/loaders/`
+- `bpf.test.ts`, `las.test.ts`, `utm.test.ts`              ← upstream `tests/` (import paths adapted)
+- `bpfWrite.mjs`, `lasWrite.mjs`                           ← upstream `tools/` (test-only writers)
 
 Local deltas (each marked `VENDOR DELTA` in-line) — re-apply after a re-sync:
 - `core/PointCloudViewer.ts`: the underlay scene background 0x14171c → 0x0b0e14 and grid colors
@@ -26,4 +26,5 @@ dashboard's own tokens; upstream's `[hidden]{display:none!important}` rule would
 Shell's CSS-only tab hiding).
 
 Re-sync procedure: copy the files listed above from a clean upstream checkout, re-apply the
-VENDOR DELTA lines, re-adapt the two test files' import paths, run `npm test`.
+VENDOR DELTA lines, re-adapt the test files' import paths (`../src/loaders/…` → `./loaders/…`,
+`../tools/…` → `./…`), run `npm test`.

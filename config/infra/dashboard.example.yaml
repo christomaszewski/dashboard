@@ -14,9 +14,11 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
                           #   server given the other layout crashes. Bus debug's attachment column
                           #   names the layout live samples carry — check it before the first call.
 
-# clouds_dir: /data/clouds   # optional: host dir of point-cloud files (.bpf) served read-only at
-                             #   /clouds/ for the Clouds tab (relative paths resolve against this
-                             #   config's directory). Omit -> the tab still works via drag & drop.
+# clouds_dir: /data/clouds   # optional: host dir of point-cloud files (.bpf, .las) served read-only
+                             #   at /clouds/ for the Clouds tab (relative paths resolve against this
+                             #   config's directory). Omit -> the tab still works via drag & drop, and
+                             #   via Runs…: any cloud file in any rig run directory, whenever the run
+                             #   registry is served at /rig-data/ (rig's RIG_DATA_DIR, or rig_data_dir).
 
 # ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
 # `rig_agent: true` makes dash-up start a third service, dashboard-rig-agent (docs/RIG_AGENT.md):
