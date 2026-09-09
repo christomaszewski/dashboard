@@ -1,11 +1,8 @@
 # Overlay applied by dash-up together with docker-compose.rig-agent.yml when the run registry's data_dir
 # is known (`rig_data_dir:` in the instance YAML, else rig's RIG_DATA_DIR): the agent gets it read-write
-# at its host path (rig writes runs/, current, .rig/logs), and dashboard-web serves it read-only at
-# /rig-data/ for the Rig tab's run browser and downloads.
+# at its host path (rig writes runs/, current, .rig/logs). The read-only /rig-data/ mount dashboard-web
+# serves from is docker-compose.rig-data-web.yml, applied whenever data_dir is known, agent or not.
 services:
   dashboard-rig-agent:
     volumes:
       - ${DASH_RIG_DATA}:${DASH_RIG_DATA}
-  dashboard-web:
-    volumes:
-      - ${DASH_RIG_DATA}:/rig-data:ro

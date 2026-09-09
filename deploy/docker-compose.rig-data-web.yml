@@ -1,0 +1,10 @@
+# Overlay applied by dash-up whenever the rig run registry's data_dir is known (`rig_data_dir:` in the
+# instance YAML, else rig's RIG_DATA_DIR, which rig exports to every launcher) -- with or without the
+# rig agent: dashboard-web serves the registry read-only at /rig-data/ (Caddy `file_server browse`,
+# JSON listings) for the Rig tab's run browser and downloads, and for the Clouds tab, which opens
+# point clouds from any directory of any run. Static files need no agent; the agent's own mount
+# (read-write, at the host path) is docker-compose.rig-data.yml.
+services:
+  dashboard-web:
+    volumes:
+      - ${DASH_RIG_DATA}:/rig-data:ro

@@ -21,10 +21,11 @@
 		file_server browse
 	}
 
-	# The rig run registry (dash-up mounts data_dir read-only when the rig agent is enabled —
-	# docker-compose.rig-data.yml): the Rig tab lists run directories through the JSON `browse`
-	# listing and links files (recordings, bags, .rig/logs) for download. The relative `current`
-	# symlink resolves inside the root. no-store: an open run's files grow while you watch.
+	# The rig run registry (dash-up mounts data_dir read-only whenever it is known —
+	# docker-compose.rig-data-web.yml): the Rig tab lists run directories through the JSON `browse`
+	# listing and links files (recordings, bags, .rig/logs) for download; the Clouds tab opens
+	# point clouds from any run directory. The relative `current` symlink resolves inside the
+	# root. no-store: an open run's files grow while you watch.
 	handle_path /rig-data/* {
 		root * /rig-data
 		header Cache-Control no-store

@@ -63,6 +63,17 @@ if [ -n "${DASH_CLOUDS_HOST:-}" ]; then
   OVERLAYS+=(-f "$REPO/deploy/docker-compose.clouds.yml")
 fi
 
+# The rig run registry, served read-only at /rig-data/ (Rig tab run browser + downloads, Clouds tab)
+# whenever its data_dir is known: `rig_data_dir:` in the config, else RIG_DATA_DIR, which rig exports
+# to every launcher -- so under rig this is on by default, agent or not (static files need no agent).
+# Relative paths resolve against the CONFIG's directory.
+DASH_RIG_DATA="${DASH_RIG_DATA:-${RIG_DATA_DIR:-}}"
+if [ -n "$DASH_RIG_DATA" ]; then
+  case "$DASH_RIG_DATA" in /*) : ;; *) DASH_RIG_DATA="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$DASH_RIG_DATA" ;; esac
+  export DASH_RIG_DATA
+  OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-data-web.yml")
+fi
+
 # Optional rig agent (Rig tab, docs/RIG_AGENT.md): only when the config set `rig_agent: true`. The
 # agent drives `rig` for the whole deployment, so it needs the deployment TREE at its host path
 # (identity mounts: rig hands docker compose host paths), the docker socket, and — for runs — the
@@ -103,16 +114,12 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
       export DASH_AGENT_IMAGE="${DASH_AGENT_IMAGE:-$DASH_REGISTRY/dashboard-rig-agent:$TAG}"
     fi
     OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-agent.yml")
-    data="${DASH_RIG_DATA:-${RIG_DATA_DIR:-}}"          # rig exports RIG_DATA_DIR to every launcher
-    if [ -n "$data" ]; then
-      case "$data" in /*) : ;; *) data="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$data" ;; esac
-      export DASH_RIG_DATA="$data"
-      OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-data.yml")
-    fi
-    RIG_STATUS=" agent=on root=$RIG_ROOT_HOST${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}"
+    # the agent's own read-write mount of the registry (resolved above, shared with the web mount)
+    [ -n "$DASH_RIG_DATA" ] && OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-data.yml")
+    RIG_STATUS=" agent=on root=$RIG_ROOT_HOST"
   fi
 fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
-echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}$RIG_STATUS config=$CONFIG_ABS" >&2
+echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}$RIG_STATUS config=$CONFIG_ABS" >&2
 exec docker compose -f "$COMPOSE" "${OVERLAYS[@]}" "${ARGS[@]}"

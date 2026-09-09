@@ -42,7 +42,8 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
   - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)
   - deploy/docker-compose.rig-agent.yml         # optional rig agent (only when rig_agent: true)
-  - deploy/docker-compose.rig-data.yml          #   + the run registry mounts (when data_dir is known)
+  - deploy/docker-compose.rig-data-web.yml      # the run registry served read-only at /rig-data/ (when data_dir is known)
+  - deploy/docker-compose.rig-data.yml          #   + the agent's read-write mount of it
   - deploy/zenohd-dashboard.json5
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)
