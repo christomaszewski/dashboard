@@ -28,7 +28,8 @@ export function responseLines(response: Record<string, unknown>): string[] {
 }
 
 function ServiceRow({ spec }: { spec: ServiceCallSpec }) {
-  const { transport } = useTransportContext();
+  const { transport, status } = useTransportContext();
+  const online = !!transport && status === "connected";
   const { graph } = useRosGraphContext();
   const entry = graph.services.find((s) => s.name === spec.service && s.servers.length > 0);
   const typeKey = entry ? `${entry.typeName}@${entry.servers[0]?.topic?.typeHash ?? ""}` : "";
@@ -111,7 +112,7 @@ function ServiceRow({ spec }: { spec: ServiceCallSpec }) {
   const reset = () => shape && setTexts(initialTexts(shape.fields, spec.request));
 
   const label = spec.label ?? spec.service;
-  const disabled = !transport || !entry || phase === "calling";
+  const disabled = !online || !entry || phase === "calling";
   const sub = shapeError ? `⚠ ${shapeError}` : typeMismatch ? `⚠ ${typeMismatch}` : entry ? (shape?.typeName ?? entry.typeName) : "no server advertised";
   return (
     <div className="service-row" data-service={spec.service}>

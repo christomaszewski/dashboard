@@ -25,7 +25,8 @@ export function summarizePlayback(op: PlaybackOp, params: PlaybackParams | undef
  * cheap and reversible), replies within a second.
  */
 export function usePlaybackAction(service: PlaybackService) {
-  const { transport } = useTransportContext();
+  const { transport, status } = useTransportContext();
+  const online = !!transport && status === "connected";
   const [phase, setPhase] = useState<PlaybackPhase>({ kind: "idle" });
   const flashTimer = useRef<number | null>(null);
   useEffect(
@@ -66,5 +67,5 @@ export function usePlaybackAction(service: PlaybackService) {
   /** The producer lists what it accepts right now; the UI never assumes. */
   const accepts = (op: PlaybackOp): boolean => service.descriptor.controls.includes(op);
 
-  return { phase, busy, click, feedback, label, accepts, canCall: !!transport && service.alive };
+  return { phase, busy, click, feedback, label, accepts, canCall: online && service.alive };
 }

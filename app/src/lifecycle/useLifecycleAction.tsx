@@ -34,7 +34,8 @@ export function summarizeTransition(transition: string, r: ChangeStateResult): s
  * first), so `busy` stays true for up to a few seconds.
  */
 export function useLifecycleAction(service: LifecycleService, opts: { confirm?: boolean; runId?: string } = {}) {
-  const { transport } = useTransportContext();
+  const { transport, status } = useTransportContext();
+  const online = !!transport && status === "connected";
   const [phase, setPhase] = useState<LifecyclePhase>({ kind: "idle" });
   const flashTimer = useRef<number | null>(null);
   useEffect(
@@ -96,5 +97,5 @@ export function useLifecycleAction(service: LifecycleService, opts: { confirm?: 
 
   const confirming = (transition: string): boolean => phase.kind === "confirm" && phase.transition === transition;
 
-  return { phase, busy, click, feedback, label, confirming, canCall: !!transport };
+  return { phase, busy, click, feedback, label, confirming, canCall: online };
 }

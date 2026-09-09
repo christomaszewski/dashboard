@@ -4,7 +4,8 @@ export type ServiceCallErrorKind =
   | "type-unresolvable" // not bundled + no get_type_description path, or the node said successful=false
   | "unsupported-type" // wstring / long double / fixed string fields
   | "encode-failed"
-  | "timeout" // elapsed ≈ timeout with zero replies
+  | "timeout" // elapsed ≈ timeout with zero replies, or the client-side deadline passed
+  | "disconnected" // the link to the sidecar is down (refused at once) or went down mid-call
   | "no-reply" // query completed early with zero sample replies
   | "reply-error" // zenoh ReplyError received (its payload text in message)
   | "decode-failed";

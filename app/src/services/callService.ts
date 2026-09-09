@@ -8,6 +8,7 @@ import type { RosGraph, ServiceEntry } from "../ros/graph";
 import type { DecodedMessage } from "../schema/types";
 import { decodeAttachment } from "./attachment";
 import { rawCall } from "./client";
+import { TransportError } from "../transport/reconnecting";
 import { ServiceCallError } from "./errors";
 import { pickServer, serviceQueryKeyexpr } from "./keyexpr";
 import { SrvCodecResolver } from "./resolveSrv";
@@ -77,6 +78,17 @@ export async function describeService(
   return { typeName: codec.typeName, typeHash: codec.typeHash, requestDefs: codec.requestDefs };
 }
 
+/** A link failure surfaced by the transport (docs: transport/reconnecting.ts) as the call's own
+ *  error: refused while the link is down, or dead mid-call, is "disconnected"; a query past its
+ *  client-side deadline reads as the timeout it is. Anything else passes through. */
+function asCallError(e: unknown, serviceName: string): unknown {
+  if (e instanceof TransportError) {
+    if (e.code === "deadline") return new ServiceCallError("timeout", serviceName, e.message, { cause: e });
+    return new ServiceCallError("disconnected", serviceName, e.message, { cause: e });
+  }
+  return e;
+}
+
 export async function callService(
   transport: Transport,
   graph: RosGraph,
@@ -89,7 +101,12 @@ export async function callService(
   if (!server)
     throw new ServiceCallError("no-server", serviceName, `no server for ${serviceName} in domain ${opts?.domainId}`);
 
-  const codec = await resolverFor(transport).resolve(graph, server);
+  let codec;
+  try {
+    codec = await resolverFor(transport).resolve(graph, server);
+  } catch (e) {
+    throw asCallError(e, serviceName);
+  }
 
   let payload: Uint8Array;
   try {
@@ -100,7 +117,12 @@ export async function callService(
 
   const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   const keyexpr = serviceQueryKeyexpr(server);
-  const { replies, seq, elapsedMs, replyErrors } = await rawCall(transport, keyexpr, payload, timeoutMs);
+  let replies, seq, elapsedMs, replyErrors;
+  try {
+    ({ replies, seq, elapsedMs, replyErrors } = await rawCall(transport, keyexpr, payload, timeoutMs));
+  } catch (e) {
+    throw asCallError(e, serviceName);
+  }
 
   if (replies.length === 0) {
     if (replyErrors.length > 0)

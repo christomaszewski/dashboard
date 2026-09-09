@@ -28,7 +28,8 @@ function summarize(response: Record<string, unknown>): string {
 }
 
 export function ServiceButtonWidget({ widget, compact = false }: { widget: ServiceButtonWidgetConfig; compact?: boolean }) {
-  const { transport } = useTransportContext();
+  const { transport, status } = useTransportContext();
+  const online = !!transport && status === "connected"; // an outage disables the button, no call is queued
   const { graph } = useRosGraphContext();
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const flashTimer = useRef<number | null>(null);
@@ -75,7 +76,7 @@ export function ServiceButtonWidget({ widget, compact = false }: { widget: Servi
     void fire();
   };
 
-  const disabled = !transport || !entry || phase.kind === "calling";
+  const disabled = !online || !entry || phase.kind === "calling";
   const buttonLabel =
     phase.kind === "confirm" ? "confirm?" : phase.kind === "calling" ? "calling…" : widget.label;
   const subText =

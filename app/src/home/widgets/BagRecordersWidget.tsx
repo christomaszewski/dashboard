@@ -61,7 +61,8 @@ function explain(action: BagRecorderAction, response: Record<string, unknown>): 
 }
 
 function RecorderRow({ rec, widget }: { rec: Recorder; widget: BagRecordersWidgetConfig }) {
-  const { transport } = useTransportContext();
+  const { transport, status } = useTransportContext();
+  const online = !!transport && status === "connected";
   const { graph } = useRosGraphContext();
   const [state, setState] = useState<RecState>("unknown");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
@@ -130,7 +131,7 @@ function RecorderRow({ rec, widget }: { rec: Recorder; widget: BagRecordersWidge
   const visible = offered.filter((a) => (a === "pause" ? state !== "paused" : a === "resume" ? state !== "recording" : true));
   const name = rec.base.replace(/\/rosbag2_recorder$/, "").replace(/^\//, "") || rec.base;
   const pill = state === "recording" ? "ok" : state === "paused" ? "warn" : "idle";
-  const dis = !transport || phase.kind === "calling";
+  const dis = !online || phase.kind === "calling";
   return (
     <div className="recorder-row" data-recorder={rec.base}>
       <span className="recorder-name mono" title={rec.base}>
