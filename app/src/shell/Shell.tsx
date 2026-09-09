@@ -51,7 +51,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
         <main className="page">
           <div className="error-box">
             {error}
-            {"\n\n"}Is the dashboard-zenoh sidecar up and reachable at that locator?
+            {"\n\n"}Is the dashboard-zenoh sidecar up and reachable at that locator? Retrying…
           </div>
         </main>
       )}

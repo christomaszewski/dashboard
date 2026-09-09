@@ -1,10 +1,17 @@
 import { useEffect, useState } from "react";
+import { ReconnectingTransport, type LinkStatus } from "./reconnecting";
 import { ZenohRemoteApiTransport } from "./zenohRemoteApi";
 import type { Transport } from "./types";
 
-export type TransportStatus = "connecting" | "connected" | "error";
+export type TransportStatus = LinkStatus;
 
-/** Opens one ZenohRemoteApiTransport for the locator's lifetime; closes it on unmount/change. */
+/**
+ * One transport for the locator's lifetime, behind a ReconnectingTransport: the object handed to
+ * the app never changes, so a dropped link is an outage the widgets ride out, not a remount. The
+ * transport is provided from the FIRST successful connect on (null before: nothing to subscribe
+ * to yet); afterwards `status` says whether the link is up ("reconnecting" = an outage in
+ * progress, queries refused at once, subscriptions re-declared when it returns).
+ */
 export function useTransport(locator: string): { transport: Transport | null; status: TransportStatus; error: string } {
   const [transport, setTransport] = useState<Transport | null>(null);
   const [status, setStatus] = useState<TransportStatus>("connecting");
@@ -12,26 +19,26 @@ export function useTransport(locator: string): { transport: Transport | null; st
 
   useEffect(() => {
     let cancelled = false;
-    let opened: Transport | null = null;
+    let provided = false;
     setTransport(null);
     setStatus("connecting");
     setError("");
-    ZenohRemoteApiTransport.open(locator)
-      .then((t) => {
-        if (cancelled) return void t.close();
-        opened = t;
-        setTransport(t);
-        setStatus("connected");
-      })
-      .catch((e) => {
-        if (!cancelled) {
-          setStatus("error");
-          setError(String(e));
+    const t = new ReconnectingTransport({
+      open: () => ZenohRemoteApiTransport.open(locator),
+      onStatus: (s, e) => {
+        if (cancelled) return;
+        setStatus(s);
+        setError(e);
+        if (s === "connected" && !provided) {
+          provided = true;
+          setTransport(t);
         }
-      });
+      },
+    });
+    void t.start();
     return () => {
       cancelled = true;
-      void opened?.close();
+      void t.close();
     };
   }, [locator]);
 
