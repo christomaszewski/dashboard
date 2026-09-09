@@ -11,6 +11,7 @@ import { colormapData, type ColormapName } from "./vendor/core/colormaps";
 import { supportedExtensions } from "./vendor/loaders";
 import { useCloudLoader } from "./useCloudLoader";
 import { CloudsList } from "./CloudsList";
+import { RunClouds } from "./RunClouds";
 
 const VIEW_PRESETS: { view: ViewPreset; label: string; title: string }[] = [
   { view: "north", label: "N", title: "look from the north" },
@@ -30,7 +31,8 @@ const fmt = (v: number, span: number) => v.toFixed(span >= 1000 ? 0 : span >= 10
  * Point-cloud viewer tab: React chrome over the vendored framework-free viewer core (see
  * vendor/VENDORED.md). Drag & drop is scoped to THIS tab's root — dropping a file on other tabs
  * does nothing. Clouds come from drops, the Open… picker, the vehicle's /clouds/ listing (when
- * mounted), or a ?cloud=<url> query param.
+ * mounted), the rig run registry (Runs…, any file in a supported format under /rig-data/runs/),
+ * or a ?cloud=<url> query param.
  */
 export default function CloudsTab() {
   const viewportRef = useRef<HTMLDivElement>(null);
@@ -54,6 +56,7 @@ export default function CloudsTab() {
   const [basemapError, setBasemapError] = useState("");
   const [dragging, setDragging] = useState(false);
   const dragDepth = useRef(0);
+  const [showRuns, setShowRuns] = useState(false); // the run-registry browser panel (Runs…)
 
   // The active color scale (pull API on the viewer) mirrored into state for the legend. `nonce`
   // forces the legend's uncontrolled number inputs to re-init after a rejected edit.
@@ -204,6 +207,9 @@ export default function CloudsTab() {
         <h2>Clouds</h2>
         <button className="btn" onClick={() => fileInputRef.current?.click()}>
           Open…
+        </button>
+        <button className="btn" onClick={() => setShowRuns((s) => !s)} aria-pressed={showRuns} title="browse the rig run registry for point clouds">
+          Runs…
         </button>
         <input
           ref={fileInputRef}
@@ -371,6 +377,25 @@ export default function CloudsTab() {
               Drop a point cloud here, or Open… ({EXTS.join(", ")})
             </p>
             <CloudsList onOpen={(url) => void loadUrl(url)} />
+            <RunClouds quiet onOpen={(url, name) => void loadUrl(url, name)} />
+          </div>
+        )}
+        {showRuns && (
+          <div className="clouds-overlay clouds-runs-panel">
+            <div className="clouds-runs-card" role="dialog" aria-label="rig runs">
+              <header>
+                <span>Rig runs</span>
+                <button className="btn-link" onClick={() => setShowRuns(false)} aria-label="close">
+                  ✕
+                </button>
+              </header>
+              <RunClouds
+                onOpen={(url, name) => {
+                  setShowRuns(false);
+                  void loadUrl(url, name);
+                }}
+              />
+            </div>
           </div>
         )}
         {state.phase === "loading" && (

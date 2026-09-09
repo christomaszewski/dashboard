@@ -60,9 +60,13 @@ switching never drops video or subscriptions:
    `ros2 topic pub -w 0 -r 5 /dash_test std_msgs/msg/String "{data: hello}"` → topic appears in the
    graph, click → `data: "hello"` at ~5 Hz. (Camera `image_raw*` topics are image_transport-gated —
    they publish only with a matching *ROS* subscriber, so "no data yet" there is expected.)
-5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` onto the tab (drops on
-   other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists the
-   vehicle's `/clouds/` files. Orbit/color (+legend: editable range, auto, γ)/alpha+blend/opacity/EDL/size/ortho/view controls; switching tabs and back keeps
+5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` or `.las` onto the tab
+   (drops on other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists
+   the vehicle's `/clouds/` files. **Runs…** (and the idle overlay) browses the rig run registry
+   whenever it is served at `/rig-data/` (dash-up mounts it when rig's RIG_DATA_DIR or
+   `rig_data_dir:` is known — agent or not): runs newest first, any subdirectory expands lazily,
+   a `.bpf`/`.las` opens in the viewer, other files are only counted. A `.laz` must fail with the
+   conversion hint, never hang. Orbit/color (+legend: editable range, auto, γ)/alpha+blend/opacity/EDL/size/ortho/view controls; switching tabs and back keeps
    the loaded cloud (no re-parse). `?cloud=<url>` deep-loads one.
 6. **Map widget** (`type: map` on Home): with an internet-connected browser the OSM default shows
    tiles (fetched by the BROWSER — the vehicle serves nothing); marker + trail appear on the first

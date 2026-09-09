@@ -1104,6 +1104,61 @@ ul.plain {
   justify-content: center;
 }
 
+/* the run-registry browser: inline in the idle overlay, or the Runs… panel over the viewport */
+.clouds-runs {
+  pointer-events: auto;
+  max-width: 44rem;
+  max-height: 50%;
+  overflow: auto;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.clouds-runs > .dim {
+  text-align: center;
+}
+
+.clouds-runs-file {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.clouds-runs-note,
+.clouds-runs-other {
+  font-size: 0.72rem;
+}
+
+.clouds-runs-panel {
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 0.7rem;
+}
+
+.clouds-runs-card {
+  pointer-events: auto;
+  min-width: 22rem;
+  max-width: 60%;
+  max-height: 100%;
+  overflow: auto;
+  padding: 0.5rem 0.8rem 0.7rem;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.clouds-runs-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+}
+
+.clouds-runs-card .clouds-runs {
+  max-height: none;
+}
+
 .clouds-attribution {
   position: absolute;
   right: 0.4rem;

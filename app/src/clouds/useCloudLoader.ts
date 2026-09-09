@@ -42,12 +42,12 @@ export function useCloudLoader() {
   }, []);
 
   const loadUrl = useCallback(
-    async (url: string) => {
+    async (url: string, name?: string) => {
       setState({ phase: "loading", message: `Fetching ${url}…` });
       try {
         const res = await fetch(url);
         if (!res.ok) throw new Error(`HTTP ${res.status} fetching ${url}`);
-        loadBuffer(url.split("/").pop() || url, await res.arrayBuffer());
+        loadBuffer(name ?? decodeURIComponent(url.split("/").pop() || url), await res.arrayBuffer());
       } catch (e) {
         setState({ phase: "error", message: e instanceof Error ? e.message : String(e) });
       }
