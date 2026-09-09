@@ -51,6 +51,16 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 
 Then, from a laptop on the mesh, open `http://<vehicle-ip>:8080`.
 
+**The link is expected to be bad.** Everything but video rides ONE WebSocket from the browser to
+the vehicle's sidecar; a spotty wireless hop used to leave the page silently dead (zenoh-ts never
+re-dials) and service calls hung forever (a query into a dead socket gets no reply). The app now
+reconnects on its own with backoff and re-declares every subscription behind one stable transport
+(the pill says `reconnecting`, controls disable, nothing is queued into the void), every query has
+a client-side deadline, and a call refused or dropped mid-way fails at once as `disconnected`.
+Volume is the other half: cap what reaches the air with `topic_rate_hz` / `topic_rates` in the
+instance YAML — dash-up renders them into the sidecar's zenoh config as downsampling rules, scoped
+to the ROS domain so lifecycle/playback state and service calls stay untouched.
+
 ## Orchestrate with `rig`
 
 This repo is rig-compatible (one-way — the repo does not depend on rig):

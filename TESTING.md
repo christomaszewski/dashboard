@@ -60,6 +60,14 @@ switching never drops video or subscriptions:
    `ros2 topic pub -w 0 -r 5 /dash_test std_msgs/msg/String "{data: hello}"` → topic appears in the
    graph, click → `data: "hello"` at ~5 Hz. (Camera `image_raw*` topics are image_transport-gated —
    they publish only with a matching *ROS* subscriber, so "no data yet" there is expected.)
+4b. **The link** (a spotty wireless connection is the normal case): with the page connected, restart
+   the sidecar (`docker restart <project>-dashboard-zenoh-1`) → the pill goes `reconnecting` (the
+   page stays; every lifecycle / playback / service button disables), then `connected` on its own
+   within ~10 s; readouts, tiles and the graph resume without a reload. A button clicked during the
+   outage must fail at once with `disconnected`, never sit at "calling…" (the old behaviour: a query
+   into a dead socket hung forever). With `topic_rate_hz: 5` in the instance YAML, `dash-up config`
+   mounts `var/run/<name>/zenohd-dashboard.json5` and the ROS tab's Hz column tops out at ~5 for
+   every topic while lifecycle/playback state and service calls are unaffected.
 5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` or `.las` onto the tab
    (drops on other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists
    the vehicle's `/clouds/` files. **Runs…** (and the idle overlay) browses the rig run registry
