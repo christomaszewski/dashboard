@@ -59,7 +59,8 @@ This repo is rig-compatible (one-way — the repo does not depend on rig):
 - [`dash-up`](dash-up) — the launcher rig drives: `dash-up <config> <verb>`.
 
 The dashboard is a vehicle-wide sidecar that depends on the rmw_zenoh router, so it belongs in `infra:`
-(shared services brought up first — after the router — and torn down last), not `sensors:`. Register it
+(shared services brought up first — after the router — and torn down last), not `sensors:`. Its
+`rigging.yaml` declares `tier: infra`, so `rig add dashboard` places the row there for you. Register it
 in your rig checkout:
 
 ```yaml

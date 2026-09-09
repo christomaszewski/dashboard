@@ -1,6 +1,6 @@
 # How the "rig" vehicle orchestrator drives this service. One-way: this repo never imports rig; rig
-# reads this file. rig consumes: service, launcher, verbs, ros_distro, host_ports, external_volumes,
-# build, mirror (plus launch_surface for vendor/bake). It invokes the launcher as:
+# reads this file. rig consumes: service, launcher, verbs, tier, ros_distro, host_ports,
+# external_volumes, build, mirror (plus launch_surface for vendor/bake). It invokes the launcher as:
 #   <launcher> <config> <mapped-verb>     e.g.  dash-up <config> up -d
 service: dashboard
 launcher: dash-up
@@ -10,6 +10,10 @@ verbs:
   status: "ps"        # rig may append `--format json` to parse `docker compose ps`
   logs: "logs"
   config: "config"
+tier: infra           # rig bring-up tier: a vehicle-wide sidecar on the zenoh router, not a sensor --
+                      #   up right after the router (infra, ordered after it), torn down last, and
+                      #   `rig add dashboard` lands it in vehicle.yaml's `infra:` as an ENABLED row.
+                      #   Declared here so every deployment gets it without a per-row --tier.
 
 # (no ros_distro: the dashboard runs NO ROS node -- it's a pure zenoh client + web server)
 
