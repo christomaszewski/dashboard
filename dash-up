@@ -36,6 +36,15 @@ eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
 # The SAME config file is bind-mounted into dashboard-web (docker-compose.external-config.yml) and
 # served at /config/dashboard.yaml — the app reads its `home:` block + ws_port at load.
 export DASH_CONFIG_HOST="$CONFIG_ABS"
+# Topic rate limits for the browser hop (`topic_rate_hz` / `topic_rates`, tools/dash_zenoh_config.py):
+# rendered into a copy of the sidecar's zenoh config as downsampling rules on its ingress from the
+# router, scoped to the ROS domain (rig's ROS_DOMAIN_ID, or `ros_domain_id:`), so high-rate topics
+# reach the wireless link at a viewing rate. No limits configured -> the stock template is mounted.
+if ZC="$("$PYTHON" "$REPO/tools/dash_zenoh_config.py" "$CONFIG_ABS" "$REPO/var/run/${DASH_NAME:-dashboard}/zenohd-dashboard.json5")"; then
+  [ -n "$ZC" ] && export DASH_ZENOH_CONFIG="$ZC"
+else
+  exit 1
+fi
 # rig owns the compose project (<name>-vehicle-<id>) and exports COMPOSE_PROJECT_NAME per call; honor
 # it so rig/bake/the launcher all manage ONE project. The instance name is the standalone fallback.
 export COMPOSE_PROJECT_NAME="${COMPOSE_PROJECT_NAME:-${DASH_NAME:-dashboard}}"
@@ -121,5 +130,5 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
 fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
-echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}$RIG_STATUS config=$CONFIG_ABS" >&2
+echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}${DASH_ZENOH_CONFIG:+ topic-rate-limit=on}$RIG_STATUS config=$CONFIG_ABS" >&2
 exec docker compose -f "$COMPOSE" "${OVERLAYS[@]}" "${ARGS[@]}"

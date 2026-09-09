@@ -16,3 +16,6 @@ app/dist/
 # python (agent/)
 __pycache__/
 *.pyc
+
+# launcher-rendered files (dash-up: the rate-limited sidecar config)
+var/

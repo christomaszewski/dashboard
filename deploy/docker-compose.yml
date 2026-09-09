@@ -16,11 +16,12 @@ services:
       context: .
       dockerfile: Dockerfile.zenoh-remote-api
       args:
-        ZENOH_TS_REF: ${ZENOH_TS_REF:-main}    # pin to a release tag
+        ZENOH_TS_REF: ${ZENOH_TS_REF:-1.9.0}   # the release the app's zenoh-ts is pinned to (app/package.json)
     network_mode: host                         # reach localhost:7447 (router) + expose ws on the mesh
     command: ["-c", "/config/zenohd-dashboard.json5", "--ws-port", "${DASH_WS_PORT:-10000}"]
     volumes:
-      - ./zenohd-dashboard.json5:/config/zenohd-dashboard.json5:ro
+      # the stock config, or dash-up's rendered copy carrying the instance's topic rate limits
+      - ${DASH_ZENOH_CONFIG:-./zenohd-dashboard.json5}:/config/zenohd-dashboard.json5:ro
     restart: unless-stopped                    # retries if the router isn't up yet
 
   dashboard-web:

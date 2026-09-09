@@ -20,6 +20,20 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
                              #   via Runs…: any cloud file in any rig run directory, whenever the run
                              #   registry is served at /rig-data/ (rig's RIG_DATA_DIR, or rig_data_dir).
 
+# ── Topic rate limits (optional) — the wireless link ───────────────────────────────────────────
+# Every subscribed ROS topic crosses the browser's ONE WebSocket sample by sample at the publisher's
+# rate; on a spotty link that volume queues behind TCP retransmits and reaches the page late. Cap it
+# BEFORE the air: dash-up renders these into the sidecar's zenoh config as downsampling rules on its
+# ingress from the router (tools/dash_zenoh_config.py). The page decodes at 5 Hz anyway. Scoped to
+# the ROS domain, so lifecycle/playback/rig state and every service call stay untouched; `put`
+# messages only. Rate widgets (`topic_hz`) read the capped rate — set their min_hz accordingly.
+#
+# topic_rate_hz: 5        # every topic of the domain at most 5 Hz to the browser
+# topic_rates:            # OR explicit per-topic caps (needs PyYAML on the host); never both — zenoh
+#   /imu/data: 10         #   applies the first matching rule, so a global cap can't be layered under
+#   /ouster/points: 1     #   per-topic ones
+# ros_domain_id: 1        # scopes the rules (default: rig's ROS_DOMAIN_ID, exported to every launcher)
+
 # ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
 # `rig_agent: true` makes dash-up start a third service, dashboard-rig-agent (docs/RIG_AGENT.md):
 # the deployment's rows with live compose/health/operational state, the open run with new-run /

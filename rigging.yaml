@@ -38,6 +38,7 @@ build:                # `rig build [--registry <host>] [--tag]` runs this as: to
 launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source / build context).
   - dash-up           #   The Caddyfile + React bundle are baked into the dashboard-web image, so not here.
   - tools/dash_env.py
+  - tools/dash_zenoh_config.py                  # renders the sidecar's topic rate limits (var/run/<name>/)
   - deploy/docker-compose.yml
   - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
   - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)
