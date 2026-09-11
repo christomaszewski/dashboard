@@ -32,7 +32,7 @@ docker compose -f deploy/docker-compose.yml up --build   # first build: zenoh-br
 
 ## Unit + component tests (no vehicle)
 
-`cd app && npx vitest run` — 43 files. Pure logic (schema, discovery, the stream pool, playback
+`cd app && npm test`. Pure logic (schema, discovery, the stream pool, playback
 control, ROS graph parsing) runs in node; the **component tests** (`src/**/*.test.tsx`: the tab bar,
 tile controls, the playback card, the `camera` / `cameras` / `bag_recorders` / `services` widgets, the Cameras
 console) opt into
@@ -40,6 +40,13 @@ jsdom per file (`// @vitest-environment jsdom`) and render through `src/test/har
 app's contexts provided with plain values around a REAL `StreamSessionPool` with fake sources, so a
 tile's acquire/attach/release runs for real and only media negotiation is stubbed. `npx tsc
 --noEmit -p .` typechecks tests too.
+
+The transport tests cover local selection, wrong-vehicle rejection, browser denial, bounded SDK
+handshakes, and reconnection without command replay. For the real two-bridge test, run
+`node tools/test_bridge_failover.mjs` from the repo root (Docker, Node 26, and
+`dashboard-zenoh:local` required). It cuts the native uplink while leaving the local WebSocket
+reachable, then checks vehicle fallback and restored subscriptions. See
+[local bridge setup and browser checks](docs/LOCAL_BRIDGE.md).
 
 ## Verify (browser on the mesh)
 

@@ -43,6 +43,8 @@ export interface TransportGetOptions {
 }
 
 export interface Transport {
+  /** Optional end-to-end health check (a local bridge must also reach the selected vehicle). */
+  checkConnection?(): Promise<void>;
   /** Announce a ROS endpoint so Lyrical buffer-aware publishers activate CPU delivery. */
   declareRosSubscriber?(topic: { domainId: number; name: string; typeDds: string; typeHash: string; transientLocal: boolean; bufferAware: boolean }): Promise<Subscription>;
   subscribe(keyexpr: string, onSample: (s: Sample) => void): Promise<Subscription>;

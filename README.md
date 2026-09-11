@@ -12,8 +12,9 @@ directory of any rig run in the served registry), and a raw **Bus debug** tab. T
 Home are opt-in per project from the same YAML (`tabs: [cameras, ros]`). Runs as an optional sidecar next to the
 vehicle's rmw_zenoh router; one generic service — projects customize only their instance YAML.
 
-- Transport: browser `zenoh-ts` → `remote-api` (the `dashboard-zenoh` sidecar, a Zenoh **client**
-  of the rmw_zenoh router). Bundle served by `dashboard-web` (Caddy), which also serves the
+- Transport: browser `zenoh-ts` → a verified laptop `remote-api` bridge when available, otherwise
+  the vehicle's `dashboard-zenoh` sidecar, connected to the rmw_zenoh router.
+  Bundle served by `dashboard-web` (Caddy), which also serves the
   bind-mounted instance config at `/config/dashboard.yaml` for the Home tab.
 - ROS2 service calls run over the same bus as zenoh queries (rmw_zenoh wire format), with dynamic
   type resolution via each node's `~/get_type_description` — vendor srv types need no bundling.
@@ -51,15 +52,20 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 
 Then, from a laptop on the mesh, open `http://<vehicle-ip>:8080`.
 
-**The link is expected to be bad.** Everything but video rides ONE WebSocket from the browser to
-the vehicle's sidecar; a spotty wireless hop used to leave the page silently dead (zenoh-ts never
+**The link is expected to be bad.** Zenoh traffic rides one selected WebSocket: preferably to a
+laptop bridge on `127.0.0.1:10000`, otherwise to the vehicle's sidecar. The laptop route must prove
+it reaches this vehicle before selection and during heartbeats; a lost native uplink triggers
+vehicle fallback. See [laptop setup, browser requirements, and configuration](docs/LOCAL_BRIDGE.md).
+A spotty wireless hop used to leave the page silently dead (zenoh-ts never
 re-dials) and service calls hung forever (a query into a dead socket gets no reply). The app now
 reconnects on its own with backoff and re-declares every subscription behind one stable transport
 (the pill says `reconnecting`, controls disable, nothing is queued into the void), every query has
 a client-side deadline, and a call refused or dropped mid-way fails at once as `disconnected`.
 Volume is the other half: cap what reaches the air with `topic_rate_hz` / `topic_rates` in the
 instance YAML — dash-up renders them into the sidecar's zenoh config as downsampling rules, scoped
-to the ROS domain so lifecycle/playback state and service calls stay untouched.
+to the ROS domain so lifecycle/playback state and service calls stay untouched. These sidecar rules
+apply to the direct WebSocket path; a laptop bridge connected to the router needs rate limits on
+the vehicle before its native wireless link.
 
 ## Orchestrate with `rig`
 

@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { ReconnectingTransport, TransportError, type LinkStatus } from "./reconnecting";
 import type { GetReply, LivelinessEvent, Sample, Subscription, Transport } from "./types";
+import { BridgeSelection, type BridgeTransport } from "./bridgeSelection";
 
 /** An inner transport under test control: subscriptions are recorded and can be fed; every get
  *  and liveliness get is a deferred the test resolves, rejects, or leaves hanging (a dead socket). */
@@ -87,6 +88,68 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 describe("ReconnectingTransport", () => {
+  it("switches from a live localhost socket with a dead vehicle uplink to the vehicle and restores subscriptions", async () => {
+    class Bridge extends FakeInner implements BridgeTransport {
+      healthy = true;
+      async bridgeId() { return "abc"; }
+      async verifyVehicle() { if (!this.healthy) throw new Error("vehicle unreachable"); }
+      useVehicleProbe() {}
+      async checkConnection() { await this.verifyVehicle(); }
+    }
+    const local = new Bridge(1), vehicle = new Bridge(2);
+    const selected: string[] = [];
+    const selector = new BridgeSelection({ vehicleLocator: "vehicle", localLocator: "local", loadVehicleId: () => "abc",
+      open: async locator => locator === "local" ? local : vehicle, onSelected: locator => selected.push(locator) });
+    const t = new ReconnectingTransport({ open: () => selector.open(), probeMs: 100, probeTimeoutMs: 50, retryBaseMs: 20 });
+    await t.start();
+    const seen: string[] = [];
+    await t.subscribe("topic/**", sample => seen.push(sample.keyexpr));
+    await flush();
+    const command = t.get("actuate", { timeoutMs: 5000 }).catch(e => e);
+    local.healthy = false; // WebSocket still accepts operations; only the native vehicle link failed.
+    await vi.advanceTimersByTimeAsync(100);
+    expect(await command).toMatchObject({ code: "disconnected" });
+    expect(t.status()).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(21);
+    expect(selected).toEqual(["local", "vehicle"]);
+    expect(t.status()).toBe("connected");
+    expect(vehicle.subs.map(s => s.keyexpr)).toEqual(["topic/**"]);
+    expect(vehicle.pending).toEqual([]); // The command was NOT replayed.
+    local.subs[0].handler({ keyexpr: "topic/old", payload: new Uint8Array(), kind: "put" });
+    vehicle.subs[0].handler({ keyexpr: "topic/new", payload: new Uint8Array(), kind: "put" });
+    expect(seen).toEqual(["topic/new"]);
+    selector.close();
+    await t.close();
+  });
+
+  it("recovers a failed subscription instead of leaving a connected page with no subscriber", async () => {
+    const w = world();
+    await w.t.start();
+    vi.spyOn(w.current(), "subscribe").mockRejectedValueOnce(new Error("Remote api request timeout"));
+    await w.t.subscribe("topic/**", () => undefined);
+    await flush();
+    expect(w.t.status()).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(201);
+    expect(w.t.status()).toBe("connected");
+    expect(w.current().subs.map(s => s.keyexpr)).toEqual(["topic/**"]);
+    await w.t.close();
+  });
+
+  it("does not reconnect all widgets for a permanently invalid subscription", async () => {
+    const w = world();
+    await w.t.start();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(w.current(), "subscribe").mockRejectedValueOnce(new Error("Invalid Key Expr"));
+    await w.t.subscribe("bad*", () => undefined);
+    await w.t.subscribe("valid/**", () => undefined);
+    await flush();
+    expect(w.t.status()).toBe("connected");
+    expect(w.current().subs.map(s => s.keyexpr)).toEqual(["valid/**"]);
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+    await w.t.close();
+  });
+
   it("connects, declares subscriptions on the inner, and answers queries with a client deadline", async () => {
     const w = world();
     await w.t.start();

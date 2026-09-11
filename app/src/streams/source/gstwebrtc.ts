@@ -86,7 +86,7 @@ export class GstWebRtcSource implements StreamSource {
     const pc = this.session?.rtcPeerConnection;
     if (!pc) return null;
     try {
-      return summarizeStats(await pc.getStats());
+      return summarizeStats((await pc.getStats()).values());
     } catch {
       return null; // a peer connection mid-close throws; there is nothing to report then
     }

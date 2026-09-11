@@ -8,6 +8,10 @@ name: dashboard       # instance name -> compose project (rig requires it unique
 web_port: 8080        # http: the React bundle        -> http://<vehicle-ip>:<web_port>
 ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws_port>
 
+# local_bridge: ws/127.0.0.1:10000  # default: prefer a verified bridge ON THE LAPTOP, then vehicle
+# local_bridge: false              # disable laptop discovery; always use vehicle ws_port
+# See docs/LOCAL_BRIDGE.md for laptop setup and browser HTTPS/local-network permission requirements.
+
 # rmw_attachment: plain   # the rmw_zenoh attachment layout this page SENDS on service calls:
                           #   plain = rmw_zenoh 0.10 (ROS 2 Lyrical, the fleet's; default),
                           #   labelled = rmw_zenoh 0.2 (Jazzy). MUST match the vehicle's nodes: a
@@ -27,6 +31,8 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # ingress from the router (tools/dash_zenoh_config.py). The page decodes at 5 Hz anyway. Scoped to
 # the ROS domain, so lifecycle/playback/rig state and every service call stay untouched; `put`
 # messages only. Rate widgets (`topic_hz`) read the capped rate — set their min_hz accordingly.
+# These rules apply to the vehicle sidecar path. A laptop bridge connected directly to the router
+# bypasses them; native-link rate limits must run on the vehicle before the wireless hop.
 #
 # topic_rate_hz: 5        # every topic of the domain at most 5 Hz to the browser
 # topic_rates:            # OR explicit per-topic caps (needs PyYAML on the host); never both — zenoh
@@ -279,14 +285,45 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #     - type: map
 #       label: Position
 #       topic: /gnss/fix
+#       basemap: satellite       # initial layer: streets (default), satellite, terrain, none, custom
+#                                # the widget's Basemap selector changes it during operation;
+#                                # page reload restores this configured default
 #       # lat_field: latitude     # dot-paths, for non-NavSatFix position sources
 #       # lon_field: longitude
-#       # tiles: https://tile.openstreetmap.org/{z}/{x}/{y}.png   # default; "none" disables tiles
+#       # orientation_topic: /imu/data  # optional IMU quaternion; omitted/invalid => dot marker
+#       # orientation_field: orientation # dot-path to quaternion, e.g. pose.pose.orientation
+#       # orientation_frame: enu     # enu (ROS default) or ned; must be earth-referenced
+#       # heading_offset_deg: 0      # clockwise correction; no automatic TF/mount transform
+#       # tiles: /tiles/{z}/{x}/{y}.png   # adds a Custom choice; defaults to it if basemap is omitted
+#                                       # legacy tiles: "none" still starts with no basemap
 #       # zoom: 17               # initial/follow zoom (2..22)
 #       # trail: 500             # breadcrumb points kept (0 disables)
 #       # follow: true           # keep the vehicle centered; panning pauses, ⌖ resumes
-#       # attribution:           # set automatically for the OSM default
+#       # attribution:           # credits for Custom tiles; built-in layers include their credits
 #       # span: 2                # (map default 2)
+#
+#     # Multiple position sources: use feeds INSTEAD OF topic and its per-position options above.
+#     # Checkboxes show/hide tracks; Follow selects one (or Focus when follow: false).
+#     # Hidden feeds retain their trails. Reload restores config defaults.
+#     - type: map
+#       label: Position sources
+#       basemap: satellite
+#       default_feed: fused      # initially visible feed ID; default = first visible feed
+#       trail: 500               # points per feed, 0 disables
+#       feeds:
+#         - id: gnss             # required and unique within this map
+#           label: GNSS
+#           topic: /gnss/fix
+#           color: "#38bdf8"     # optional hex color; otherwise automatic palette
+#         - id: fused
+#           label: Fused position
+#           topic: /localization/fix
+#           orientation_topic: /imu/data   # independent optional heading per feed
+#           color: "#fbbf24"
+#         - id: reference
+#           label: Reference
+#           topic: /reference/fix
+#           visible: false       # operator can turn this on later
 #
 #     # -- gauge: arc gauge for a numeric field -------------------------------------------------
 #     - type: gauge

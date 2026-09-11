@@ -37,13 +37,37 @@ function mapSample(s: ZSample): Sample {
 
 /** Transport backed by zenoh-ts over the remote-api WebSocket plugin. */
 export class ZenohRemoteApiTransport implements Transport {
+  private vehicleBridgeId?: string;
   private nextEndpoint = 1;
   // Remote clients can share one server session; allocate a distinct ROS node identity per client.
   private readonly nodeId = String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   private constructor(private readonly session: Session) {}
 
-  static async open(locator: string): Promise<ZenohRemoteApiTransport> {
-    return new ZenohRemoteApiTransport(await Session.open(new Config(locator)));
+  static async open(locator: string, signal?: AbortSignal, openTimeoutMs = 8_000): Promise<ZenohRemoteApiTransport> {
+    // Extra dial options are supplied by our version-checked SDK patch (app/patches/zenoh-ts.mjs).
+    const config = Object.assign(new Config(locator, 3_000), { signal, openTimeoutMs });
+    const session = await Session.open(config);
+    if (signal?.aborted) { await session.close(); throw new Error("Connection cancelled"); }
+    return new ZenohRemoteApiTransport(session);
+  }
+
+  async bridgeId(): Promise<string> { return (await this.session.info()).zid().toString(); }
+
+  useVehicleProbe(id: string): void { this.vehicleBridgeId = id; }
+
+  async verifyVehicle(id: string): Promise<void> {
+    if (!/^[0-9a-f]{1,32}$/i.test(id)) throw new Error("Invalid vehicle bridge identity");
+    // 1.9's admin handler answers version through the wildcard branch only. Match exactly this
+    // bridge's version, never config/clients or arbitrary fleet data. The reply travels from the
+    // VEHICLE plugin through native Zenoh; an empty localhost liveliness query cannot prove that.
+    const key = `@/${id}/remote-plugin/version`;
+    const replies = await this.get(`${key}$*`, { timeoutMs: 3_000, maxReplies: 1, maxReplyBytes: 4096 });
+    if (!replies.some(r => r.keyexpr === key)) throw new Error("Local bridge cannot reach the selected vehicle");
+  }
+
+  async checkConnection(): Promise<void> {
+    if (this.vehicleBridgeId) await this.verifyVehicle(this.vehicleBridgeId);
+    else await this.liveliness.get("@dashboard/link-probe");
   }
 
   async subscribe(keyexpr: string, onSample: (s: Sample) => void): Promise<Subscription> {

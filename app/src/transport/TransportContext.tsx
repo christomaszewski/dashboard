@@ -14,9 +14,9 @@ export interface TransportContextValue {
 export const TransportCtx = createContext<TransportContextValue | null>(null);
 
 /** One zenoh session for the app; the locator is resolved by the caller (config-aware). */
-export function TransportProvider({ locator, children }: { locator: string; children: ReactNode }) {
-  const { transport, status, error } = useTransport(locator);
-  return <TransportCtx.Provider value={{ transport, status, error, locator }}>{children}</TransportCtx.Provider>;
+export function TransportProvider({ locator, localLocator, children }: { locator: string; localLocator?: string; children: ReactNode }) {
+  const { transport, status, error, activeLocator } = useTransport(locator, localLocator);
+  return <TransportCtx.Provider value={{ transport, status, error, locator: activeLocator }}>{children}</TransportCtx.Provider>;
 }
 
 export function useTransportContext(): TransportContextValue {

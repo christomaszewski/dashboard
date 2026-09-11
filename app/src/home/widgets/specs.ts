@@ -3,6 +3,8 @@
 // components attach in widgets/builtins.tsx. Importing this module registers the specs.
 import { defineWidget, type BaseWidgetConfig } from "../../widgets/registry";
 import { parseTemplate, type Template } from "../template";
+import { parseMapWidget, type MapWidgetConfig } from "../mapConfig";
+export type { MapWidgetConfig, MapFeedConfig } from "../mapConfig";
 import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type Thresholds, optStrList } from "../../widgets/parse";
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
 import "../../ros3d/spec";
@@ -143,21 +145,6 @@ export function parseReadout(raw: Obj): Pick<TopicValueWidgetConfig, "field" | "
     return { format, template: parseTemplate(format) };
   }
   return { field, precision: optNum(raw, "precision"), unit: optStr(raw, "unit"), ...optThresholds(raw) };
-}
-
-export interface MapWidgetConfig extends BaseWidgetConfig {
-  type: "map";
-  /** Topic carrying the position (NavSatFix by default: latitude/longitude fields). */
-  topic: string;
-  lat_field?: string; // dot-paths, for non-NavSatFix sources
-  lon_field?: string;
-  /** XYZ tile template fetched by the VIEWING BROWSER, or "none". Default: OSM. */
-  tiles?: string;
-  zoom?: number;
-  /** Breadcrumb points kept (0 disables the trail). */
-  trail?: number;
-  follow?: boolean;
-  attribution?: string;
 }
 
 export interface LifecycleWidgetConfig extends BaseWidgetConfig {
@@ -373,25 +360,10 @@ defineWidget<TopicValueWidgetConfig>({
 
 defineWidget<MapWidgetConfig>({
   type: "map",
-  description: "vehicle position marker + trail on a tile map (tiles fetched by the browser)",
+  description: "position feeds with optional heading and trails on a tile map (tiles fetched by the browser)",
   defaultSpan: 2,
-  label: (w) => w.label ?? w.topic,
-  parse: (raw: Obj) => {
-    const tiles = optStr(raw, "tiles");
-    if (tiles !== undefined && tiles !== "none" && !(tiles.includes("{z}") && tiles.includes("{x}") && tiles.includes("{y}")))
-      throw new Error("'tiles' must be an XYZ template containing {z}/{x}/{y}, or 'none'");
-    return {
-      label: optStr(raw, "label"),
-      topic: reqStr(raw, "topic"),
-      lat_field: optStr(raw, "lat_field"),
-      lon_field: optStr(raw, "lon_field"),
-      tiles,
-      zoom: optNum(raw, "zoom"),
-      trail: optNum(raw, "trail"),
-      follow: optBool(raw, "follow"),
-      attribution: optStr(raw, "attribution"),
-    };
-  },
+  label: (w) => w.label ?? w.topic ?? "Position",
+  parse: parseMapWidget,
 });
 
 defineWidget<LifecycleWidgetConfig>({

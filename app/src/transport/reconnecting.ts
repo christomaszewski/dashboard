@@ -38,7 +38,7 @@ export class TransportError extends Error {
 export interface ReconnectingOptions {
   /** Dial the inner transport (a fresh one per attempt). */
   open: () => Promise<Transport>;
-  /** Heartbeat cadence while connected (a liveliness query on a key nothing declares). */
+  /** Heartbeat cadence while connected (route check, or an empty liveliness query). */
   probeMs?: number;
   /** A probe unanswered this long = the link is gone. */
   probeTimeoutMs?: number;
@@ -61,6 +61,11 @@ const RETRY_BASE_MS = 1_000;
 const RETRY_MAX_MS = 10_000;
 /** After a reconnect, when to re-query the live tokens (ms after the re-declaration). */
 const RESYNC_AT_MS = [1_000, 5_000, 15_000];
+
+function declarationLinkFailure(error: unknown): boolean {
+  return error instanceof TransportError ||
+    /^(Remote api request timeout|WebSocket is closed)$/.test(error instanceof Error ? error.message : String(error));
+}
 
 type RosSubscriberTopic = Parameters<NonNullable<Transport["declareRosSubscriber"]>>[0];
 
@@ -231,13 +236,14 @@ export class ReconnectingTransport implements Transport {
     }
   }
 
-  /** One round trip that needs no data: a liveliness query on a key nothing declares. */
+  /** Probe the underlying route; transports without a route probe use an empty liveliness query. */
   private async probe(): Promise<void> {
     const t = this.inner;
     if (t === null || !this.connected) return;
     const gen = this.generation;
     try {
-      await this.withDeadline(t.liveliness.get(PROBE_KEY), this.opts.probeTimeoutMs, "link probe");
+      const probe = t.checkConnection ? t.checkConnection() : t.liveliness.get(PROBE_KEY).then(() => undefined);
+      await this.withDeadline(probe, this.opts.probeTimeoutMs, "link probe");
     } catch (e) {
       if (gen === this.generation && this.inner === t) this.drop(e instanceof Error ? e.message : String(e));
     }
@@ -282,7 +288,13 @@ export class ReconnectingTransport implements Transport {
         }
         await this.declare(t, gen, id, r);
       } catch (e) {
-        // a failed re-declare means the new link is already bad: let the probe take it from here
+        // A healthy heartbeat cannot repair a missing subscription. Rebuild the session, but
+        // never let a late failure from a retired session knock out its replacement.
+        if (declarationLinkFailure(e)) {
+          if (gen === this.generation && this.inner === t) this.drop(`re-declare failed: ${String(e)}`);
+          return;
+        }
+        // Invalid expressions and permission errors won't improve by reconnecting the whole UI.
         console.warn("[transport] re-declare failed", r.kind, e);
       }
     }
@@ -316,7 +328,14 @@ export class ReconnectingTransport implements Transport {
     const id = this.nextId++;
     this.records.set(id, r);
     const t = this.inner;
-    if (t !== null && this.connected) void this.declare(t, this.generation, id, r).catch((e) => console.warn("[transport] declare failed", e));
+    if (t !== null && this.connected) {
+      const gen = this.generation;
+      void this.declare(t, gen, id, r).catch((e) => {
+        if (declarationLinkFailure(e)) {
+          if (gen === this.generation && this.records.has(id)) this.drop(`declare failed: ${String(e)}`);
+        } else console.warn("[transport] declare failed", e);
+      });
+    }
     return {
       close: async () => {
         this.records.delete(id);

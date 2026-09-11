@@ -12,7 +12,9 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 | `dashboard-rig-agent` (opt-in) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, the run registry, rig verbs as detached jobs. Only with `rig_agent: true` in the instance YAML (`docker-compose.rig-agent.yml` + `docker-compose.rig-data.yml` overlays). | — (peer on `:7447`) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over
-`ws://<vehicle-ip>:10000`.
+`ws://127.0.0.1:10000` when a verified laptop bridge is available, otherwise
+`ws://<vehicle-ip>:10000`. See [laptop bridge setup and fallback](../docs/LOCAL_BRIDGE.md), including
+browser local-network permissions and the different placement required for native-link rate limits.
 
 ## Rig agent (opt-in)
 

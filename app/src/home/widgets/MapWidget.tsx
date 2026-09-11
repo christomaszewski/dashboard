@@ -1,124 +1,150 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import type { MapWidgetConfig } from "../../config/schema";
-import { useTopic } from "../../ros/useTopic";
-import { extractLatLon } from "../geo";
+import { mapFeeds, type MapWidgetConfig } from "../mapConfig";
+import type { MapPosition } from "../geo";
+import { defaultBasemap, mapLayers, type BasemapId } from "../basemaps";
+import { MapFeedLayer } from "./MapFeedLayer";
 
-// Tiles are ALWAYS fetched by the viewing browser, never the vehicle: the OSM default works on any
-// internet-connected operator PC with zero vehicle involvement; fully-offline ops point `tiles:`
-// at an operator-PC tile server (e.g. http://localhost:8000/{z}/{x}/{y}.png over a z/x/y tree) or
-// a vehicle-mounted path. Unreachable tiles degrade to the plain background — marker + trail
-// always work.
-const OSM_TEMPLATE = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";
-const OSM_ATTRIBUTION = "© OpenStreetMap contributors";
+const FEED_COLORS = ["#38bdf8", "#fbbf24", "#c084fc", "#34d399", "#fb7185"];
 
-/** Live vehicle position off the shared TopicStore: marker + breadcrumb trail, follow mode. */
+/** Independent position/heading layers share one map; tiles are fetched by the viewing browser. */
 export function MapWidget({ widget }: { widget: MapWidgetConfig }) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const mapRef = useRef<L.Map | null>(null);
-  const markerRef = useRef<L.Marker | null>(null);
-  const trailRef = useRef<L.Polyline | null>(null);
-  const hasFixRef = useRef(false);
-  const followPaused = useRef(false);
-  const [hasFix, setHasFix] = useState(false);
+  const [map, setMap] = useState<L.Map | null>(null);
+  const initialized = useRef(false);
+  const focusPending = useRef(false);
+  const feeds = useMemo(() => mapFeeds(widget), [widget]);
+  const label = widget.label ?? widget.topic ?? "Position";
+  const [visible, setVisible] = useState(() => new Set(feeds.filter(f => f.visible !== false).map(f => f.id)));
+  const [selected, setSelected] = useState(() => widget.default_feed ?? feeds.find(f => f.visible !== false)?.id ?? "");
+  const [positions, setPositions] = useState(() => new Map<string, MapPosition>());
+  const [statuses, setStatuses] = useState(() => new Map<string, string>());
   const [paused, setPaused] = useState(false);
-  const { topic, snapshot } = useTopic(widget.topic);
-
+  const [basemap, setBasemap] = useState(() => defaultBasemap(widget));
   const zoom = Math.min(22, Math.max(2, widget.zoom ?? 17));
   const follow = widget.follow ?? true;
-  const trailMax = Math.max(0, widget.trail ?? 500);
-  const tiles = widget.tiles ?? OSM_TEMPLATE;
+  const trailMax = Math.max(0, Math.floor(widget.trail ?? 500));
+  const layers = mapLayers(widget);
+  const layer = layers.find(l => l.id === basemap)!;
+  const activePosition = visible.has(selected) ? positions.get(selected) : undefined;
+  const firstPosition = feeds.find(f => visible.has(f.id) && positions.has(f.id));
+  const firstFix = firstPosition ? positions.get(firstPosition.id) : undefined;
 
   // Map lifetime == widget mount (Home stays mounted across tab switches).
   useEffect(() => {
+    if (!containerRef.current) return;
     const el = containerRef.current;
-    if (!el) return;
-    const map = L.map(el, { attributionControl: false, center: [0, 0], zoom });
-    if (tiles !== "none") {
-      const attribution = widget.attribution ?? (tiles === OSM_TEMPLATE ? OSM_ATTRIBUTION : undefined);
-      if (attribution) L.control.attribution({ prefix: false }).addAttribution(attribution).addTo(map);
-      L.tileLayer(tiles, { maxZoom: 22 }).addTo(map);
-    }
-    markerRef.current = L.marker([0, 0], {
-      icon: L.divIcon({ className: "map-vehicle", iconSize: [14, 14] }),
-      interactive: false,
-    });
-    trailRef.current = L.polyline([], { color: "var(--accent)", weight: 2, opacity: 0.7 }).addTo(map);
-    // A user pan pauses follow mode; the ⌖ button resumes it.
-    map.on("dragstart", () => {
-      followPaused.current = true;
-      setPaused(true);
-    });
-    // Leaflet mis-sizes inside display:none ancestors (hidden tabs) and on grid-area layout
-    // changes — invalidate whenever the container actually has a size.
-    const observer = new ResizeObserver(() => {
-      if (el.clientWidth > 0) map.invalidateSize();
-    });
+    const instance = L.map(el, { attributionControl: false, center: [0, 0], zoom, minZoom: 2, maxZoom: 22 });
+    L.control.attribution({ prefix: false }).addTo(instance);
+    initialized.current = false;
+    instance.on("dragstart", () => { focusPending.current = false; setPaused(true); });
+    const observer = new ResizeObserver(() => { if (el.clientWidth > 0) instance.invalidateSize(); });
     observer.observe(el);
-    mapRef.current = map;
-    return () => {
-      observer.disconnect();
-      map.remove();
-      mapRef.current = null;
-      markerRef.current = null;
-      trailRef.current = null;
-    };
-    // Config values are per-widget-instance constants; the map is built once per mount.
+    setMap(instance);
+    return () => { observer.disconnect(); instance.remove(); };
+    // Config values are fixed for a mounted widget; changing layers never rebuilds the map.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Position updates.
-  const message = snapshot?.message;
   useEffect(() => {
-    const map = mapRef.current;
-    const marker = markerRef.current;
-    const trail = trailRef.current;
-    if (!map || !marker || !trail || message === undefined) return;
-    const pos = extractLatLon(message, widget.lat_field ?? "latitude", widget.lon_field ?? "longitude");
-    if (!pos) return;
-    const ll = L.latLng(pos.lat, pos.lon);
-    if (!hasFixRef.current) {
-      hasFixRef.current = true;
-      setHasFix(true);
-      marker.addTo(map);
-      map.setView(ll, zoom, { animate: false }); // first fix: jump straight there
-    }
-    marker.setLatLng(ll);
-    if (trailMax > 0) {
-      const pts = trail.getLatLngs() as L.LatLng[];
-      pts.push(ll);
-      if (pts.length > trailMax) pts.splice(0, pts.length - trailMax);
-      trail.setLatLngs(pts);
-    }
-    if (follow && !followPaused.current) map.panTo(ll, { animate: false });
-  }, [message, widget.lat_field, widget.lon_field, zoom, follow, trailMax]);
+    if (!map || !layer.tiles) return;
+    const tiles = L.tileLayer(layer.tiles, {
+      maxZoom: 22, maxNativeZoom: layer.maxNativeZoom, attribution: layer.attribution,
+    }).addTo(map);
+    return () => { tiles.remove(); };
+  }, [map, layer.tiles, layer.attribution, layer.maxNativeZoom]);
 
-  const resume = () => {
-    followPaused.current = false;
+  const onPosition = useCallback((id: string, pos: MapPosition) => {
+    setPositions(prev => prev.get(id)?.lat === pos.lat && prev.get(id)?.lon === pos.lon ? prev : new Map(prev).set(id, pos));
+  }, []);
+  const onStatus = useCallback((id: string, status: string) => {
+    setStatuses(prev => prev.get(id) === status ? prev : new Map(prev).set(id, status));
+  }, []);
+
+  useEffect(() => {
+    if (!map) return;
+    if (!initialized.current && (activePosition || firstFix)) {
+      const pos = (activePosition ?? firstFix)!;
+      map.setView([pos.lat, pos.lon], zoom, { animate: false });
+      initialized.current = true;
+    }
+    if (activePosition && (focusPending.current || (follow && !paused))) {
+      map.panTo([activePosition.lat, activePosition.lon], { animate: false });
+      focusPending.current = false;
+    }
+  }, [map, selected, activePosition, firstFix, follow, paused, zoom]);
+
+  const chooseFeed = (id: string) => {
+    setVisible(prev => new Set([...prev, id]));
+    setSelected(id);
     setPaused(false);
-    const marker = markerRef.current;
-    if (marker && hasFixRef.current) mapRef.current?.panTo(marker.getLatLng(), { animate: false });
+    focusPending.current = true;
+  };
+  const showFeed = (id: string, show: boolean) => {
+    const next = new Set(visible);
+    if (show) next.add(id); else next.delete(id);
+    setVisible(next);
+    if (!next.has(selected)) {
+      focusPending.current = false;
+      setSelected(feeds.find(f => next.has(f.id))?.id ?? "");
+      setPaused(false);
+    }
+  };
+  const resume = () => {
+    setPaused(false);
+    if (map && activePosition) map.panTo([activePosition.lat, activePosition.lon], { animate: false });
   };
 
   return (
     <div className="widget-card widget-map">
-      <span className="widget-label">{widget.label ?? widget.topic}</span>
+      <div className="map-heading">
+        <span className="widget-label">{label}</span>
+        <label className="map-basemap">Basemap
+          <select aria-label={`Basemap for ${label}`} value={basemap}
+            onChange={e => setBasemap(e.target.value as BasemapId)}>
+            {layers.map(l => <option key={l.id} value={l.id}>{l.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {(widget.feeds || feeds.length > 1) && (
+        <div className="map-feed-controls">
+          <div className="map-feed-list" role="group" aria-label={`Visible feeds for ${label}`}>
+            {feeds.map((feed, i) => (
+              <label className="map-feed-toggle" key={feed.id} title={feed.topic}>
+                <input type="checkbox" aria-label={`Show ${feed.label ?? feed.topic}`} checked={visible.has(feed.id)}
+                  onChange={e => showFeed(feed.id, e.target.checked)} />
+                <span className="map-feed-swatch" style={{ background: feed.color ?? FEED_COLORS[i % FEED_COLORS.length] }} />
+                {feed.label ?? feed.topic}
+              </label>
+            ))}
+          </div>
+          <label className="map-feed-select">{follow ? "Follow" : "Focus"}
+            <select aria-label={`Position feed for ${label}`} value={selected} onChange={e => chooseFeed(e.target.value)}>
+              {!selected && <option value="" disabled>Choose feed</option>}
+              {feeds.map(feed => <option key={feed.id} value={feed.id}>{feed.label ?? feed.topic}</option>)}
+            </select>
+          </label>
+        </div>
+      )}
+      {firstFix && !activePosition && selected && (
+        <span className="map-feed-status">{feeds.find(f => f.id === selected)?.label ?? selected}: {statuses.get(selected) ?? "waiting for fix…"}</span>
+      )}
       <div className="map-frame">
         <div className="map-container" ref={containerRef} />
-        {!hasFix && (
-          <div className="map-overlay">
-            <span className="empty">
-              {snapshot?.error ? snapshot.error : topic ? "waiting for fix…" : `waiting for ${widget.topic}…`}
-            </span>
-          </div>
-        )}
-        {paused && follow && hasFix && (
-          <button className="btn map-follow" title="re-center on the vehicle" onClick={resume}>
-            ⌖ follow
+        {!firstFix && <div className="map-overlay"><span className="empty">
+          {visible.size === 0 ? "All feeds hidden" : statuses.get(selected) ?? "waiting for fix…"}
+        </span></div>}
+        {activePosition && (paused || !follow) && (
+          <button className="btn map-follow" title="re-center on the selected feed" onClick={resume}>
+            ⌖ {follow ? "follow" : "center"}
           </button>
         )}
       </div>
+      {map && feeds.map((feed, i) => (
+        <MapFeedLayer key={feed.id} map={map} feed={feed} color={feed.color ?? FEED_COLORS[i % FEED_COLORS.length]}
+          visible={visible.has(feed.id)} trailMax={trailMax} onPosition={onPosition} onStatus={onStatus} />
+      ))}
     </div>
   );
 }

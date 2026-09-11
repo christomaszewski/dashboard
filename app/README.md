@@ -16,8 +16,13 @@ npm run dev                        # http://localhost:5173 (host:true → also o
 VITE_REMOTE_API_LOCATOR=ws/<vehicle-ip>:10000 npm run dev
 ```
 
-By default the locator is derived from the page host (`ws/<host>:10000`) — correct for the
-vehicle-served deployment. Override with `VITE_REMOTE_API_LOCATOR` for dev.
+The vehicle locator is derived from the page host (`ws/<host>:10000`). The app first tries a
+verified laptop bridge on `127.0.0.1:10000`, falling back to the vehicle. `VITE_REMOTE_API_LOCATOR`
+explicitly pins a single endpoint. To test automatic selection while serving the page locally,
+use `VITE_VEHICLE_HOST=<vehicle-ip> npm run dev`. See [local bridge setup](../docs/LOCAL_BRIDGE.md).
+
+`npm install` / `npm ci` runs `patches/zenoh-ts.mjs` to make the pinned 1.9.0 SDK connection attempts
+bounded and cancellable. This is required for fallback; production image builds also apply it.
 
 > zenoh-ts pulls a wasm keyexpr module; `vite-plugin-wasm` + `vite-plugin-top-level-await` are wired
 > in `vite.config.ts` to handle it. Drop them if a clean build shows they're unneeded.
@@ -29,6 +34,78 @@ npm run build      # tsc + vite → app/dist  (the dashboard-web image bakes thi
 ```
 
 ## Layout / seams
+
+Home map widgets accept `basemap: streets | satellite | terrain | none | custom`. Streets is the
+default (OpenStreetMap); satellite and terrain use Esri imagery and topographic tiles. Each map has
+a Basemap selector that changes only its tiles, preserving zoom, position, follow mode and trail.
+The selection lasts until page reload, when the configured default applies again.
+
+```yaml
+home:
+  widgets:
+    - type: map
+      label: Position
+      topic: /gnss/fix
+      orientation_topic: /imu/data   # optional; omit to keep the dot marker
+      basemap: satellite
+```
+
+A `tiles:` XYZ URL adds a Custom option; `basemap: custom` requires that URL. Existing `tiles:`
+configurations still default to Custom, and `tiles: "none"` still starts without tiles. Use
+`attribution:` for your custom provider's credits. Online tiles are fetched by the laptop browser;
+for offline use choose None or point Custom at a reachable local tile server. Switching to None
+keeps the marker and trail and stops requesting tiles.
+
+For heading, the map reads the quaternion at `orientation` (override with a dot-path in
+`orientation_field`). It converts ROS ENU yaw to a clockwise bearing from north, following
+[REP-103](https://github.com/ros-infrastructure/rep/blob/master/rep-0103.rst).
+Set `orientation_frame: ned` for a north/east/down source. `heading_offset_deg` adds a clockwise
+angle correction. Use an earth-referenced orientation aligned to the vehicle's forward axis;
+the widget does not resolve TF or integrate angular velocity. A relative IMU yaw cannot by
+itself supply a geographic heading. Missing/invalid orientation, a zero quaternion, or an IMU
+[`orientation_covariance[0] == -1`](https://github.com/ros2/common_interfaces/blob/rolling/sensor_msgs/msg/Imu.msg)
+leaves the dot marker. Position and heading update independently using their latest samples.
+
+To compare position sources, replace the single `topic:` and its orientation/field options with
+`feeds:`. Feed IDs must be unique. Labels and colors are optional (colors default to a palette):
+
+```yaml
+home:
+  widgets:
+    - type: map
+      label: Position sources
+      basemap: satellite
+      default_feed: fused
+      trail: 500                 # points per feed
+      feeds:
+        - id: gnss
+          label: GNSS
+          topic: /gnss/fix
+          color: "#38bdf8"
+        - id: fused
+          label: Fused position
+          topic: /localization/fix
+          orientation_topic: /imu/data
+          color: "#fbbf24"
+          # orientation_field: orientation
+          # orientation_frame: enu
+          # heading_offset_deg: 0
+        - id: reference
+          label: Reference
+          topic: /reference/fix
+          visible: false
+```
+
+Checkboxes show/hide each feed's marker and trail. The Follow selector switches the tracked feed;
+selecting a hidden feed also shows it. Panning pauses follow and the ⌖ button resumes it. With
+`follow: false`, the selector is labeled Focus and centers once without tracking subsequent moves.
+Hidden feeds continue receiving data and retaining their bounded trails. All operator choices
+reset to the config on reload. `default_feed` must identify an initially visible feed; if omitted,
+the first visible feed is selected. `lat_field` / `lon_field` and heading options are per feed.
+
+The overall dashboard width is controlled by `--page-max-width` and `.page` in `src/index.css`.
+It now expands up to `90rem` (1440 px at the default root font size), while remaining fluid on
+smaller displays. The individual Home grid's columns and areas remain controlled by `home.layout`.
 
 ```
 src/

@@ -29,6 +29,7 @@
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --page-max-width: 90rem;
 }
 
 * {
@@ -90,7 +91,7 @@ body {
 }
 
 .page {
-  max-width: 64rem;
+  max-width: var(--page-max-width);
   margin: 0 auto;
   padding: 1.3rem 1.4rem 4rem;
   display: flex;
@@ -1188,6 +1189,45 @@ ul.plain {
   padding: 0.85rem 1rem 1rem;
 }
 
+.map-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.map-heading .widget-label { margin: 0; }
+.map-basemap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+.map-basemap select { width: auto; padding: 0.25rem 0.4rem; }
+
+.map-feed-controls {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.map-feed-list { display: flex; flex-wrap: wrap; gap: 0.35rem 0.85rem; min-width: 0; }
+.map-feed-toggle, .map-feed-select { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.map-feed-toggle { cursor: pointer; overflow-wrap: anywhere; }
+.map-feed-toggle input { width: auto; margin: 0; accent-color: var(--accent); }
+.map-feed-swatch { width: 0.55rem; height: 0.55rem; border-radius: 50%; flex-shrink: 0; }
+.map-feed-select { max-width: 100%; }
+.map-feed-select select { width: auto; min-width: 0; max-width: 16rem; padding: 0.25rem 0.4rem; }
+.map-feed-status { font-size: 0.72rem; color: var(--text-dim); }
+
 .map-frame {
   position: relative;
   width: 100%;
@@ -1217,11 +1257,34 @@ ul.plain {
 }
 
 .map-vehicle {
-  background: var(--accent);
+  background: transparent;
+  border: none;
+}
+.map-vehicle-symbol { display: block; width: 28px; height: 28px; position: relative; }
+.map-vehicle-dot {
+  position: absolute;
+  inset: 7px;
+  background: currentColor;
   border: 2px solid #fff;
   border-radius: 50%;
   box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
 }
+.map-vehicle-arrow {
+  display: none;
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 0 2px #000);
+}
+.map-vehicle-arrow::before, .map-vehicle-arrow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  clip-path: polygon(50% 0, 94% 94%, 50% 74%, 6% 94%);
+}
+.map-vehicle-arrow::after { inset: 4px; background: currentColor; }
+.map-vehicle-symbol.has-heading .map-vehicle-dot { display: none; }
+.map-vehicle-symbol.has-heading .map-vehicle-arrow { display: block; }
 
 .map-overlay {
   position: absolute;

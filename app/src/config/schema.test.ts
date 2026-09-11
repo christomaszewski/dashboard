@@ -241,6 +241,40 @@ describe("visibleTabs", () => {
 });
 
 describe("map widget", () => {
+  it("accepts optional heading on legacy maps and independent position/orientation feeds", () => {
+    const single = parseHome({ widgets: [{ type: "map", topic: "/fix", orientation_topic: "/imu" }] });
+    expect(single.widgets[0]).toMatchObject({ ok: true, widget: { orientation_topic: "/imu" } });
+    const multi = parseHome({ widgets: [{ type: "map", default_feed: "b", feeds: [
+      { id: "a", topic: "/fix/a", label: "Raw", color: "#38bdf8", orientation_topic: "/imu/a" },
+      { id: "b", topic: "/fix/b", orientation_topic: "/imu/b", orientation_frame: "ned", heading_offset_deg: 12 },
+      { id: "c", topic: "/fix/c", visible: false },
+    ] }] });
+    expect(multi.widgets[0]).toMatchObject({ ok: true, widget: { default_feed: "b", feeds: [
+      { id: "a", color: "#38bdf8", orientation_topic: "/imu/a" },
+      { id: "b", orientation_frame: "ned", heading_offset_deg: 12 }, { id: "c", visible: false },
+    ] } });
+  });
+  it("rejects ambiguous feeds, duplicate IDs, invalid defaults and invalid heading options", () => {
+    const feed = { id: "a", topic: "/fix" };
+    for (const options of [
+      { feeds: [] }, { feeds: {} }, { feeds: [null] }, { feeds: [{ topic: "/fix" }] },
+      { feeds: [feed, feed] }, { topic: "/fix", feeds: [feed] },
+      { orientation_topic: "/imu", feeds: [feed] },
+      { feeds: [feed], default_feed: "unknown" }, { feeds: [{ ...feed, visible: false }], default_feed: "a" },
+      { feeds: [{ ...feed, visible: "false" }] }, { feeds: [{ ...feed, color: "red;display:none" }] },
+      { topic: "/fix", orientation_topic: 12 }, { topic: "/fix", orientation_frame: "enu" },
+      { topic: "/fix", orientation_topic: "/imu", orientation_frame: "other" },
+      { topic: "/fix", orientation_topic: "/imu", heading_offset_deg: "90" },
+    ]) expect(parseHome({ widgets: [{ type: "map", ...options }] }).widgets[0]).toMatchObject({ ok: false });
+  });
+  it("accepts a default basemap and validates custom and unknown layers", () => {
+    const parse = (options: object) => parseHome({ widgets: [{ type: "map", topic: "/fix", ...options }] }).widgets[0];
+    for (const basemap of ["streets", "satellite", "terrain", "none"])
+      expect(parse({ basemap })).toMatchObject({ ok: true, widget: { basemap } });
+    expect(parse({ basemap: "custom", tiles: "/tiles/{z}/{x}/{y}.png" })).toMatchObject({ ok: true });
+    expect(parse({ basemap: "custom" })).toMatchObject({ ok: false, message: expect.stringContaining("requires") });
+    expect(parse({ basemap: "space" })).toMatchObject({ ok: false, message: expect.stringContaining("'basemap'") });
+  });
   it("parses with defaults left to the renderer", () => {
     const home = parseHome({ widgets: [{ type: "map", topic: "/gnss/fix" }] });
     expect(home.widgets[0]).toMatchObject({ ok: true, widget: { type: "map", topic: "/gnss/fix" } });

@@ -118,6 +118,8 @@ export interface DashboardConfig {
   name?: string;
   web_port?: number;
   ws_port?: number;
+  /** Try a laptop bridge first. Omitted = ws/127.0.0.1:10000; false = vehicle only. */
+  local_bridge?: string | false;
   /** dash-up starts the vehicle-side rig agent (docs/RIG_AGENT.md); shows the Rig tab by default. */
   rig_agent?: boolean;
   tabs?: TabVisibility;
@@ -361,6 +363,7 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     name: optStr(doc, "name"),
     web_port: optNum(doc, "web_port"),
     ws_port: optNum(doc, "ws_port"),
+    local_bridge: doc.local_bridge === false ? false : optStr(doc, "local_bridge"),
     rig_agent: rigAgent || undefined,
     tabs: resolvedTabs,
     ros3d,

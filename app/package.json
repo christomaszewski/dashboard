@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node patches/zenoh-ts.mjs",
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
@@ -11,7 +12,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@eclipse-zenoh/zenoh-ts": "^1.9.0",
+    "@eclipse-zenoh/zenoh-ts": "1.9.0",
     "@foxglove/message-definition": "^0.5.0",
     "@foxglove/rosmsg-msgs-common": "^3.2.3",
     "@foxglove/rosmsg-serialization": "^2.1.1",

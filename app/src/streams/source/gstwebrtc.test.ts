@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 // (gstwebrtc-api touches `window` at import; the function under test is pure.)
 import { describe, expect, it } from "vitest";
-import { summarizeStats } from "./gstwebrtc";
+import { GstWebRtcSource, summarizeStats } from "./gstwebrtc";
+import type { StreamDescriptor } from "../types";
 
 // A trimmed RTCStatsReport the way Chrome lays it out: entries keyed by id, the transport pointing at
 // its selected candidate pair, the pair pointing at its two candidates.
@@ -20,8 +21,16 @@ function chromeReport() {
 }
 
 describe("summarizeStats", () => {
+  it("reads a real maplike RTCStatsReport through the source's public stats method", async () => {
+    const source = new GstWebRtcSource({} as StreamDescriptor);
+    const report = new Map(chromeReport().map(s => [s.id, s]));
+    Object.assign(source, { session: { rtcPeerConnection: { getStats: async () => report } } });
+    expect(await source.stats()).toMatchObject({ packetsReceived: 1234, framesDecoded: 398, transport: "udp host->host" });
+  });
   it("curates inbound-rtp video + the transport's selected candidate pair", () => {
-    expect(summarizeStats(chromeReport())).toEqual({
+    // RTCStatsReport is maplike: iteration yields [id, stats], not stats dictionaries.
+    const report = new Map(chromeReport().map(s => [s.id, s]));
+    expect(summarizeStats(report.values())).toEqual({
       packetsReceived: 1234, packetsLost: 5, nackCount: 3, pliCount: 1,
       framesReceived: 400, framesDecoded: 398, framesDropped: 2, freezeCount: 1, totalFreezesDuration: 0.9,
       jitterBufferDelay: 24.4, jitterBufferEmittedCount: 400,
