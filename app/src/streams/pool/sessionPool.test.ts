@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { StreamSessionPool, type VideoLike } from "./sessionPool";
-import type { StreamSource, StreamSourceHooks } from "../source/types";
+import { StreamSessionPool, formatStats, type VideoLike } from "./sessionPool";
+import type { StreamSource, StreamSourceHooks, StreamStats } from "../source/types";
 import type { DiscoveredStream, StreamDescriptor } from "../types";
 
 // ---- fakes ------------------------------------------------------------------------------------
@@ -8,6 +8,10 @@ import type { DiscoveredStream, StreamDescriptor } from "../types";
 class FakeSource implements StreamSource {
   hooks: StreamSourceHooks | null = null;
   closed = false;
+  /** When set, the source reports receive-path stats; the pool must sample them BEFORE close(). */
+  statsToReport: StreamStats | null = null;
+  statsCalls = 0;
+  statsSampledWhileOpen = true;
   constructor(readonly descriptor: StreamDescriptor) {}
   open(hooks: StreamSourceHooks): Promise<void> {
     this.hooks = hooks;
@@ -15,6 +19,11 @@ class FakeSource implements StreamSource {
   }
   close(): void {
     this.closed = true;
+  }
+  stats(): Promise<StreamStats | null> {
+    this.statsCalls += 1;
+    if (this.closed) this.statsSampledWhileOpen = false;
+    return Promise.resolve(this.statsToReport);
   }
 }
 
@@ -291,5 +300,52 @@ describe("StreamSessionPool", () => {
     expect(sources).toHaveLength(1); // no zombie retry
     vi.advanceTimersByTime(60_000);
     expect(sources).toHaveLength(1);
+  });
+
+  it("a retry logs WHY, with the receive-path stats sampled from the source before it is closed", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const h = pool.acquire(KEY);
+    const v = fakeVideo();
+    h.attach(v);
+    sources[0].statsToReport = { packetsReceived: 1234, packetsLost: 5, framesDecoded: 398, freezeCount: 1, totalFreezesDuration: 0.9, transport: "udp host->host", currentRoundTripTime: 0.003 };
+    sources[0].hooks!.onStream(fakeMedia());
+    v.firePlaying();
+    v.currentTime = 1;
+    vi.advanceTimersByTime(3000);
+    vi.advanceTimersByTime(15_000); // frozen → stall watchdog
+    expect(pool.getSnapshot(KEY)?.error).toBe("video stalled");
+    expect(sources[0].statsCalls).toBe(1);
+    expect(sources[0].statsSampledWhileOpen).toBe(true);
+    await Promise.resolve(); // the stats promise settles on the microtask queue
+    const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes("retry"));
+    expect(line).toContain(`retry ${KEY} in 1000 ms: video stalled (no new frame for 15.0 s)`);
+    expect(line).toContain("pkts 1234 lost 5 | frames dec 398 freezes 1 (0.9 s) | udp host->host rtt 3 ms");
+    warn.mockRestore();
+    h.release();
+  });
+
+  it("a retry still logs when the source has no stats to give", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    pool.acquire(KEY);
+    sources[0].hooks!.onError!("ice failed"); // statsToReport is null: nothing connected yet
+    await Promise.resolve();
+    const line = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes("retry"));
+    expect(line).toBe(`[stream-pool] retry ${KEY} in 1000 ms: ice failed`);
+    warn.mockRestore();
+  });
+});
+
+describe("formatStats", () => {
+  it("prints only what was reported, in a fixed order", () => {
+    expect(formatStats({})).toBe("");
+    expect(formatStats({ transport: "tcp host->host" })).toBe("tcp host->host");
+    expect(
+      formatStats({
+        packetsReceived: 10, packetsLost: 0, nackCount: 2, pliCount: 1,
+        framesReceived: 8, framesDecoded: 7, framesDropped: 1, freezeCount: 0,
+        jitterBufferDelay: 0.61, jitterBufferEmittedCount: 10,
+        transport: "udp host->srflx", currentRoundTripTime: 0.0124,
+      }),
+    ).toBe("pkts 10 lost 0 nack 2 pli 1 | frames rx 8 dec 7 drop 1 freezes 0 | jb 61 ms | udp host->srflx rtt 12 ms");
   });
 });

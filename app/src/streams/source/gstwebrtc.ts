@@ -1,6 +1,6 @@
 import GstWebRTCAPI from "gstwebrtc-api";
 import type { StreamDescriptor } from "../types";
-import type { StreamSource, StreamSourceHooks } from "./types";
+import type { StreamSource, StreamSourceHooks, StreamStats } from "./types";
 import { resolveSignallingUrl } from "../signalling";
 
 type Producer = { id: string; meta: Record<string, unknown> };
@@ -81,6 +81,17 @@ export class GstWebRtcSource implements StreamSource {
     session.connect();
   }
 
+  /** Receive-path snapshot from the session's RTCPeerConnection (see StreamSource.stats). */
+  async stats(): Promise<StreamStats | null> {
+    const pc = this.session?.rtcPeerConnection;
+    if (!pc) return null;
+    try {
+      return summarizeStats(await pc.getStats());
+    } catch {
+      return null; // a peer connection mid-close throws; there is nothing to report then
+    }
+  }
+
   close(): void {
     this.closed = true;
     try {
@@ -89,4 +100,47 @@ export class GstWebRtcSource implements StreamSource {
       this.session = null;
     }
   }
+}
+
+type StatsRecord = Record<string, unknown>;
+
+/**
+ * Curate an RTCStatsReport down to the receive-path fields that tell a stall apart: the video
+ * `inbound-rtp` entry plus the transport's selected `candidate-pair` (via `transport`, or the pair
+ * flagged `selected`/`nominated` on browsers without a transport entry). Exported for tests.
+ */
+export function summarizeStats(report: Iterable<unknown>): StreamStats | null {
+  const all = [...report] as StatsRecord[];
+  const byId = new Map<string, StatsRecord>();
+  for (const s of all) if (typeof s["id"] === "string") byId.set(s["id"], s);
+  const inbound = all.find((s) => s["type"] === "inbound-rtp" && (s["kind"] ?? s["mediaType"]) === "video");
+  const transport = all.find((s) => s["type"] === "transport");
+  let pair = (transport && byId.get(String(transport["selectedCandidatePairId"] ?? ""))) ?? null;
+  if (!pair) pair = all.find((s) => s["type"] === "candidate-pair" && (s["selected"] === true || s["nominated"] === true)) ?? null;
+  if (!inbound && !pair) return null;
+
+  const num = (s: StatsRecord | null | undefined, k: string): number | undefined =>
+    s && typeof s[k] === "number" ? (s[k] as number) : undefined;
+  const out: StreamStats = {};
+  if (inbound) {
+    out.packetsReceived = num(inbound, "packetsReceived");
+    out.packetsLost = num(inbound, "packetsLost");
+    out.nackCount = num(inbound, "nackCount");
+    out.pliCount = num(inbound, "pliCount");
+    out.framesReceived = num(inbound, "framesReceived");
+    out.framesDecoded = num(inbound, "framesDecoded");
+    out.framesDropped = num(inbound, "framesDropped");
+    out.freezeCount = num(inbound, "freezeCount");
+    out.totalFreezesDuration = num(inbound, "totalFreezesDuration");
+    out.jitterBufferDelay = num(inbound, "jitterBufferDelay");
+    out.jitterBufferEmittedCount = num(inbound, "jitterBufferEmittedCount");
+  }
+  if (pair) {
+    const local = byId.get(String(pair["localCandidateId"] ?? ""));
+    const remote = byId.get(String(pair["remoteCandidateId"] ?? ""));
+    const proto = String(local?.["protocol"] ?? remote?.["protocol"] ?? "?").toLowerCase();
+    out.transport = `${proto} ${String(local?.["candidateType"] ?? "?")}->${String(remote?.["candidateType"] ?? "?")}`;
+    out.currentRoundTripTime = num(pair, "currentRoundTripTime");
+  }
+  return out;
 }

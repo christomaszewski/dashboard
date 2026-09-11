@@ -15,7 +15,7 @@
 //   - liveliness flap via updateStreams: alive→true resumes immediately (fresh descriptor — ports/
 //     geometry may have changed across a producer restart); true→false drops the session, offline
 import type { DiscoveredStream, StreamDescriptor } from "../types";
-import type { StreamSource } from "../source/types";
+import type { StreamSource, StreamStats } from "../source/types";
 
 export type SessionState = "opening" | "playing" | "reconnecting" | "offline";
 
@@ -59,6 +59,36 @@ export interface PoolOptions {
   stallMs?: number;
   stallPollMs?: number;
   lingerMs?: number;
+}
+
+/** `pkts 1234 lost 5 nack 3 pli 1 | frames rx 400 dec 398 drop 2 freezes 1 (0.9 s) | jb 61 ms | udp host->host rtt 3 ms`
+ *  — only the fields the source reported. Exported for tests. */
+export function formatStats(s: StreamStats): string {
+  const parts: string[] = [];
+  const n = (v: number | undefined) => (v === undefined ? null : String(v));
+  const rtp = [
+    n(s.packetsReceived) !== null ? `pkts ${s.packetsReceived}` : null,
+    n(s.packetsLost) !== null ? `lost ${s.packetsLost}` : null,
+    n(s.nackCount) !== null ? `nack ${s.nackCount}` : null,
+    n(s.pliCount) !== null ? `pli ${s.pliCount}` : null,
+  ].filter((x): x is string => x !== null);
+  if (rtp.length) parts.push(rtp.join(" "));
+  const frames = [
+    n(s.framesReceived) !== null ? `rx ${s.framesReceived}` : null,
+    n(s.framesDecoded) !== null ? `dec ${s.framesDecoded}` : null,
+    n(s.framesDropped) !== null ? `drop ${s.framesDropped}` : null,
+    n(s.freezeCount) !== null
+      ? `freezes ${s.freezeCount}` + (s.totalFreezesDuration !== undefined ? ` (${s.totalFreezesDuration.toFixed(1)} s)` : "")
+      : null,
+  ].filter((x): x is string => x !== null);
+  if (frames.length) parts.push(`frames ${frames.join(" ")}`);
+  if (s.jitterBufferDelay !== undefined && s.jitterBufferEmittedCount) {
+    parts.push(`jb ${Math.round((s.jitterBufferDelay / s.jitterBufferEmittedCount) * 1000)} ms`);
+  }
+  if (s.transport) {
+    parts.push(s.transport + (s.currentRoundTripTime !== undefined ? ` rtt ${Math.round(s.currentRoundTripTime * 1000)} ms` : ""));
+  }
+  return parts.join(" | ");
 }
 
 const RETRY_BASE_MS = 1000;
@@ -313,6 +343,10 @@ export class StreamSessionPool {
   }
 
   private scheduleRetry(entry: Entry, reason: string): void {
+    // Snapshot the receive path BEFORE the source is closed: stats() issues its getStats() synchronously
+    // (up to its first await), so the peer connection is still open when the sample is taken.
+    const stats = entry.source?.stats?.() ?? null;
+    const stalledMs = entry.stallTimer !== null ? Date.now() - entry.stallLastAdvance : null;
     this.closeSource(entry);
     if (entry.refs === 0) return;
     if (entry.retryTimer !== null) return; // one pending retry at a time (error+closed both fire)
@@ -326,7 +360,19 @@ export class StreamSessionPool {
       entry.retryTimer = null;
       this.attempt(entry);
     }, entry.backoffMs);
+    this.logRetry(entry.key, reason, entry.backoffMs, stalledMs, stats);
     entry.backoffMs = Math.min(entry.backoffMs * 2, this.retryMaxMs);
+  }
+
+  /** One console line per retry that says WHY the session was given up on, with the receive-path
+   *  numbers that tell the failure modes apart (see StreamSource.stats). Never throws, never blocks. */
+  private logRetry(key: string, reason: string, inMs: number, stalledMs: number | null, stats: Promise<StreamStats | null> | null): void {
+    const emit = (s: StreamStats | null) => {
+      const head = `[stream-pool] retry ${key} in ${inMs} ms: ${reason}` + (stalledMs !== null ? ` (no new frame for ${(stalledMs / 1000).toFixed(1)} s)` : "");
+      console.warn(s ? `${head} — ${formatStats(s)}` : head);
+    };
+    if (!stats) return emit(null);
+    stats.then(emit, () => emit(null));
   }
 
   // Stall watchdog (see STALL_MS): catches the session-death modes that emit no event at all — the
@@ -347,8 +393,7 @@ export class StreamSessionPool {
         entry.stallLastTime = progress;
         entry.stallLastAdvance = Date.now();
       } else if (Date.now() - entry.stallLastAdvance > this.stallMs) {
-        console.warn("[stream-pool] video stalled — reconnecting", entry.key);
-        this.scheduleRetry(entry, "video stalled");
+        this.scheduleRetry(entry, "video stalled"); // logged (with receive-path stats) by scheduleRetry
       }
     }, this.stallPollMs);
   }
