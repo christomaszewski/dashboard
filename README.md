@@ -21,6 +21,14 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 - Camera widgets: `camera` (one tile you drive — its `stream` is a default the tile's picker can
   change, or omitted to pick from discovery) and `cameras` (several feeds: one in focus with a
   carousel of live thumbnails, or a grid — the same deck the Cameras tab uses).
+- Camera recording settings: **Cameras → Recording control** shows the requested encoder, H.264
+  quality/speed, segment length, and advanced recording options advertised by camera-service.
+  Apply edits before activating; controls lock during recording and transitions. The card shows
+  the encoder actually selected on the machine, including fallbacks. Changes use Zenoh
+  `…/lifecycle/configure_recording` with a generation/revision check; activation checks that same
+  revision. Runtime edits last until the service restarts. Each camera session writes a
+  `<prefix>.recording-settings.json` alongside its MKV/CSV files in the run directory, available
+  through the Rig run browser. Older camera-service versions keep their existing start/stop UI.
 - ROS 3D: `pointcloud` Home widget and opt-in `ros3d` tab show timestamped PointCloud2 overlays
   and accumulated scans through TF. They follow live data or external playback; optional central
   controls use a separate `rosbag_playback` widget. See [docs/ROS_3D.md](docs/ROS_3D.md).

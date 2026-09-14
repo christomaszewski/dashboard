@@ -101,5 +101,5 @@ export async function loadSidecar(segments: readonly string[], fetchFn: FetchFn 
 }
 
 export function isSidecarName(name: string): boolean {
-  return name.toLowerCase().endsWith(".json");
+  return name.toLowerCase().endsWith(".json") && !name.toLowerCase().endsWith(".recording-settings.json");
 }

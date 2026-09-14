@@ -55,7 +55,9 @@ export function useLifecycleAction(service: LifecycleService, opts: { confirm?: 
     if (!transport) return;
     setPhase({ kind: "calling", transition });
     try {
-      const r = await changeState(transport, service.key, transition, { runId: opts.runId });
+      const r = await changeState(transport, service.key, transition, {
+        runId: opts.runId, expected: service.descriptor.recording_settings,
+      });
       if (!r.ok) flash({ kind: "err", message: `${transition} refused: ${r.error ?? "no reason given"}` });
       else if (r.error || r.session?.truncated) flash({ kind: "warn", summary: summarizeTransition(transition, r) });
       else flash({ kind: "ok", summary: summarizeTransition(transition, r) });

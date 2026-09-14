@@ -1392,6 +1392,28 @@ ul.plain {
   gap: 0.5rem;
 }
 
+.recording-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+.recording-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.recording-settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 0.5rem; }
+.recording-settings label, .recording-settings-advanced { display: grid; gap: 0.35rem; }
+.recording-settings-advanced { margin-top: 0.5rem; gap: 0.6rem; }
+.recording-settings select, .recording-settings input[type="number"] {
+  width: 100%; min-width: 0; box-sizing: border-box; font: inherit;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 0.35rem 0.45rem;
+}
+.recording-settings input:disabled, .recording-settings select:disabled { opacity: 0.55; }
+.recording-settings p { margin: 0; line-height: 1.5; }
+.recording-settings summary { cursor: pointer; }
+.recording-settings .recording-settings-check { display: flex; align-items: center; }
+.recording-settings .is-err, .recording-settings [role="alert"] { color: var(--err); }
+
 .lifecycle-vehicle {
   margin-left: auto;
   font-weight: 500;

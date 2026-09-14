@@ -42,9 +42,10 @@ export class LifecycleError extends Error {
 }
 
 /** Build the change_state request payload (exported for tests). */
-export function encodeChangeState(transition: string, runId?: string): Uint8Array {
-  const body: Record<string, string> = { transition };
+export function encodeChangeState(transition: string, runId?: string, expected?: import("./types").RecordingSettingsVersion): Uint8Array {
+  const body: Record<string, unknown> = { transition };
   if (runId !== undefined && runId !== "") body.run_id = runId;
+  if (transition === "activate" && expected) body.expected_recording_settings = { generation: expected.generation, revision: expected.revision };
   return new TextEncoder().encode(JSON.stringify(body));
 }
 
@@ -79,13 +80,13 @@ export async function changeState(
   transport: Transport,
   key: string,
   transition: string,
-  opts?: { runId?: string; timeoutMs?: number },
+  opts?: { runId?: string; timeoutMs?: number; expected?: import("./types").RecordingSettingsVersion },
 ): Promise<ChangeStateResult> {
   const timeoutMs = opts?.timeoutMs ?? CHANGE_STATE_TIMEOUT_MS;
   const started = performance.now();
   const replyErrors: string[] = [];
   const replies = await transport.get(`${key}/change_state`, {
-    payload: encodeChangeState(transition, opts?.runId),
+    payload: encodeChangeState(transition, opts?.runId, opts?.expected),
     timeoutMs,
     onReplyError: (m) => replyErrors.push(m),
   });

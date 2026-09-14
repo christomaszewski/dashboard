@@ -1,5 +1,7 @@
-import { recordingFiles, sinceText, type LifecycleService } from "./types";
+import { useState } from "react";
+import { recordingFiles, sinceText, type LifecycleService, type RecordingSettings } from "./types";
 import { useLifecycleAction } from "./useLifecycleAction";
+import { RecordingSettingsEditor } from "./RecordingSettingsEditor";
 
 const STATE_LEVEL: Record<string, string> = {
   active: "ok",
@@ -36,7 +38,14 @@ export function LifecycleCard({
   runId?: string;
   compact?: boolean;
 }) {
-  const { busy, click, feedback, label, confirming, canCall } = useLifecycleAction(service, { confirm, runId });
+  const [settingsBlocked, setSettingsBlocked] = useState(false);
+  const [applied, setApplied] = useState<RecordingSettings | null>(null);
+  const incoming = service.descriptor.recording_settings;
+  // Replies can precede the matching state publication. Keep the acknowledged revision until
+  // discovery catches up; a service restart (new generation) always wins.
+  const settings = applied && incoming && applied.generation === incoming.generation && applied.revision > incoming.revision ? applied : incoming;
+  const actionService = { ...service, descriptor: { ...service.descriptor, recording_settings: settings } };
+  const { busy, click, feedback, label, confirming, canCall } = useLifecycleAction(actionService, { confirm, runId });
   const d = service.descriptor;
   const level = stateLevel(d.state, d.last_error, service.alive);
   const pillText = service.alive ? d.state : `${d.state} · offline`;
@@ -44,7 +53,7 @@ export function LifecycleCard({
     <button
       key={t}
       className={`btn${t === "activate" ? " primary" : ""}${confirming(t) ? " confirm" : ""}`}
-      disabled={!canCall || busy || !service.alive}
+      disabled={!canCall || busy || !service.alive || (t === "activate" && (settingsBlocked || d.recording_enabled === false))}
       title={`${t} ${service.instance}`}
       onClick={() => click(t)}
     >
@@ -138,6 +147,9 @@ export function LifecycleCard({
           {healthCounters ? ` · ${healthCounters}` : ""}
         </span>
       )}
+      {settings && <RecordingSettingsEditor key={service.key} settings={settings} serviceKey={service.key}
+        disabled={!canCall || !service.alive || busy || d.state !== "inactive"}
+        onBlocking={setSettingsBlocked} onApplied={setApplied} />}
       <div className="lifecycle-actions">{buttons}</div>
       {feedback}
     </div>

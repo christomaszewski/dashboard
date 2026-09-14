@@ -13,6 +13,41 @@
 export const LIFECYCLE_PATTERN = "fleet/*/svc/*/lifecycle";
 export const LIFECYCLE_STATE_PATTERN = "fleet/*/svc/*/lifecycle/state";
 
+export interface RecordingSettingsVersion { generation: string; revision: number }
+export interface RecordingSettingsValues {
+  encoder: string;
+  x264_crf: number;
+  x264_preset: string;
+  segment_seconds: number;
+  keyframe_interval_s: number;
+  bayer_tile: string;
+  bframes: number;
+  nvenc_preset: string;
+  nvenc_maxperf: boolean;
+  videoconvert_threads: number;
+}
+export interface RecordingSettings extends RecordingSettingsVersion {
+  editable: boolean;
+  requested: RecordingSettingsValues;
+  resolved: { encoder: string; lossy: boolean | null; bayer_tile: string; x264?: { crf: number; preset: string; chroma: string } | null };
+  encoders: string[];
+  source_mode_fixed: boolean;
+}
+
+function validRecordingSettings(value: unknown): value is RecordingSettings {
+  if (!value || typeof value !== "object") return false;
+  const s = value as RecordingSettings;
+  const r = s.requested;
+  return typeof s.generation === "string" && Number.isInteger(s.revision) && s.revision >= 0
+    && typeof s.editable === "boolean" && !!r && typeof r === "object"
+    && [r.encoder, r.x264_preset, r.bayer_tile, r.nvenc_preset].every(v => typeof v === "string")
+    && [r.x264_crf, r.segment_seconds, r.keyframe_interval_s, r.bframes, r.videoconvert_threads].every(v => typeof v === "number" && Number.isFinite(v))
+    && typeof r.nvenc_maxperf === "boolean" && !!s.resolved && typeof s.resolved.encoder === "string"
+    && typeof s.resolved.bayer_tile === "string"
+    && (s.resolved.lossy === null || typeof s.resolved.lossy === "boolean")
+    && Array.isArray(s.encoders) && s.encoders.every(v => typeof v === "string");
+}
+
 /** camera-service: the open recording session (present while active). */
 export interface LifecycleRecording {
   index?: number;
@@ -27,6 +62,7 @@ export interface LifecycleRecording {
   encoder?: string;
   segment_seconds?: number;
   error?: string | null;
+  settings_file?: string;
 }
 
 /** camera-service: process-lifetime link/drop counters + flags. */
@@ -53,6 +89,7 @@ export interface LifecycleDescriptor {
   recording_enabled?: boolean; // camera-service: can it ever be activated
   health?: LifecycleHealth | null;
   recording?: LifecycleRecording;
+  recording_settings?: RecordingSettings;
   last_error?: string | null; // the last refusal / session error, until the next clean transition
 }
 
@@ -82,6 +119,8 @@ export function parseLifecycleDescriptor(bytes: Uint8Array): LifecycleDescriptor
     if (typeof d.schema_version !== "number") return null;
     if (typeof d.service !== "string" || typeof d.instance !== "string" || typeof d.state !== "string") return null;
     if (!Array.isArray(d.transitions) || !d.transitions.every((t) => typeof t === "string")) return null;
+    if (d.recording_settings !== undefined && !validRecordingSettings(d.recording_settings))
+      delete d.recording_settings; // optional capability: malformed settings must not break controls
     return d as unknown as LifecycleDescriptor;
   } catch {
     return null;
