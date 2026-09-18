@@ -1,0 +1,15 @@
+# Overlay applied by dash-up UNCONDITIONALLY (camera-service external-config pattern): bind-mounts
+# the SAME instance YAML rig passes to dash-up, read-only, at an absolute in-container path OUTSIDE
+# the image's /srv tree. Caddy serves it at /config/dashboard.yaml; the app fetches it at load for
+# the config-driven Home tab (and ws_port). ONE file bind, never a directory bind into the repo
+# (`rig certify` flags those — bake would freeze the repo path).
+#
+# Without this overlay (bare `docker compose up`) the app gets a 404 and renders its built-in
+# default Home — the stack stays runnable without dash-up.
+#
+# NB single-file binds track the INODE: rename-on-save editors (vim default) leave the container
+# seeing the old file. `docker compose restart dashboard-web` (or in-place writes) picks it up.
+services:
+  dashboard-web:
+    volumes:
+      - ${DASH_CONFIG_HOST}:/config/dashboard.yaml:ro

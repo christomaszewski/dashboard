@@ -1,0 +1,103 @@
+import type { Transport } from "../transport/types";
+import { parseLifecycleDescriptor, type LifecycleDescriptor } from "./types";
+
+/** The reply is sent when the transition COMPLETES — a deactivate finalizes files first (≤5 s,
+ *  ≤10 s worst case), so the contract asks clients for a ≥15 s query timeout. */
+export const CHANGE_STATE_TIMEOUT_MS = 20_000;
+
+/** camera-service, on deactivate: the closed session (files, frames, truncated, csv/json paths). */
+export interface ClosedSession {
+  files?: string[];
+  frames?: number;
+  truncated?: boolean;
+  error?: string | null;
+  [key: string]: unknown;
+}
+
+export interface ChangeStateResult {
+  ok: boolean;
+  /** The state AFTER the request. */
+  state?: string;
+  /** Present iff the state already matched (idempotent re-assert). */
+  noop?: boolean;
+  /** Present iff ok is false — OR a finalize reported trouble alongside ok:true (surface it!). */
+  error?: string;
+  session?: ClosedSession;
+  descriptor?: LifecycleDescriptor;
+  rttMs: number;
+}
+
+export type LifecycleErrorKind = "timeout" | "no-reply" | "bad-reply";
+
+/** Transport-level failures only; contract refusals come back as `ok:false` results. */
+export class LifecycleError extends Error {
+  constructor(
+    readonly kind: LifecycleErrorKind,
+    readonly key: string,
+    message: string,
+  ) {
+    super(message);
+    this.name = "LifecycleError";
+  }
+}
+
+/** Build the change_state request payload (exported for tests). */
+export function encodeChangeState(transition: string, runId?: string, expected?: import("./types").RecordingSettingsVersion): Uint8Array {
+  const body: Record<string, unknown> = { transition };
+  if (runId !== undefined && runId !== "") body.run_id = runId;
+  if (transition === "activate" && expected) body.expected_recording_settings = { generation: expected.generation, revision: expected.revision };
+  return new TextEncoder().encode(JSON.stringify(body));
+}
+
+/** Parse a change_state reply; null = not the contract's shape. */
+export function parseChangeStateReply(bytes: Uint8Array): Omit<ChangeStateResult, "rttMs"> | null {
+  try {
+    const obj: unknown = JSON.parse(new TextDecoder().decode(bytes));
+    if (typeof obj !== "object" || obj === null || Array.isArray(obj)) return null;
+    const r = obj as Record<string, unknown>;
+    if (typeof r.ok !== "boolean") return null;
+    const out: Omit<ChangeStateResult, "rttMs"> = { ok: r.ok };
+    if (typeof r.state === "string") out.state = r.state;
+    if (typeof r.noop === "boolean") out.noop = r.noop;
+    if (typeof r.error === "string") out.error = r.error;
+    if (typeof r.session === "object" && r.session !== null && !Array.isArray(r.session))
+      out.session = r.session as ClosedSession;
+    if (r.descriptor !== undefined) {
+      const d = parseLifecycleDescriptor(new TextEncoder().encode(JSON.stringify(r.descriptor)));
+      if (d) out.descriptor = d;
+    }
+    return out;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Request a lifecycle transition: one query on `<key>/change_state` carrying the JSON request as
+ * its payload; the single reply is the result. `key` is the service's lifecycle key.
+ */
+export async function changeState(
+  transport: Transport,
+  key: string,
+  transition: string,
+  opts?: { runId?: string; timeoutMs?: number; expected?: import("./types").RecordingSettingsVersion },
+): Promise<ChangeStateResult> {
+  const timeoutMs = opts?.timeoutMs ?? CHANGE_STATE_TIMEOUT_MS;
+  const started = performance.now();
+  const replyErrors: string[] = [];
+  const replies = await transport.get(`${key}/change_state`, {
+    payload: encodeChangeState(transition, opts?.runId, opts?.expected),
+    timeoutMs,
+    onReplyError: (m) => replyErrors.push(m),
+  });
+  const rttMs = performance.now() - started;
+  if (replies.length === 0) {
+    if (replyErrors.length > 0) throw new LifecycleError("bad-reply", key, replyErrors.join("; "));
+    if (rttMs >= timeoutMs * 0.95)
+      throw new LifecycleError("timeout", key, `no reply to ${transition} within ${timeoutMs / 1000} s`);
+    throw new LifecycleError("no-reply", key, `${transition}: query completed with no reply (service gone?)`);
+  }
+  const parsed = parseChangeStateReply(replies[0].payload);
+  if (!parsed) throw new LifecycleError("bad-reply", key, `${transition}: reply is not a change_state result`);
+  return { ...parsed, rttMs };
+}

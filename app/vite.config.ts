@@ -7,6 +7,7 @@ import topLevelAwait from "vite-plugin-top-level-await";
 // (If a clean build shows they're unnecessary, drop them.)
 export default defineConfig({
   plugins: [react(), wasm(), topLevelAwait()],
+  worker: { format: "es" }, // PointCloud2 worker lazily imports the bundled ROS message definitions.
   server: { host: true, port: 5173 }, // host:true → reachable on the LAN during dev
   // build outDir = default (app/dist); deploy/Dockerfile.web bakes the bundle into the dashboard-web image.
 });

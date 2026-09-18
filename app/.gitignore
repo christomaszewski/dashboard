@@ -3,3 +3,7 @@ dist
 *.local
 .vite
 .DS_Store
+
+# local dev instance config (Vite serves public/ at the root; committing this would bake it into
+# dist and defeat "absent -> default Home" on vehicles with no config mounted)
+public/config/

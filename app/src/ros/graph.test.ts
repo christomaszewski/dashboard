@@ -19,6 +19,13 @@ const PUB_NS = `@ros2_lv/0/${ZID}/2/12/MP/%/%veh/imu_node/%veh%imu%data/sensor_m
 const PUB_TL = `@ros2_lv/0/${ZID}/2/13/MP/%/%/static_tf/%tf_static/tf2_msgs::msg::dds_::TFMessage_/${HASH}/${QOS_TL}`;
 const SRV = `@ros2_lv/0/${ZID}/0/22/SS/%/%/talker/%talker%describe_parameters/rcl_interfaces::srv::dds_::DescribeParameters_/${HASH}/${QOS_DEFAULT}`;
 
+// A REAL lyrical token (captured off a running rmw_zenoh camera publisher): a 14th segment,
+// `backends:<list>`, is appended after the QoS on publishers that can loan/SHM their messages.
+// Fields the parser reads still sit at their fixed indices.
+const PUB_BACKENDS =
+  `@ros2_lv/1/${ZID}/6/17/MP/%/%playback/cam_ros2_bridge/%playback%image_raw/` +
+  `sensor_msgs::msg::dds_::Image_/${HASH}/2::,5:,:,:,,/backends:cpu:`;
+
 describe("parseLivelinessToken", () => {
   it("parses a node token", () => {
     const e = parseLivelinessToken(NODE);
@@ -49,6 +56,19 @@ describe("parseLivelinessToken", () => {
     expect(parseLivelinessToken(PUB_TL)?.topic?.qos.durability).toBe("transient_local");
   });
 
+  it("keeps reading a token that appends fields it doesn't know (newer rmw_zenoh)", () => {
+    // Regression: a length equality check dropped exactly the large-message publishers — the camera
+    // image topics vanished from the graph while their own node and services still showed up.
+    const e = parseLivelinessToken(PUB_BACKENDS);
+    expect(e).toMatchObject({ kind: "MP", domainId: 1, nodeFq: "/playback/cam_ros2_bridge" });
+    expect(e?.topic).toMatchObject({
+      name: "/playback/image_raw",
+      typeDds: "sensor_msgs::msg::dds_::Image_",
+      typeHash: HASH,
+    });
+    expect(e?.topic?.qos).toMatchObject({ reliability: "best_effort", depth: 5 });
+  });
+
   it("rejects non-graph keyexprs and malformed tokens", () => {
     expect(parseLivelinessToken("fleet/veh1/media/cam0")).toBeNull();
     expect(parseLivelinessToken("@ros2_lv/0/zid/0/0/XX/%/%/n")).toBeNull(); // bad kind
@@ -67,12 +87,14 @@ describe("buildGraph", () => {
     expect(chatter?.typeName).toBe("std_msgs/msg/String");
   });
 
-  it("builds the rmw_zenoh data keyexpr (topic minus leading slash)", () => {
+  // The `/**` tail spans zero or more chunks, so one subscription covers both the bare key older
+  // rmw_zenoh puts to and lyrical's `…/_buf_cpu` buffer-backend key.
+  it("builds the rmw_zenoh data keyexpr (topic minus leading slash, backend-agnostic)", () => {
     expect(graph.topics.find((t) => t.name === "/chatter")?.dataKeyexpr).toBe(
-      `0/chatter/std_msgs::msg::dds_::String_/${HASH}`,
+      `0/chatter/std_msgs::msg::dds_::String_/${HASH}/**`,
     );
     expect(graph.topics.find((t) => t.name === "/veh/imu/data")?.dataKeyexpr).toBe(
-      `0/veh/imu/data/sensor_msgs::msg::dds_::Imu_/${HASH}`,
+      `0/veh/imu/data/sensor_msgs::msg::dds_::Imu_/${HASH}/**`,
     );
   });
 

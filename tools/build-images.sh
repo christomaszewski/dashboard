@@ -18,4 +18,8 @@ docker push "$REGISTRY/dashboard-zenoh:$TAG"
 docker build -f "$REPO/deploy/Dockerfile.web" -t "$REGISTRY/dashboard-web:$TAG" "$REPO"
 docker push "$REGISTRY/dashboard-web:$TAG"
 
-echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG and $REGISTRY/dashboard-web:$TAG" >&2
+# dashboard-rig-agent: the optional rig agent (python + docker cli; agent/ from the repo root).
+docker build -f "$REPO/deploy/Dockerfile.rig-agent" -t "$REGISTRY/dashboard-rig-agent:$TAG" "$REPO"
+docker push "$REGISTRY/dashboard-rig-agent:$TAG"
+
+echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG, $REGISTRY/dashboard-web:$TAG and $REGISTRY/dashboard-rig-agent:$TAG" >&2

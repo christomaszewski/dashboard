@@ -29,6 +29,7 @@
 
   --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  --page-max-width: 90rem;
 }
 
 * {
@@ -90,7 +91,7 @@ body {
 }
 
 .page {
-  max-width: 64rem;
+  max-width: var(--page-max-width);
   margin: 0 auto;
   padding: 1.3rem 1.4rem 4rem;
   display: flex;
@@ -424,6 +425,115 @@ body {
   bottom: 0.55rem;
 }
 
+/* ── Overlaid controls (camera tile) ──
+   Bottom-left: ONE always-visible state pill (recording / standby / offline / paused) and, on hover,
+   the control strip beside it. Bottom-right stays the window actions. The top bar stays label-only. */
+.tile-state {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 0.55rem;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  z-index: 2;
+}
+.tile-state .pill {
+  background: rgba(11, 14, 20, 0.78);
+  backdrop-filter: blur(4px);
+}
+.tile-state .pill.rec::before {
+  background: #ef4444;
+  animation: rec-blink 1.2s steps(2, start) infinite;
+}
+@keyframes rec-blink {
+  to { opacity: 0.25; }
+}
+.tile-controls {
+  display: flex;
+  gap: 0.35rem;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+.stream-view:hover .tile-controls,
+.tile-controls:focus-within {
+  opacity: 1;
+}
+.tile-controls .icon-btn.rec {
+  color: #ef4444;
+}
+.tile-controls .icon-btn.rec.on {
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.6);
+}
+.tile-controls .icon-btn.confirm {
+  border-color: #f59e0b;
+  color: #f59e0b;
+}
+.tile-controls .icon-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+.tile-flash {
+  position: absolute;
+  left: 0.55rem;
+  bottom: 2.6rem;
+  max-width: calc(100% - 1.1rem);
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius-sm);
+  background: rgba(11, 14, 20, 0.85);
+  color: var(--text-dim);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile-flash.err { color: #f87171; }
+.tile-flash.warn { color: #fbbf24; }
+.tile-flash.ok { color: #4ade80; }
+.tile-overlay .meta .source-chip {
+  margin-right: 0.4rem;
+}
+/* the playback strip: beside the record strip when both render, else in the corner itself */
+.tile-state.tile-playback.beside {
+  left: auto;
+  right: 5.4rem;         /* clear of the window actions on the console tile */
+}
+.tile-state.tile-playback .pill.info { color: #60a5fa; }
+.tile-controls .icon-btn.speed {
+  width: auto;
+  padding: 0 0.45rem;
+  font-family: var(--mono);
+  font-size: 0.72rem;
+}
+.tile-controls .icon-btn.on {
+  background: rgba(96, 165, 250, 0.22);
+  border-color: rgba(96, 165, 250, 0.6);
+}
+.tile-flash.pb { bottom: 4.2rem; }
+/* the full playback card (Cameras tab) */
+.playback-position {
+  display: flex;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+  margin: 0.25rem 0;
+}
+.playback-bar {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--border);
+  overflow: hidden;
+  margin-bottom: 0.5rem;
+}
+.playback-bar-fill {
+  height: 100%;
+  background: #60a5fa;
+  transition: width 0.3s linear;
+}
+.playback-actions { flex-wrap: wrap; align-items: center; gap: 0.4rem; }
+.playback-speed { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.78rem; color: var(--text-dim); }
+.playback-speed select { font: inherit; background: var(--surface); color: var(--text); border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.15rem 0.3rem; }
+
 /* ── Tables ── */
 .data-table {
   width: 100%;
@@ -624,4 +734,1382 @@ ul.plain {
 
 ::-webkit-scrollbar-track {
   background: transparent;
+}
+
+/* ---- tab shell -------------------------------------------------------------------------------- */
+
+.tabs {
+  display: flex;
+  gap: 0.25rem;
+  margin-left: 0.6rem;
+}
+
+.tab {
+  appearance: none;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 550;
+  padding: 0.32rem 0.75rem;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: var(--surface);
+}
+
+.tab.active {
+  color: var(--accent);
+  background: var(--accent-dim);
+  border-color: var(--border);
+}
+
+/* Inactive tab panels stay MOUNTED (sessions/subscriptions survive) and are hidden with CSS only.
+   Not the `hidden` attribute — .page's display:flex would override it. */
+.tab-panel.hidden-tab {
+  display: none;
+}
+
+/* ---- home tab --------------------------------------------------------------------------------- */
+
+.home-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 1rem;
+  align-items: stretch;
+}
+
+.home-cell.span-2 {
+  grid-column: span 2;
+}
+
+.home-cell.span-full {
+  grid-column: 1 / -1;
+}
+
+@media (max-width: 560px) {
+  .home-cell.span-2 {
+    grid-column: 1 / -1;
+  }
+}
+
+.widget-card {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.55rem;
+  padding: 0.85rem 1rem;
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.widget-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-dim);
+}
+
+.widget-label .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.widget-label .dot.ok {
+  background: var(--ok);
+}
+
+.widget-sub {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.widget-sub.is-err {
+  color: var(--err);
+}
+
+.widget-value {
+  font-family: var(--mono);
+  font-size: 1.65rem;
+  font-weight: 650;
+  line-height: 1.1;
+}
+
+.widget-value small {
+  font-size: 0.85rem;
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.widget-value.warn {
+  color: var(--warn);
+}
+
+.widget-value.err {
+  color: var(--err);
+}
+
+.widget-value.idle {
+  color: var(--text-faint);
+}
+
+.widget-error {
+  border-color: var(--err);
+  background: var(--err-dim);
+}
+
+.widget-error p {
+  font-size: 0.72rem;
+  color: var(--err);
+  overflow-wrap: anywhere;
+}
+
+.widget-video .tile-media video {
+  min-height: 160px;
+}
+
+.widget-video-empty .empty {
+  margin: 0;
+}
+
+.btn.primary.confirm {
+  background: var(--warn-dim);
+  border-color: var(--warn);
+  color: var(--warn);
+}
+
+/* ---- home layout (grid areas) ----------------------------------------------------------------- */
+
+/* Widgets without an area back-fill the cells the named areas leave free. */
+.home-grid.has-areas {
+  grid-auto-flow: row dense;
+}
+
+.home-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.home-cell > :last-child {
+  flex: 1;
+}
+
+.cell-warn {
+  font-size: 0.68rem;
+  color: var(--warn);
+}
+
+.warn-box {
+  background: var(--warn-dim);
+  border: 1px solid var(--warn);
+  border-radius: var(--radius-sm);
+  color: var(--warn);
+  padding: 0.7rem 0.9rem;
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 560px) {
+  /* One column, areas ignored. The grid template + grid-area are INLINE styles when a layout is
+     configured — only !important outranks them. grid-area:auto resets all placement longhands. */
+  .home-grid {
+    grid-template-columns: 1fr !important;
+    grid-template-areas: none !important;
+  }
+  .home-cell {
+    grid-area: auto !important;
+  }
+}
+
+/* ---- home panels ------------------------------------------------------------------------------ */
+
+.widget-panel {
+  gap: 0.5rem;
+}
+
+.panel-rows {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+.panel-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  padding: 0.24rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.panel-rows > :first-child .panel-row,
+.panel-rows > .panel-row:first-child {
+  border-top: none;
+}
+
+.panel-row .row-label {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.panel-row .row-value {
+  font-family: var(--mono);
+  font-size: 0.85rem;
+  font-weight: 600;
+}
+
+.panel-row .row-value small {
+  color: var(--text-dim);
+  font-weight: 500;
+}
+
+.panel-row .row-value.warn {
+  color: var(--warn);
+}
+
+.panel-row .row-value.err {
+  color: var(--err);
+}
+
+.panel-row .row-value.idle {
+  color: var(--text-faint);
+}
+
+.panel-row .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.panel-row .widget-sub {
+  text-align: right;
+}
+
+.panel-row.is-err {
+  color: var(--err);
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+/* ---- clouds tab ------------------------------------------------------------------------------- */
+
+.clouds-tab {
+  display: flex;
+  flex-direction: column;
+  min-height: 70vh;
+}
+
+.clouds-toolbar {
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  row-gap: 0.4rem;
+}
+
+.clouds-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.clouds-control .field {
+  padding: 0.22rem 0.4rem;
+  font-size: 0.75rem;
+}
+
+.clouds-control input[type="range"] {
+  width: 70px;
+  accent-color: var(--accent);
+}
+
+.clouds-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.72rem;
+  color: var(--text-dim);
+  cursor: pointer;
+}
+
+.clouds-check input {
+  accent-color: var(--accent);
+}
+
+.clouds-views {
+  display: inline-flex;
+  gap: 0.25rem;
+}
+
+.clouds-views .btn {
+  padding: 0.22rem 0.55rem;
+  font-size: 0.72rem;
+}
+
+/* The viewer core appends its canvas here; flex+min-height is the sizing contract. */
+.clouds-viewport {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.clouds-viewport canvas {
+  display: block;
+}
+
+.clouds-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.8rem;
+  pointer-events: none;
+}
+
+.clouds-overlay .clouds-list,
+.clouds-overlay button {
+  pointer-events: auto;
+}
+
+.clouds-drop {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.clouds-list ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: center;
+}
+
+/* the run-registry browser: inline in the idle overlay, or the Runs… panel over the viewport */
+.clouds-runs {
+  pointer-events: auto;
+  max-width: 44rem;
+  max-height: 50%;
+  overflow: auto;
+  text-align: left;
+  font-size: 0.78rem;
+}
+
+.clouds-runs > .dim {
+  text-align: center;
+}
+
+.clouds-runs-file {
+  display: flex;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.clouds-runs-note,
+.clouds-runs-other {
+  font-size: 0.72rem;
+}
+
+.clouds-runs-panel {
+  justify-content: flex-start;
+  align-items: flex-start;
+  padding: 0.7rem;
+}
+
+.clouds-runs-card {
+  pointer-events: auto;
+  min-width: 22rem;
+  max-width: 60%;
+  max-height: 100%;
+  overflow: auto;
+  padding: 0.5rem 0.8rem 0.7rem;
+  background: color-mix(in srgb, var(--bg-raised) 94%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.clouds-runs-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 0.3rem;
+  font-weight: 600;
+}
+
+.clouds-runs-card .clouds-runs {
+  max-height: none;
+}
+
+.clouds-attribution {
+  position: absolute;
+  right: 0.4rem;
+  bottom: 0.3rem;
+  z-index: 5;
+  font-size: 0.62rem;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  padding: 0.1rem 0.35rem;
+  border-radius: 4px;
+}
+
+.clouds-status {
+  min-height: 1.2rem;
+  font-size: 0.72rem;
+  padding-top: 0.4rem;
+}
+
+.clouds-error {
+  color: var(--err);
+  font-size: 0.72rem;
+}
+
+/* ---- map widget ------------------------------------------------------------------------------- */
+
+.widget-map {
+  padding: 0.85rem 1rem 1rem;
+}
+
+.map-heading {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+  margin-bottom: 0.5rem;
+}
+
+.map-heading .widget-label { margin: 0; }
+.map-basemap {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  color: var(--text-faint);
+  font-size: 0.72rem;
+}
+.map-basemap select { width: auto; padding: 0.25rem 0.4rem; }
+
+.map-feed-controls {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+.map-feed-list { display: flex; flex-wrap: wrap; gap: 0.35rem 0.85rem; min-width: 0; }
+.map-feed-toggle, .map-feed-select { display: inline-flex; align-items: center; gap: 0.4rem; min-width: 0; }
+.map-feed-toggle { cursor: pointer; overflow-wrap: anywhere; }
+.map-feed-toggle input { width: auto; margin: 0; accent-color: var(--accent); }
+.map-feed-swatch { width: 0.55rem; height: 0.55rem; border-radius: 50%; flex-shrink: 0; }
+.map-feed-select { max-width: 100%; }
+.map-feed-select select { width: auto; min-width: 0; max-width: 16rem; padding: 0.25rem 0.4rem; }
+.map-feed-status { font-size: 0.72rem; color: var(--text-dim); }
+
+.map-frame {
+  position: relative;
+  width: 100%;
+  flex: 1;
+  min-height: 260px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.map-container {
+  position: absolute;
+  inset: 0;
+  background: var(--surface);
+}
+
+/* Leaflet chrome, re-toned to the console theme. */
+.map-container .leaflet-control-zoom a {
+  background: var(--surface-2);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+.map-container .leaflet-control-attribution {
+  background: color-mix(in srgb, var(--bg) 70%, transparent);
+  color: var(--text-faint);
+  font-size: 0.62rem;
+}
+
+.map-vehicle {
+  background: transparent;
+  border: none;
+}
+.map-vehicle-symbol { display: block; width: 28px; height: 28px; position: relative; }
+.map-vehicle-dot {
+  position: absolute;
+  inset: 7px;
+  background: currentColor;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 6px rgba(0, 0, 0, 0.6);
+}
+.map-vehicle-arrow {
+  display: none;
+  position: absolute;
+  inset: 0;
+  filter: drop-shadow(0 0 2px #000);
+}
+.map-vehicle-arrow::before, .map-vehicle-arrow::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: #fff;
+  clip-path: polygon(50% 0, 94% 94%, 50% 74%, 6% 94%);
+}
+.map-vehicle-arrow::after { inset: 4px; background: currentColor; }
+.map-vehicle-symbol.has-heading .map-vehicle-dot { display: none; }
+.map-vehicle-symbol.has-heading .map-vehicle-arrow { display: block; }
+
+.map-overlay {
+  position: absolute;
+  inset: 0;
+  z-index: 500;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: color-mix(in srgb, var(--bg) 45%, transparent);
+  pointer-events: none;
+}
+
+.map-overlay .empty {
+  margin: 0;
+}
+
+.map-follow {
+  position: absolute;
+  right: 0.5rem;
+  top: 0.5rem;
+  z-index: 600;
+}
+
+/* ---- clouds tab: legend + toolbar groups (upstream 95aface port) -------------------------------- */
+
+.clouds-sep {
+  width: 1px;
+  height: 18px;
+  background: var(--border);
+  align-self: center;
+}
+
+.clouds-control input[type="range"]:disabled {
+  opacity: 0.45;
+}
+
+.clouds-legend {
+  position: absolute;
+  left: 0.6rem;
+  bottom: 0.5rem;
+  z-index: 5;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  padding: 0.5rem 0.65rem;
+  background: color-mix(in srgb, var(--bg-raised) 90%, transparent);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  font-size: 0.72rem;
+  color: var(--text-dim);
+}
+
+.clouds-legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.clouds-legend-name {
+  color: var(--text);
+  font-weight: 550;
+}
+
+.clouds-legend-bar {
+  width: 140px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.clouds-legend-num {
+  width: 78px;
+  padding: 0.15rem 0.35rem;
+  font-size: 0.72rem;
+}
+
+.clouds-legend input[type="range"] {
+  width: 120px;
+  accent-color: var(--accent);
+}
+
+.clouds-legend-gamma {
+  min-width: 30px;
+}
+
+.btn-link {
+  appearance: none;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--accent);
+  font: inherit;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+/* ---- lifecycle control (recording standby/active) ------------------------------------------- */
+
+.lifecycle-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.8rem;
+}
+
+.lifecycle-card {
+  gap: 0.5rem;
+}
+
+.recording-settings {
+  border-top: 1px solid var(--border);
+  padding-top: 0.6rem;
+  display: grid;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+.recording-settings-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.recording-settings fieldset { border: 0; padding: 0; margin: 0; min-width: 0; display: grid; gap: 0.5rem; }
+.recording-settings label, .recording-settings-advanced { display: grid; gap: 0.35rem; }
+.recording-settings-advanced { margin-top: 0.5rem; gap: 0.6rem; }
+.recording-settings select, .recording-settings input[type="number"] {
+  width: 100%; min-width: 0; box-sizing: border-box; font: inherit;
+  background: var(--surface); color: var(--text); border: 1px solid var(--border-strong);
+  border-radius: var(--radius-sm); padding: 0.35rem 0.45rem;
+}
+.recording-settings input:disabled, .recording-settings select:disabled { opacity: 0.55; }
+.recording-settings p { margin: 0; line-height: 1.5; }
+.recording-settings summary { cursor: pointer; }
+.recording-settings .recording-settings-check { display: flex; align-items: center; }
+.recording-settings .is-err, .recording-settings [role="alert"] { color: var(--err); }
+
+.lifecycle-vehicle {
+  margin-left: auto;
+  font-weight: 500;
+}
+
+.lifecycle-state {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.72rem;
+}
+
+.lifecycle-detail {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.15rem 0.7rem;
+  margin: 0;
+  font-size: 0.7rem;
+}
+
+.lifecycle-detail dt {
+  color: var(--text-faint);
+}
+
+.lifecycle-detail dd {
+  margin: 0;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-health {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.68rem;
+}
+
+.lifecycle-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.lifecycle-feedback {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.lifecycle-feedback.is-err {
+  color: var(--err);
+}
+
+.lifecycle-row {
+  flex-wrap: wrap;
+}
+
+.lifecycle-row .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.lifecycle-feedback.is-warn {
+  color: var(--warn);
+}
+
+.lifecycle-detail .is-err {
+  color: var(--err);
+}
+
+/* ---- declarative primitives: gauge / sparkline / indicator / text ---------------------------- */
+
+.widget-gauge {
+  align-items: center;
+}
+
+.gauge-svg {
+  width: 100%;
+  max-width: 220px;
+  height: auto;
+}
+
+.gauge-track {
+  fill: none;
+  stroke: var(--surface-2);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.gauge-value {
+  fill: none;
+  stroke: var(--ok);
+  stroke-width: 9;
+  stroke-linecap: round;
+}
+
+.gauge-value.warn {
+  stroke: var(--warn);
+}
+
+.gauge-value.err {
+  stroke: var(--err);
+}
+
+.gauge-value.idle {
+  stroke: var(--text-faint);
+}
+
+.gauge-text {
+  font-family: var(--mono);
+  font-size: 15px;
+  font-weight: 650;
+  fill: var(--text);
+}
+
+.gauge-text.warn {
+  fill: var(--warn);
+}
+
+.gauge-text.err {
+  fill: var(--err);
+}
+
+.gauge-unit {
+  font-size: 7px;
+  fill: var(--text-dim);
+}
+
+.gauge-bound {
+  font-family: var(--mono);
+  font-size: 6.5px;
+  fill: var(--text-faint);
+}
+
+.gauge-bar {
+  flex: 1;
+  height: 6px;
+  min-width: 50px;
+  max-width: 120px;
+  border-radius: 3px;
+  background: var(--surface-2);
+  overflow: hidden;
+}
+
+.gauge-bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--ok);
+  transition: width 0.25s;
+}
+
+.gauge-bar-fill.warn {
+  background: var(--warn);
+}
+
+.gauge-bar-fill.err {
+  background: var(--err);
+}
+
+.gauge-bar-fill.idle {
+  background: var(--text-faint);
+}
+
+.widget-sparkline {
+  gap: 0.35rem;
+}
+
+.sparkline-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  width: 100%;
+  gap: 0.6rem;
+}
+
+.sparkline-range {
+  font-size: 0.68rem;
+}
+
+.sparkline-chart {
+  width: 100%;
+  height: 60px;
+}
+
+.sparkline-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.sparkline-svg path {
+  stroke: var(--accent);
+  stroke-width: 1.5px;
+}
+
+.sparkline-svg.warn path {
+  stroke: var(--warn);
+}
+
+.sparkline-svg.err path {
+  stroke: var(--err);
+}
+
+.sparkline-row {
+  flex: 1;
+  height: 20px;
+  min-width: 60px;
+  max-width: 120px;
+}
+
+.indicator-pill {
+  font-size: 0.95rem;
+  padding: 0.35rem 0.8rem;
+}
+
+.widget-text {
+  margin: 0;
+  width: 100%;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.text-row {
+  font-size: 0.75rem;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* ---- rig tab / widget (deployment control via the vehicle-side rig agent) -------------------- */
+
+.rig-header .card-header {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.rig-meta {
+  overflow-wrap: anywhere;
+}
+
+.rig-table td {
+  vertical-align: middle;
+}
+
+.rig-tier-header td {
+  padding: 0.55rem 1.1rem 0.25rem;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  border-bottom: none;
+  background: var(--surface);
+}
+
+.rig-row-disabled td {
+  opacity: 0.45;
+}
+
+.rig-self {
+  margin-left: 0.5rem;
+}
+
+.rig-containers {
+  font-size: 0.7rem;
+}
+
+.rig-actions {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.rig-actions .btn {
+  padding: 0.22rem 0.6rem;
+  font-size: 0.72rem;
+}
+
+.rig-feedback {
+  font-size: 0.7rem;
+  overflow-wrap: anywhere;
+}
+
+.rig-feedback.is-err {
+  color: var(--err);
+}
+
+.rig-feedback.is-warn {
+  color: var(--warn);
+}
+
+.btn.danger {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.4);
+}
+
+.btn.danger:hover:not(:disabled),
+.btn.danger.confirm {
+  background: var(--err-dim);
+}
+
+.chip.ok {
+  color: var(--ok);
+  border-color: rgba(74, 222, 128, 0.4);
+  background: var(--ok-dim);
+}
+
+.chip.err {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.4);
+  background: var(--err-dim);
+}
+
+.rig-run-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.rig-run-id strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.rig-run-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.45rem;
+  margin-top: 0.7rem;
+}
+
+.rig-label-input {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 0.3rem 0.5rem;
+  font-size: 0.75rem;
+  min-width: 18rem;
+}
+
+.rig-guard {
+  margin-top: 0.7rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.rig-guard-text {
+  overflow-wrap: anywhere;
+  font-size: 0.78rem;
+}
+
+.rig-guard-projects {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+}
+
+.rig-run-row,
+.rig-widget-row {
+  flex-wrap: wrap;
+}
+
+.rig-job {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.rig-job:last-child {
+  border-bottom: none;
+}
+
+.rig-job-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.78rem;
+}
+
+.rig-job-head .spacer {
+  flex: 1;
+}
+
+.rig-progress {
+  height: 4px;
+  background: var(--surface);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.rig-progress-fill {
+  height: 100%;
+  background: var(--accent);
+  transition: width 1s linear;
+}
+
+.rig-log {
+  margin: 0;
+  max-height: 240px;
+  overflow: auto;
+  padding: 0.5rem 0.7rem;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  line-height: 1.45;
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.rig-history {
+  margin: 0;
+}
+
+.rig-history details summary,
+.rig-run-detail details summary {
+  cursor: pointer;
+  font-size: 0.72rem;
+}
+
+.rig-runs-table tr.rig-run-tr {
+  cursor: pointer;
+}
+
+.rig-runs-table tr.rig-run-tr:hover td {
+  background: var(--surface);
+}
+
+.rig-runs-table tr.selected td {
+  background: var(--accent-dim);
+}
+
+.rig-run-detail {
+  margin-top: 0.8rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.rig-run-detail-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.rig-manifest-row {
+  display: contents;
+}
+
+.rig-ups ul {
+  margin: 0.2rem 0 0;
+  font-size: 0.7rem;
+  color: var(--text-dim);
+}
+
+.rig-files {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.75rem;
+}
+
+.rig-tree {
+  margin: 0;
+  padding-left: 1rem;
+  font-size: 0.74rem;
+}
+
+.rig-tree li {
+  padding: 0.12rem 0;
+}
+
+.rig-tree-file {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.rig-tree-file a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.rig-tree-file a:hover {
+  text-decoration: underline;
+}
+
+.rig-file-size {
+  font-size: 0.68rem;
+}
+
+.rig-sidecar {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.3rem;
+}
+
+.rig-tree-note {
+  margin: 0.2rem 0 0 1rem;
+  font-size: 0.72rem;
+}
+
+.widget-rig {
+  gap: 0.45rem;
+}
+
+.rig-widget-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  width: 100%;
+}
+
+
+/* ---- stream picker + the cameras deck widget ---------------------------------------------------- */
+
+.stream-picker {
+  font: inherit;
+  font-size: 0.78rem;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.4rem;
+  max-width: 14rem;
+}
+
+.tile-actions .stream-picker {
+  background: rgba(0, 0, 0, 0.55);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.25);
+}
+
+.widget-video-empty .stream-picker {
+  margin-left: 0.4rem;
+}
+
+.widget-cameras {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* the card is a column flexbox aligned flex-start: the head row and the deck must take its width */
+.widget-cameras .widget-head {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.6rem 1.1rem 0;
+  width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.widget-cameras .widget-head .spacer {
+  flex: 1;
+}
+
+.widget-cameras .btn.small {
+  font-size: 0.78rem;
+  padding: 0.25rem 0.6rem;
+}
+
+.widget-cameras .console-focus,
+.widget-cameras .console-grid {
+  padding: 0.6rem 1.1rem 1rem;
+  width: 100%;
+  align-self: stretch;
+  box-sizing: border-box;
+}
+
+.widget-cameras .empty {
+  padding: 0.8rem 1.1rem 1rem;
+}
+
+
+/* ---- bag recorders ------------------------------------------------------------------------------ */
+
+.bag-recorders .recorder-row {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.35rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.bag-recorders .recorder-row:first-of-type {
+  border-top: 0;
+}
+
+.bag-recorders .recorder-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bag-recorders .recorder-actions {
+  display: flex;
+  gap: 0.35rem;
+}
+
+.bag-recorders .recorder-note {
+  font-size: 0.78rem;
+}
+
+/* a format-line readout is text, not a number: smaller, monospace, wraps */
+.widget-value.formatted {
+  font-size: 1.05rem;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.row-value.formatted {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  text-align: right;
+}
+
+/* ---- services: rows of service + form + response ---------------------------------------------- */
+
+.widget-services .service-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  width: 100%;
+  align-self: stretch;
+  padding: 0.4rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.widget-services .service-row:first-of-type {
+  border-top: 0;
+}
+
+.widget-services .service-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.widget-services .service-head .service-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-services .service-fields {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.25rem 0.6rem;
+  align-items: center;
+}
+
+.widget-services .service-fields label {
+  font-family: var(--mono);
+  font-size: 0.75rem;
+  color: var(--text-dim);
+}
+
+.widget-services .service-fields input.field {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.widget-services .service-response {
+  font-family: var(--mono);
+  font-size: 0.8rem;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.widget-services .service-response.is-err {
+  color: var(--err);
 }

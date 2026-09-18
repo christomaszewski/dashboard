@@ -1,6 +1,6 @@
 # How the "rig" vehicle orchestrator drives this service. One-way: this repo never imports rig; rig
-# reads this file. rig consumes: service, launcher, verbs, ros_distro, host_ports, external_volumes,
-# build, mirror (plus launch_surface for vendor/bake). It invokes the launcher as:
+# reads this file. rig consumes: service, launcher, verbs, tier, ros_distro, host_ports,
+# external_volumes, build, mirror (plus launch_surface for vendor/bake). It invokes the launcher as:
 #   <launcher> <config> <mapped-verb>     e.g.  dash-up <config> up -d
 service: dashboard
 launcher: dash-up
@@ -10,6 +10,10 @@ verbs:
   status: "ps"        # rig may append `--format json` to parse `docker compose ps`
   logs: "logs"
   config: "config"
+tier: infra           # rig bring-up tier: a vehicle-wide sidecar on the zenoh router, not a sensor --
+                      #   up right after the router (infra, ordered after it), torn down last, and
+                      #   `rig add dashboard` lands it in vehicle.yaml's `infra:` as an ENABLED row.
+                      #   Declared here so every deployment gets it without a per-row --tier.
 
 # (no ros_distro: the dashboard runs NO ROS node -- it's a pure zenoh client + web server)
 
@@ -27,12 +31,21 @@ external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar 
 build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
   command: tools/build-images.sh
   arch: arm64                       # plain arm64 (also runs on an x86 off-vehicle host)
-  images: [dashboard-zenoh, dashboard-web]   # both built + pushed by build-images.sh
+  images: [dashboard-zenoh, dashboard-web, dashboard-rig-agent]   # all built + pushed by build-images.sh
 
 # (no `mirror:` -- the web layer is now a built image with caddy + the bundle baked in, not a mirrored base)
 
 launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source / build context).
   - dash-up           #   The Caddyfile + React bundle are baked into the dashboard-web image, so not here.
   - tools/dash_env.py
+  - tools/dash_zenoh_config.py                  # renders the sidecar's topic rate limits (var/run/<name>/)
   - deploy/docker-compose.yml
+  - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
+  - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)
+  - deploy/docker-compose.rig-agent.yml         # optional rig agent (only when rig_agent: true)
+  - deploy/docker-compose.rig-data-web.yml      # the run registry served read-only at /rig-data/ (when data_dir is known)
+  - deploy/docker-compose.rig-data.yml          #   + the agent's read-write mount of it
   - deploy/zenohd-dashboard.json5
+
+examples:             # [0] seeds a new instance's editable config (rig pkg add convention)
+  - config/infra/dashboard.example.yaml

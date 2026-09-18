@@ -2,7 +2,12 @@
 // own graph cache uses, so the dashboard sees exactly what `ros2 topic list` would. Formats verified
 // against rmw_zenoh jazzy liveliness_utils.cpp:
 //
-//   @ros2_lv/<domain>/<zid>/<nid>/<eid>/<kind>/<enclave>/<namespace>/<node>[/<topic>/<type>/<hash>/<qos>]
+//   @ros2_lv/<domain>/<zid>/<nid>/<eid>/<kind>/<enclave>/<namespace>/<node>[/<topic>/<type>/<hash>/<qos>[/...]]
+//
+// Newer rmw_zenoh releases APPEND fields after <qos> — lyrical adds a 14th, `backends:<list>`, on
+// publishers that can loan/SHM their messages. Segments are read POSITIONALLY and an unknown tail is
+// ignored: rejecting on length made exactly the large-message publishers (camera images) invisible in
+// the graph while their own node and services showed up fine.
 //
 // kind ∈ NN (node) | MP (publisher) | MS (subscription) | SS (service server) | SC (service client);
 // enclave/namespace/node/topic/type/hash segments mangle '/' → '%'; qos = ':'-joined
@@ -57,12 +62,14 @@ function parseQos(raw: string): QosInfo {
 
 export function parseLivelinessToken(keyexpr: string): LivelinessEntity | null {
   const parts = keyexpr.split("/");
-  // 9 segments for NN, 13 when topic/service info is appended (KeyexprIndex in rmw_zenoh).
-  if (parts[0] !== "@ros2_lv" || (parts.length !== 9 && parts.length !== 13)) return null;
+  // 9 segments for a node, at least 13 once topic/service info is appended (KeyexprIndex in
+  // rmw_zenoh). MINIMUMS, not equalities — see the format note above; every field a consumer needs
+  // sits at a fixed index, so a longer token is a newer rmw, not a malformed one.
+  if (parts[0] !== "@ros2_lv") return null;
   if (parts.some((p) => p === "")) return null;
   const [, domain, zid, nid, eid, kind] = parts;
   if (!/^\d+$/.test(domain) || !KINDS.has(kind)) return null;
-  if (kind === "NN" ? parts.length !== 9 : parts.length !== 13) return null;
+  if (parts.length < (kind === "NN" ? 9 : 13)) return null;
   const namespace = demangle(parts[7]);
   const nodeName = demangle(parts[8]);
   const entity: LivelinessEntity = {
@@ -76,7 +83,7 @@ export function parseLivelinessToken(keyexpr: string): LivelinessEntity | null {
     nodeName,
     nodeFq: namespace === "/" ? `/${nodeName}` : `${namespace}/${nodeName}`,
   };
-  if (parts.length === 13) {
+  if (kind !== "NN") {
     entity.topic = {
       name: demangle(parts[9]),
       typeDds: demangle(parts[10]),
@@ -151,8 +158,15 @@ export function buildGraph(tokens: Iterable<string>): RosGraph {
           subscribers: [],
           transientLocal: false,
           bestEffort: false,
-          // Data keys carry the topic minus its leading slash (strip_slashes in rmw_zenoh).
-          dataKeyexpr: `${e.domainId}/${t.name.replace(/^\//, "")}/${t.typeDds}/${t.typeHash}`,
+          // Data keys carry the topic minus its leading slash (strip_slashes in rmw_zenoh). The
+          // trailing `/**` absorbs the BUFFER-BACKEND chunk lyrical appends (`…/_buf_cpu`, the data
+          // half of the token's `backends:` field) while still matching the bare key older
+          // rmw_zenoh puts to — zenoh's `**` spans zero or more chunks. Subscribing to the bare key
+          // on lyrical lands on a keyexpr nothing ever publishes: the topic reads as permanently
+          // silent even though `ros2 topic echo` streams it. The type hash is already in the prefix,
+          // so the wildcard cannot pull in a foreign topic. (Service keys take NO such suffix — a
+          // queryable, not a publisher; see services/keyexpr.ts.)
+          dataKeyexpr: `${e.domainId}/${t.name.replace(/^\//, "")}/${t.typeDds}/${t.typeHash}/**`,
         };
         topics.set(id, entry);
       }

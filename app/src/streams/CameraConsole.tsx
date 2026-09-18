@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
-import type { Transport } from "../transport/types";
-import { useStreams } from "./useStreams";
-import { StreamView } from "./StreamView";
+import { StreamDeck } from "./StreamDeck";
+import { useStreamsContext } from "./StreamsContext";
 
 const STORE_KEY = "dashboard.cameras.subscribed";
 
@@ -24,8 +23,8 @@ function loadSubscribed(): string[] {
  * Layout switches are pure CSS — the <video> elements (and their WebRTC sessions) are never
  * unmounted, so swapping views never renegotiates. Subscriptions persist across reloads.
  */
-export function CameraConsole({ transport }: { transport: Transport }) {
-  const streams = useStreams(transport);
+export function CameraConsole() {
+  const { streams } = useStreamsContext();
   const [subscribed, setSubscribed] = useState<string[]>(loadSubscribed);
   const [focusKey, setFocusKey] = useState<string | null>(null);
 
@@ -46,23 +45,6 @@ export function CameraConsole({ transport }: { transport: Transport }) {
     setSubscribed((prev) => (prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]));
     if (focusKey === key) setFocusKey(null);
   };
-
-  // Keyboard: Esc exits focus, ←/→ cycle the focused feed.
-  useEffect(() => {
-    if (focused === null) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setFocusKey(null);
-      if (e.key === "ArrowLeft" || e.key === "ArrowRight") {
-        const keys = subStreams.map((s) => s.key);
-        const i = keys.indexOf(focused);
-        if (i === -1 || keys.length < 2) return;
-        setFocusKey(keys[(i + (e.key === "ArrowRight" ? 1 : keys.length - 1)) % keys.length]);
-        e.preventDefault();
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [focused, subStreams]);
 
   const watching = subStreams.length;
   return (
@@ -112,18 +94,16 @@ export function CameraConsole({ transport }: { transport: Transport }) {
       {streams.length > 0 && watching === 0 && <p className="empty">Select a camera above to start watching.</p>}
 
       {watching > 0 && (
-        <div className={focused !== null ? "console-focus" : "console-grid"}>
-          {subStreams.map((s) => (
-            <StreamView
-              key={s.key}
-              stream={s}
-              mode={focused === null ? "grid" : s.key === focused ? "focused" : "thumb"}
-              onFocus={() => setFocusKey(s.key)}
-              onRestore={() => setFocusKey(null)}
-              onClose={() => toggle(s.key)}
-            />
-          ))}
-        </div>
+        <StreamDeck
+          streams={subStreams}
+          layout={focused !== null ? "focus" : "grid"}
+          focusKey={focused}
+          onFocus={setFocusKey}
+          onLayout={(l) => {
+            if (l === "grid") setFocusKey(null);
+          }}
+          onClose={toggle}
+        />
       )}
     </section>
   );
