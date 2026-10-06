@@ -1483,6 +1483,109 @@ ul.plain {
   color: var(--err);
 }
 
+/* ---- service health (camera-service docs/HEALTH.md) ----------------------------------------- */
+
+.widget-health {
+  gap: 0.6rem;
+}
+
+.health-instances,
+.health-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 0.9rem 1.2rem;
+  width: 100%;
+}
+
+.health-grid {
+  grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 0.8rem;
+}
+
+.health-instance {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  width: 100%;
+  min-width: 0;
+}
+
+.health-head {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.health-name {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.health-hardware {
+  font-size: 0.68rem;
+  overflow-wrap: anywhere;
+}
+
+.health-instance .panel-row .row-label {
+  flex: none;
+}
+
+.health-instance .panel-row .row-value {
+  white-space: nowrap;
+}
+
+.health-status {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+  width: 100%;
+}
+
+.health-note {
+  font-size: 0.7rem;
+  color: var(--text-dim);
+  overflow-wrap: anywhere;
+}
+
+.health-note strong {
+  font-weight: 600;
+  color: var(--text);
+}
+
+.health-note.warn,
+.health-note.warn strong {
+  color: var(--warn);
+}
+
+.health-note.err,
+.health-note.err strong {
+  color: var(--err);
+}
+
+.health-values {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.1rem 0.7rem;
+  margin: 0;
+  font-size: 0.68rem;
+}
+
+.health-values > div {
+  display: contents;
+}
+
+.health-values dt {
+  color: var(--text-faint);
+}
+
+.health-values dd {
+  margin: 0;
+  color: var(--text-dim);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
 /* ---- declarative primitives: gauge / sparkline / indicator / text ---------------------------- */
 
 .widget-gauge {

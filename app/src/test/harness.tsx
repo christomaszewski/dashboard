@@ -7,6 +7,9 @@ import { render, type RenderResult } from "@testing-library/react";
 import type { ComponentProps, ReactElement } from "react";
 import type { LifecycleService } from "../lifecycle/types";
 import { LifecycleCtx } from "../lifecycle/LifecycleContext";
+import { HealthCtx } from "../health/HealthContext";
+import type { HealthService, HealthStatus } from "../health/types";
+import type { SeriesPoint } from "../home/widgets/primitives/series";
 import type { PlaybackDescriptor, PlaybackService } from "../playback/types";
 import { PlaybackCtx } from "../playback/PlaybackContext";
 import { EMPTY_GRAPH, type RosGraph } from "../ros/graph";
@@ -95,6 +98,34 @@ export function lifecycle(instance: string, state = "inactive", transitions = ["
   };
 }
 
+/** A health-publishing instance whose snapshot just arrived. Statuses are given by component:
+ *  `health("cam_gige", { camera: { values: { "temp.sensor_c": 41.2 } } })`. */
+export function health(
+  instance: string,
+  components: Record<string, Partial<Omit<HealthStatus, "name">>> = {},
+  over: Partial<HealthService> = {},
+): HealthService {
+  const status: HealthStatus[] = Object.entries(components).map(([component, s]) => ({
+    level: 0,
+    message: "OK",
+    hardware_id: "",
+    values: {},
+    ...s,
+    name: `${instance}: ${component}`,
+  }));
+  const level = status.reduce<HealthStatus["level"]>((worst, s) => (s.level > worst ? s.level : worst), 0);
+  return {
+    key: `fleet/1/svc/${instance}/health`,
+    vehicleId: "1",
+    instance,
+    alive: true,
+    receivedAtMs: Date.now(),
+    periodMs: 1000,
+    snapshot: { schema_version: 1, service: "camera-service", instance, stamp_unix_ns: Date.now() * 1e6, level, status },
+    ...over,
+  };
+}
+
 export function playback(instance: string, d: Partial<PlaybackDescriptor> = {}): PlaybackService {
   return {
     key: `fleet/1/svc/${instance}/playback`,
@@ -125,6 +156,9 @@ export interface World {
   streams?: DiscoveredStream[];
   services?: LifecycleService[];
   playbacks?: PlaybackService[];
+  healths?: HealthService[];
+  /** Temperature history by `<instance>/<value name>` (e.g. `cam_gige/temp.sensor_c`). Default: none. */
+  healthSeries?: Record<string, SeriesPoint[]>;
   /** The ROS graph as liveliness would have built it (services, nodes, topics). Default: empty. */
   graph?: RosGraph;
   /** A transport handle — null (the default) renders every service-calling control disabled; tests
@@ -148,12 +182,17 @@ export function renderWith(ui: ReactElement, world: World = {}): RenderResult & 
   pool.updateStreams(streams);
   const services = world.services ?? [];
   const playbacks = world.playbacks ?? [];
+  const healths = world.healths ?? [];
+  const series = (key: string, _statusName: string, valueKey: string) =>
+    world.healthSeries?.[`${key.split("/")[3]}/${valueKey}`] ?? [];
   const result = render(
     <TransportCtx.Provider value={{ transport: world.transport ?? null, status: "connected", error: "", locator: "ws://test" }}>
       <RosGraphCtx.Provider value={{ graph: world.graph ?? EMPTY_GRAPH, resolver: null, store: null }}>
         <StreamsCtx.Provider value={{ streams, pool }}>
           <LifecycleCtx.Provider value={{ services, find: finder(services) }}>
-            <PlaybackCtx.Provider value={{ services: playbacks, find: finder(playbacks) }}>{ui}</PlaybackCtx.Provider>
+            <HealthCtx.Provider value={{ services: healths, find: finder(healths), series }}>
+              <PlaybackCtx.Provider value={{ services: playbacks, find: finder(playbacks) }}>{ui}</PlaybackCtx.Provider>
+            </HealthCtx.Provider>
           </LifecycleCtx.Provider>
         </StreamsCtx.Provider>
       </RosGraphCtx.Provider>

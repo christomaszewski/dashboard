@@ -323,6 +323,38 @@ describe("map widget", () => {
   });
 });
 
+describe("health widget", () => {
+  it("needs no keys at all, and takes its defaults", () => {
+    const home = parseHome({ widgets: [{ type: "health" }] });
+    expect(home.widgets[0]).toMatchObject({ ok: true, widget: { type: "health", history_s: 300, precision: 1 } });
+    if (home.widgets[0].ok) expect(home.widgets[0].widget).not.toHaveProperty("services", expect.anything());
+  });
+
+  it("parses as a home widget and as a panel item; a lone instance counts as a list", () => {
+    const home = parseHome({
+      widgets: [
+        { type: "health", label: "Camera temperatures", services: ["cam_gige", "veh1/cam_thermal"], components: "camera", warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true },
+        { type: "panel", title: "Temps", items: [{ type: "health", services: "cam_thermal" }] },
+      ],
+    });
+    expect(home.widgets[0]).toMatchObject({
+      ok: true,
+      widget: { services: ["cam_gige", "veh1/cam_thermal"], components: ["camera"], warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true },
+    });
+    const panel = home.widgets[1];
+    if (!panel.ok || !isPanelWidget(panel.widget)) throw new Error("expected a panel");
+    expect(panel.widget.items[0]).toMatchObject({ ok: true, item: { type: "health", services: ["cam_thermal"] } });
+  });
+
+  it("rejects a trend window the app does not keep, and a non-integer precision", () => {
+    const home = parseHome({ widgets: [{ type: "health", history_s: 3600 }, { type: "health", precision: 1.5 }, { type: "health", services: [7] }] });
+    const message = (i: number) => (home.widgets[i].ok ? "" : (home.widgets[i] as { message: string }).message);
+    expect(message(0)).toMatch(/'history_s' must be between 0 .* and 600/);
+    expect(message(1)).toMatch(/'precision' must be an integer/);
+    expect(message(2)).toMatch(/'services' must be a list of non-empty strings/);
+  });
+});
+
 describe("lifecycle widget", () => {
   it("parses as a home widget and as a panel item", () => {
     const home = parseHome({

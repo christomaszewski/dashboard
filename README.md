@@ -29,6 +29,14 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   revision. Runtime edits last until the service restarts. Each camera session writes a
   `<prefix>.recording-settings.json` alongside its MKV/CSV files in the run directory, available
   through the Rig run browser. Older camera-service versions keep their existing start/stop UI.
+- Service health: a `health` Home widget (and a zero-config **Cameras → Health** card) reads the
+  health camera-service publishes on Zenoh (`fleet/<vehicle>/svc/<instance>/health{,/state}`, its
+  `docs/HEALTH.md` — ROS-diagnostics-shaped JSON, no ROS involved): per instance a verdict pill
+  (OK / WARN / ERROR / STALE, `offline` when its token drops, `silent` when snapshots stop), every
+  temperature it reports (`temp.<where>_c`: a GigE camera's GenICam `DeviceTemperature`, a FLIR
+  Boson's FPA) with a trend line, and each status that is not OK in the producer's own words.
+  Read-only. Thresholds on the widget color the reading; limits that should be recorded with the
+  data belong in the sensor config (`health.limits`).
 - ROS 3D: `pointcloud` Home widget and opt-in `ros3d` tab show timestamped PointCloud2 overlays
   and accumulated scans through TF. They follow live data or external playback; optional central
   controls use a separate `rosbag_playback` widget. See [docs/ROS_3D.md](docs/ROS_3D.md).

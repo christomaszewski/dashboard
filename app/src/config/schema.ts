@@ -27,6 +27,7 @@ export type {
   TopicValueWidgetConfig,
   MapWidgetConfig,
   LifecycleWidgetConfig,
+  HealthWidgetConfig,
   RigWidgetConfig,
 } from "../home/widgets/specs";
 

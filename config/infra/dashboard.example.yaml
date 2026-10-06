@@ -259,6 +259,29 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # confirm: true          # two-step click before a transition
 #       # run_id: survey         # sent with activate -> recording run prefix suffix
 #
+#     # -- health: service health -- temperatures first ------------------------------------------
+#     # Reads the health camera-service publishes (its docs/HEALTH.md):
+#     #   fleet/<vehicle>/svc/<instance>/health{,/state} -- one JSON snapshot a second, shaped like
+#     # ROS diagnostics. Per instance: a verdict pill (OK / WARN / ERROR / STALE; `offline` when
+#     # the token drops, `silent` when snapshots stop arriving), one row per temperature the camera
+#     # reports (every `temp.<where>_c`: GenICam DeviceTemperature on a GigE camera, the FPA on a
+#     # FLIR Boson with usb.control_device set) with a trend line, and one line per status that is
+#     # not OK. Read-only. The Cameras tab also lists every instance in full with no config at all.
+#     # Also allowed as a panel item (one compact row per temperature).
+#     - type: health
+#       label: Camera temperatures
+#       # services: [cam_gige, cam_thermal]   # <instance> or <vehicle>/<instance>; omit = every
+#       #                                     #   instance publishing health
+#       # components: [camera]   # only these (camera | stream | recording); omit = all -- narrows
+#       #                        #   the pill too: [camera] ignores a lossy stream
+#       # details: true          # every status with all its values (default: temperatures + not-OK)
+#       # history_s: 300         # trend window, 0..600 s; 0 = no trend line
+#       # precision: 1           # decimals
+#       # warn_above: 60 / err_above: 70 / warn_below / err_below   colors EVERY temperature shown
+#       #                        #   (one widget per camera model when the limits differ). To have a
+#       #                        #   limit raise the status level and land in the recording's JSON,
+#       #                        #   set it on the camera instead: `health.limits` in its sensor config
+#
 #     # -- rig: the deployment at a glance (needs rig_agent: true) --------------------------------
 #     # The open run (label · age, New run / End run) and one row per vehicle.yaml entry with its
 #     # state pill and buttons: the zenoh lifecycle transitions when the instance advertises one

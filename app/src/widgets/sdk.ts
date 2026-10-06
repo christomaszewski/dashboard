@@ -35,6 +35,12 @@ export { changeState, LifecycleError } from "../lifecycle/changeState";
 export type { ChangeStateResult } from "../lifecycle/changeState";
 export type { LifecycleService, LifecycleDescriptor } from "../lifecycle/types";
 
+// Service health (camera-service docs/HEALTH.md): snapshots per instance + temperature history
+export { useHealthContext } from "../health/HealthContext";
+export { HealthInstance } from "../health/HealthInstance";
+export { temperatures, selectStatuses, healthVerdict } from "../health/types";
+export type { HealthService, HealthSnapshot, HealthStatus, HealthTemperature } from "../health/types";
+
 // The rig deployment (vehicle-side agent, docs/RIG_AGENT.md): rows, open run, jobs
 export { useRigContext } from "../rig/RigContext";
 export { submitJob, cancelJob, listRuns, getRun, RigError } from "../rig/client";

@@ -155,6 +155,24 @@ export interface LifecycleWidgetConfig extends BaseWidgetConfig {
   run_id?: string; // passed with activate (recording run prefix suffix)
 }
 
+/** Service health (camera-service docs/HEALTH.md): per instance a verdict pill, every temperature it
+ *  reports (`temp.<where>_c`) with a trend line, and whatever is not OK. The thresholds color each
+ *  temperature here; the producer's own limits (`health.limits` in the sensor config) arrive as the
+ *  status level + message, and are the ones recorded with the data. */
+export interface HealthWidgetConfig extends BaseWidgetConfig, Thresholds {
+  type: "health";
+  /** Instances (`cam0`) or vehicle-qualified (`veh1/cam0`) — fleet/<v>/svc/<instance>/health.
+   *  Omit = every instance publishing health. */
+  services?: string[];
+  /** Only these components (camera | stream | recording | …). Omit = all. */
+  components?: string[];
+  /** Every status with all its values (default false: temperatures + whatever is not OK). */
+  details?: boolean;
+  history_s: number; // trend window (default 300, at most the 600 the app keeps); 0 = no trend line
+  precision: number; // decimals on a temperature (default 1)
+}
+export const HEALTH_HISTORY_MAX_S = 600;
+
 export interface RigWidgetConfig extends BaseWidgetConfig {
   type: "rig";
   /** Only these vehicle.yaml rows (default: every enabled row). */
@@ -364,6 +382,32 @@ defineWidget<MapWidgetConfig>({
   defaultSpan: 2,
   label: (w) => w.label ?? w.topic ?? "Position",
   parse: parseMapWidget,
+});
+
+defineWidget<HealthWidgetConfig>({
+  type: "health",
+  description: "service health: a verdict per instance, every temperature it reports with a trend, whatever is not OK",
+  panelCapable: true,
+  label: (w) => w.label ?? "health",
+  parse: (raw: Obj) => {
+    const history = optNum(raw, "history_s") ?? 300;
+    if (history < 0 || history > HEALTH_HISTORY_MAX_S) {
+      throw new Error(`'history_s' must be between 0 (no trend line) and ${HEALTH_HISTORY_MAX_S}, got ${history}`);
+    }
+    const precision = optNum(raw, "precision") ?? 1;
+    if (!Number.isInteger(precision) || precision < 0 || precision > 6) {
+      throw new Error(`'precision' must be an integer from 0 to 6, got ${precision}`);
+    }
+    return {
+      label: optStr(raw, "label"),
+      services: optStrList(raw, "services"),
+      components: optStrList(raw, "components"),
+      details: optBool(raw, "details"),
+      history_s: history,
+      precision,
+      ...optThresholds(raw),
+    };
+  },
 });
 
 defineWidget<LifecycleWidgetConfig>({

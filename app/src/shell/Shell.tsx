@@ -3,6 +3,7 @@ import { useTransportContext } from "../transport/TransportContext";
 import { CameraConsole } from "../streams/CameraConsole";
 import { LifecycleServicesCard } from "../lifecycle/LifecycleServicesCard";
 import { PlaybackServicesCard } from "../playback/PlaybackServicesCard";
+import { HealthServicesCard } from "../health/HealthServicesCard";
 import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
 import { HomeTab } from "../home/HomeTab";
@@ -65,6 +66,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
           <LifecycleServicesCard />
           <PlaybackServicesCard />
           <CameraConsole />
+          <HealthServicesCard />
         </main>
       )}
       {visible.includes("ros") && (
