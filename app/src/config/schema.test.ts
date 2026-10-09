@@ -226,7 +226,7 @@ describe("visibleTabs", () => {
   it("is Home only when the config says nothing — every other tab is opt-in", () => {
     expect(visibleTabs(undefined)).toEqual(["home"]);
     expect(visibleTabs({})).toEqual(["home"]);
-    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, cameras: false, ros: false, ros3d: false, rig: false, clouds: false, debug: false });
+    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, health: false, cameras: false, ros: false, ros3d: false, rig: false, clouds: false, debug: false });
   });
 
   it("adds the opted-in tabs in display order, whatever order the config lists them", () => {
@@ -333,13 +333,13 @@ describe("health widget", () => {
   it("parses as a home widget and as a panel item; a lone instance counts as a list", () => {
     const home = parseHome({
       widgets: [
-        { type: "health", label: "Camera temperatures", services: ["cam_gige", "veh1/cam_thermal"], components: "camera", warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true },
+        { type: "health", label: "Camera temperatures", services: ["cam_gige", "veh1/cam_thermal"], components: "camera", warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true, lock: true },
         { type: "panel", title: "Temps", items: [{ type: "health", services: "cam_thermal" }] },
       ],
     });
     expect(home.widgets[0]).toMatchObject({
       ok: true,
-      widget: { services: ["cam_gige", "veh1/cam_thermal"], components: ["camera"], warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true },
+      widget: { services: ["cam_gige", "veh1/cam_thermal"], components: ["camera"], warn_above: 60, err_above: 70, history_s: 120, precision: 0, details: true, lock: true },
     });
     const panel = home.widgets[1];
     if (!panel.ok || !isPanelWidget(panel.widget)) throw new Error("expected a panel");

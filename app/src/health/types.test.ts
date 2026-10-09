@@ -152,15 +152,16 @@ describe("healthVerdict", () => {
 
   it("says offline when the token is gone, before anything else", () => {
     const s = service({ alive: false });
-    expect(healthVerdict(s, s.snapshot.status, 100_500)).toMatchObject({ level: "warn", text: "offline", current: false });
+    expect(healthVerdict(s, s.snapshot.status, 100_500)).toMatchObject({ level: "warn", text: "WARN · offline", current: false });
   });
 
-  it("says silent once the producer misses ~3 of its own intervals (never under the floor)", () => {
+  it("expires on the configured interval, never on the size of a recent outage", () => {
     const s = service();
     expect(staleAfterMs(s)).toBe(5_000); // 3 × 1 s is under the floor
     expect(healthVerdict(s, s.snapshot.status, 104_900).current).toBe(true);
-    expect(healthVerdict(s, s.snapshot.status, 107_000)).toEqual({ level: "idle", text: "silent 7s", current: false });
-    const slow = service({ periodMs: 10_000 });
+    expect(healthVerdict(s, s.snapshot.status, 107_000)).toEqual({ level: "idle", text: "WARN · silent 7s", current: false });
+    const slow = service({ periodMs: 10_000, fallbackTtlMs: 30_000 });
+    expect(staleAfterMs(service({ periodMs: 100_000 }))).toBe(5_000);
     expect(staleAfterMs(slow)).toBe(30_000);
     expect(healthVerdict(slow, slow.snapshot.status, 125_000).current).toBe(true);
   });
@@ -169,6 +170,6 @@ describe("healthVerdict", () => {
     const snap = parseHealthSnapshot(
       enc({ ...BOSON, status: [{ level: 3, name: "cam_thermal: camera", message: "camera reconnecting", hardware_id: "", values: {} }] }),
     )!;
-    expect(healthVerdict(service({ snapshot: snap }), snap.status, 100_500)).toEqual({ level: "idle", text: "STALE", current: true });
+    expect(healthVerdict(service({ snapshot: snap }), snap.status, 100_500)).toEqual({ level: "idle", text: "STALE", current: false });
   });
 });

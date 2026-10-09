@@ -3,6 +3,7 @@ import { useTransportContext } from "../transport/TransportContext";
 import { CameraConsole } from "../streams/CameraConsole";
 import { LifecycleServicesCard } from "../lifecycle/LifecycleServicesCard";
 import { PlaybackServicesCard } from "../playback/PlaybackServicesCard";
+import { HealthTab } from "../health/HealthTab";
 import { HealthServicesCard } from "../health/HealthServicesCard";
 import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
@@ -61,6 +62,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
           <TabActivity.Provider value={tab === "home"}><HomeTab navigate={navigate} tabs={visible} /></TabActivity.Provider>
         </main>
       )}
+      {visible.includes("health") && <main className={panelClass("health")}><HealthTab /></main>}
       {visible.includes("cameras") && (
         <main className={panelClass("cameras")}>
           <LifecycleServicesCard />

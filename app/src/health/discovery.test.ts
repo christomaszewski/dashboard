@@ -112,7 +112,7 @@ describe("HealthDiscovery", () => {
     expect(latest()).toHaveLength(0);
   });
 
-  it("token DELETE → offline, removed with its history after the grace; a re-PUT inside it revives", async () => {
+  it("token DELETE keeps an offline entry and history for this browser session; re-PUT revives", async () => {
     const { token, latest, discovery } = await start(15_000);
     token({ keyexpr: KEY, alive: true });
     await vi.runAllTimersAsync();
@@ -126,7 +126,30 @@ describe("HealthDiscovery", () => {
     expect(discovery.series(KEY, "cam_gige: camera", "temp.sensor_c")).toHaveLength(2);
     token({ keyexpr: KEY, alive: false });
     await vi.advanceTimersByTimeAsync(16_000);
-    expect(latest()).toHaveLength(0);
-    expect(discovery.series(KEY, "cam_gige: camera", "temp.sensor_c")).toEqual([]);
+    expect(latest()).toHaveLength(1);
+    expect(latest()[0].alive).toBe(false);
+    expect(discovery.series(KEY, "cam_gige: camera", "temp.sensor_c")).toHaveLength(2);
   });
+});
+
+
+it("a delayed query cannot resurrect a withdrawn reporter or replace a newer publication", async () => {
+  const stub = stubTransport();
+  let reply: (value: any) => void = () => undefined;
+  stub.transport.get = () => new Promise((resolve) => { reply = resolve; });
+  const discovery = new HealthDiscovery(stub.transport);
+  let latest: HealthService[] = [];
+  await discovery.start((s) => { latest = s; });
+  stub.publish(`${KEY}/state`, snapshot(40));
+  stub.token({ keyexpr: KEY, alive: true });
+  stub.publish(`${KEY}/state`, snapshot(43));
+  reply([{ keyexpr: KEY, payload: enc(snapshot(10)) }]);
+  await Promise.resolve();
+  expect(latest[0].snapshot.status[0].values["temp.sensor_c"]).toBe(43);
+  stub.token({ keyexpr: KEY, alive: true });
+  stub.token({ keyexpr: KEY, alive: false });
+  reply([{ keyexpr: KEY, payload: enc(snapshot(10)) }]);
+  await Promise.resolve();
+  expect(latest[0].alive).toBe(false);
+  await discovery.stop();
 });

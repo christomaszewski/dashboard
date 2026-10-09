@@ -155,8 +155,8 @@ export interface LifecycleWidgetConfig extends BaseWidgetConfig {
   run_id?: string; // passed with activate (recording run prefix suffix)
 }
 
-/** Service health (camera-service docs/HEALTH.md): per instance a verdict pill, every temperature it
- *  reports (`temp.<where>_c`) with a trend line, and whatever is not OK. The thresholds color each
+/** Service health (docs/SERVICE_HEALTH.md): a verdict, temperature/power trends, and issue pills.
+ *  The thresholds color each
  *  temperature here; the producer's own limits (`health.limits` in the sensor config) arrive as the
  *  status level + message, and are the ones recorded with the data. */
 export interface HealthWidgetConfig extends BaseWidgetConfig, Thresholds {
@@ -166,10 +166,12 @@ export interface HealthWidgetConfig extends BaseWidgetConfig, Thresholds {
   services?: string[];
   /** Only these components (camera | stream | recording | …). Omit = all. */
   components?: string[];
-  /** Every status with all its values (default false: temperatures + whatever is not OK). */
+  /** Hide the picker and always use the configured services (or all reporters when omitted). */
+  lock?: boolean;
+  /** Open component details by default (default false: compact metrics and issue pills). */
   details?: boolean;
   history_s: number; // trend window (default 300, at most the 600 the app keeps); 0 = no trend line
-  precision: number; // decimals on a temperature (default 1)
+  precision: number; // decimals on measurements (default 1)
 }
 export const HEALTH_HISTORY_MAX_S = 600;
 
@@ -386,7 +388,7 @@ defineWidget<MapWidgetConfig>({
 
 defineWidget<HealthWidgetConfig>({
   type: "health",
-  description: "service health: a verdict per instance, every temperature it reports with a trend, whatever is not OK",
+  description: "sensor/service health: discovered or selected reporters, temperature/power trends, and issue pills with details",
   panelCapable: true,
   label: (w) => w.label ?? "health",
   parse: (raw: Obj) => {
@@ -402,6 +404,7 @@ defineWidget<HealthWidgetConfig>({
       label: optStr(raw, "label"),
       services: optStrList(raw, "services"),
       components: optStrList(raw, "components"),
+      lock: optBool(raw, "lock"),
       details: optBool(raw, "details"),
       history_s: history,
       precision,

@@ -24,6 +24,8 @@ const LEVEL_CLASSES: readonly ValueLevel[] = ["ok", "warn", "err", "idle"];
 export type HealthValue = number | string | boolean | null;
 
 export interface HealthStatus {
+  receivedAtMs?: number;
+  receivedMonoMs?: number;
   level: HealthLevel;
   name: string; // "<instance>: <component>"
   message: string;
@@ -41,6 +43,10 @@ export interface HealthSnapshot {
 }
 
 export interface HealthService {
+  receivedMonoMs?: number;
+  source?: "native" | "ros2";
+  sourceLabel?: string;
+  fallbackTtlMs?: number;
   key: string; // fleet/<vehicle>/svc/<instance>/health
   vehicleId: string;
   instance: string;
@@ -66,7 +72,7 @@ function isLevel(v: unknown): v is HealthLevel {
   return v === 0 || v === 1 || v === 2 || v === 3;
 }
 
-function parseStatus(raw: unknown): HealthStatus | null {
+export function parseStatus(raw: unknown): HealthStatus | null {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return null;
   const s = raw as Record<string, unknown>;
   if (!isLevel(s.level) || typeof s.name !== "string" || s.name === "") return null;
@@ -169,7 +175,35 @@ export function temperatures(statuses: readonly HealthStatus[], instance: string
 export const HEALTH_STALE_FLOOR_MS = 5_000;
 
 export function staleAfterMs(service: HealthService): number {
-  return Math.max(HEALTH_STALE_FLOOR_MS, 3 * (service.periodMs ?? 0));
+  const periods = service.snapshot.status.map((s) => s.values["health.publish_interval_s"])
+    .filter((v): v is number => typeof v === "number" && Number.isFinite(v) && v > 0);
+  return Math.max(service.fallbackTtlMs ?? HEALTH_STALE_FLOOR_MS, ...periods.map((p) => p * 3000));
+}
+
+/** Reporter heartbeat freshness, independent of any component's observation interval. */
+export function reporterCurrent(service: HealthService, nowMs: number): boolean {
+  const age = service.receivedMonoMs === undefined ? nowMs - service.receivedAtMs : performance.now() - service.receivedMonoMs;
+  return service.alive && age <= staleAfterMs(service);
+}
+
+export function sampleAgeMs(service: HealthService, status: HealthStatus, nowMs: number): number {
+  const age = status.values["health.sample_age_s"];
+  const mono = status.receivedMonoMs ?? service.receivedMonoMs;
+  return Math.max(0, mono === undefined ? nowMs - (status.receivedAtMs ?? service.receivedAtMs) : performance.now() - mono) +
+    (typeof age === "number" && age >= 0 ? age * 1000 : 0);
+}
+
+export function statusCurrent(service: HealthService, status: HealthStatus, nowMs: number): boolean {
+  const ttl = status.values["health.stale_after_s"];
+  const availability = status.values["health.availability"];
+  return service.alive && status.level !== 3 && availability !== "stale" && availability !== "paused" &&
+    availability !== "unavailable" && availability !== "unsupported" &&
+    sampleAgeMs(service, status, nowMs) <= (typeof ttl === "number" && ttl > 0 ? ttl * 1000 : staleAfterMs(service));
+}
+
+export function metricUnit(key: string): string | null {
+  if (temperatureWhere(key) !== null) return "°C";
+  return ({ "supply.voltage_v": "V", "supply.current_a": "A", "supply.power_w": "W" } as Record<string, string>)[key] ?? null;
 }
 
 export interface HealthVerdict {
@@ -182,9 +216,14 @@ export interface HealthVerdict {
 /** What to say about an instance right now: presence first, then silence, then the worst level of
  *  the statuses in view. */
 export function healthVerdict(service: HealthService, statuses: readonly HealthStatus[], nowMs: number): HealthVerdict {
-  if (!service.alive) return { level: "warn", text: "offline", current: false };
-  const age = nowMs - service.receivedAtMs;
-  if (age > staleAfterMs(service)) return { level: "idle", text: `silent ${Math.floor(age / 1000)}s`, current: false };
-  const worst = worstLevel(statuses);
-  return { level: levelClass(worst), text: HEALTH_LEVEL_NAMES[worst], current: true };
+  const levels = statuses.map((s) => s.level === 3 ? s.values["health.last_level"] : s.level);
+  const severity = levels.includes(2) ? "ERROR" : levels.includes(1) ? "WARN" : null;
+  const prefix = severity ? `${severity} · ` : "";
+  if (!service.alive) return { level: severity === "ERROR" ? "err" : "warn", text: `${prefix}offline`, current: false };
+  const age = service.receivedMonoMs === undefined ? nowMs - service.receivedAtMs : performance.now() - service.receivedMonoMs;
+  if (age > staleAfterMs(service)) return { level: severity === "ERROR" ? "err" : "idle", text: `${prefix}silent ${Math.floor(age / 1000)}s`, current: false };
+  if (!statuses.length) return { level: "idle", text: "unknown", current: false };
+  const stale = statuses.some((s) => !statusCurrent(service, s, nowMs) && !["paused", "unsupported"].includes(String(s.values["health.availability"])));
+  if (severity) return { level: severity === "ERROR" ? "err" : "warn", text: severity + (stale ? " · STALE" : ""), current: !stale };
+  return { level: stale ? "idle" : "ok", text: stale ? "STALE" : "OK", current: !stale };
 }

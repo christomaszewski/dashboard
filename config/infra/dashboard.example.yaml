@@ -28,11 +28,15 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # Every subscribed ROS topic crosses the browser's ONE WebSocket sample by sample at the publisher's
 # rate; on a spotty link that volume queues behind TCP retransmits and reaches the page late. Cap it
 # BEFORE the air: dash-up renders these into the sidecar's zenoh config as downsampling rules on its
-# ingress from the router (tools/dash_zenoh_config.py). The page decodes at 5 Hz anyway. Scoped to
+# ingress from the router (tools/dash_zenoh_config.py). Generic readouts coalesce at 5 Hz; health
+# diagnostics and 3D use their own ingestion paths. Scoped to
 # the ROS domain, so lifecycle/playback/rig state and every service call stay untouched; `put`
 # messages only. Rate widgets (`topic_hz`) read the capped rate — set their min_hz accordingly.
 # These rules apply to the vehicle sidecar path. A laptop bridge connected directly to the router
 # bypasses them; native-link rate limits must run on the vehicle before the wireless hop.
+# Leave DiagnosticArray topics uncapped: many publishers can share /diagnostics, so downsampling
+# can discard another service's status or a brief fault. Prefer topic_rates on high-volume data
+# instead of topic_rate_hz when health reporting is enabled. Native fleet health is not capped.
 #
 # topic_rate_hz: 5        # every topic of the domain at most 5 Hz to the browser
 # topic_rates:            # OR explicit per-topic caps (needs PyYAML on the host); never both — zenoh
@@ -64,35 +68,89 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
 # Tabs beyond Home are OPT-IN: list the ones this deployment uses and the rest never appear (nor do
 # you need to know they exist). With no `tabs:` at all the app is Home alone, tab bar hidden.
-# Available: cameras, ros, ros3d, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
+# Available: health, cameras, ros, ros3d, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
 # implies `rig` (that tab is the agent's UI); an explicit `tabs.rig` always wins. The Clouds tab is
 # lazy-loaded (its three.js chunk only downloads when opened). A deep link to a tab that is not
 # listed falls back to the first visible tab.
 #
-# tabs: [cameras, ros, debug]     # the list form: exactly these, plus Home
+# tabs: [health, cameras, ros, ros3d, rig, clouds, debug] # list form: these, plus Home
 #
 # tabs:                           # the map form: the only way to say `false`
+#   health: true      # dedicated sensor/service overview, component details and recent events
 #   cameras: true
 #   ros: true
+#   ros3d: true
+#   clouds: true
+#   debug: true
 #   rig: false        # hide the Rig tab despite rig_agent (its home widgets still work)
 #   home: false       # Home off too (the first listed tab becomes the landing page)
 
-# ROS PointCloud2 / TF visualization (docs/ROS_3D.md). Both 3D surfaces are read-only viewers.
+# ── Shared health discovery (optional; docs/SERVICE_HEALTH.md) ─────────────────────────────────
+# Home health widgets, the Health tab, and the Cameras health card share one native/ROS store.
+# Native JSON is discovered at fleet/*/svc/*/health. ROS services such as Ouster publish
+# diagnostic_msgs/msg/DiagnosticArray, discovered by type on the existing Zenoh graph.
+# ROS traffic must reach this router via rmw_zenoh or a compatible bridge; the dashboard does
+# not poll sensor HTTP APIs. Ordinary ROS diagnostics work without fleet metadata.
+# Defaults: all DiagnosticArray topics except */diagnostics_agg, all visible domains, 15 s
+# fallback expiry for unannotated diagnostics. Publisher freshness metadata takes precedence.
+# Lists are exact allowlists, not globs; [] disables that ROS selection (native stays).
+#
+# health:
+#   ros_topics: [/diagnostics]   # example allowlist; omit for discovery by type
+#   ros_domains: [0]            # example allowlist; omit for all graph domains
+#   ros_stale_after_s: 15       # positive finite seconds; fallback only
+#
+# To consume an aggregator instead, set ros_topics: [/diagnostics_agg]. Avoid consuming raw and
+# aggregated versions of the same statuses together unless that duplication is intentional.
+# Enable the Health tab through tabs above; a Home health widget does not require the tab.
+#
+# ── ROS PointCloud2 / TF visualization (optional; docs/ROS_3D.md) ─────────────────────────────────
+# Defaults below apply to the ROS 3D tab AND Home pointcloud widgets. A widget can override ANY
+# of these keys directly on its own mapping; displays replaces the whole list (no list merge).
+# The viewer never starts bag playback. time_source: ros_clock follows an external /clock.
+#
 # ros3d:
-#   fixed_frame: map             # choose a frame in your TF tree
-#   time_source: live            # ros_clock for externally controlled playback
-#   tf_topics: [/tf]
-#   tf_static_topics: [/tf_static]
-#   displays:
-#     - { id: ouster, topic: /ouster/points, history_s: 3, color: {mode: height} }
-# Add {type: pointcloud, label: Lidar} under home.widgets for a compact view.
-# Optional central controls: {type: rosbag_playback, label: Replay controls}.
+#   # domain_id: 0              # omit = sole visible domain; ambiguous domains need a choice
+#   fixed_frame: ""             # default empty: choose a TF frame in the UI; e.g. map or odom
+#   tf_topics: [/tf]             # up to 16 names; [] disables dynamic TF subscriptions
+#   tf_static_topics: [/tf_static] # up to 16 names; [] disables static TF subscriptions
+#   time_source: live            # live | ros_clock
+#   clock_topic: /clock          # one clock publisher in the selected domain for ros_clock
+#   follow_frame: ""             # empty = free camera; e.g. base_link to follow the vehicle
+#   show_frames: false           # TF frame axes
+#   show_grid: true
+#   max_points: 2000000          # retained scene points; integer 1..5000000
+#   max_cloud_points: 500000     # sampled points per cloud; integer 1..2000000
+#   max_memory_mb: 128           # retained data budget; integer 8..256 (shared app limits still apply)
+#   tf_history_s: 10             # dynamic TF retention; integer 1..120 seconds
+#   tf_wait_ms: 500              # live wait for a missing transform; integer 50..10000 ms
+#   playback_service: ""         # optional adapter/player base binding, e.g. /ros3d_replay
+#   playback_state_topic: /ros3d/replay_state # adapter snapshots; "" disables discovery
+#   displays:                    # up to 16 layers; [] starts empty; unique IDs
+#     - id: ouster               # default = topic when omitted
+#       topic: /ouster/points    # PointCloud2; use the actual namespace/topic on your vehicle
+#       enabled: true
+#       color:
+#         mode: height          # height | intensity | field | rgb | flat
+#         # field: reflectivity # required with mode: field; a numeric PointCloud2 field name
+#         # value: "#38bdf8"     # optional with mode: flat; must be #rrggbb
+#       point_size: 2           # pixels, 1..20
+#       opacity: 1              # 0..1
+#       history_s: 0            # scan history, 0..300 s; 0 = latest scan only
+#
+# Sampling bounds browser work, not network traffic. See topic_rates above for link limits.
+# Native bag playback may need to resume after a paused seek before TF/clouds are available.
+# The optional ros3d_replay adapter publishes snapshots for immediate paused previews.
 #
 # ── Home tab (optional) ────────────────────────────────────────────────────────────────────────
 # Lays out the project-specific Home: status pills, ROS2 service buttons, live video, topic
 # readouts, grouped panels. Omit the whole block for the built-in default Home (connection +
 # discovery summary). One malformed widget shows an inline error card and the rest still render.
-# Every optional key below is shown commented with its default.
+# Optional keys are commented; examples are illustrative, with defaults noted where relevant.
+# All widgets accept area (a named layout region) and span (1 | 2 | full); area wins over span.
+# Labels scope remembered choices; use distinct labels for independent widgets.
+# Numeric threshold options: warn_below, warn_above, err_below, err_above (strict < / >).
+# They are optional; errors win over warnings. No thresholds are inferred when omitted.
 #
 # home:
 #   version: 1                 # schema major; unsupported -> banner + default Home
@@ -189,7 +247,9 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # focus: cam1          # the feed in focus at first (default: the first)
 #       # columns: 2           # grid only (default: as many as fit)
 #       # lock: true           # exactly `streams`: no picker, no ✕
-#       # controls: auto       # on every tile
+#       # controls: auto       # auto | record | playback | none, on every tile
+#       # confirm: false       # two-step confirmation when true
+#       # run_id: survey       # recording run prefix suffix sent with activate
 #       # span: full           # (cameras default full)
 #
 #     # -- bag_recorders: every rosbag2 recorder on the graph, its WRITING controlled here ------
@@ -216,8 +276,10 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #
 #     # -- panel: grouped mini-widgets in one card ----------------------------------------------
 #     # Items are readout shorthands (a `field:` with no `type:` — shown as name | value rows,
-#     # inheriting the panel `topic:`) and/or full status / service_button / topic_value configs
-#     # rendered compact. No video, no nested panels. A bad item is one red row; siblings render.
+#     # inheriting the panel `topic:`) and/or compact widgets: status, service_button, topic_value,
+#     # lifecycle, health, rig, gauge, sparkline, indicator, text, and the shipped example_compass
+#     # extension. Other types and nested panels are not panel-capable. A bad item is one red row;
+#     # siblings render.
 #     # NB: a full `type: topic_value` item does NOT inherit the panel topic — only shorthands do.
 #     # All topic rows on one topic share a single bus subscription + decode.
 #     - type: panel
@@ -259,28 +321,36 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # confirm: true          # two-step click before a transition
 #       # run_id: survey         # sent with activate -> recording run prefix suffix
 #
-#     # -- health: service health -- temperatures first ------------------------------------------
-#     # Reads the health camera-service publishes (its docs/HEALTH.md):
-#     #   fleet/<vehicle>/svc/<instance>/health{,/state} -- one JSON snapshot a second, shaped like
-#     # ROS diagnostics. Per instance: a verdict pill (OK / WARN / ERROR / STALE; `offline` when
-#     # the token drops, `silent` when snapshots stop arriving), one row per temperature the camera
-#     # reports (every `temp.<where>_c`: GenICam DeviceTemperature on a GigE camera, the FPA on a
-#     # FLIR Boson with usb.control_device set) with a trend line, and one line per status that is
-#     # not OK. Read-only. The Cameras tab also lists every instance in full with no config at all.
-#     # Also allowed as a panel item (one compact row per temperature).
+#     # -- health: persistent sensor/service overview ------------------------------------------
+#     # Native JSON and standard ROS diagnostics use the shared health: discovery above.
+#     # Each reporter gets a verdict, available temp.<where>_c and supply.power_w readings, and
+#     # severity-colored issue pills. Hover/focus/tap opens messages, vendor codes, hardware,
+#     # source, sample age and voltage/current. Narrow cards show trends in these details;
+#     # wider cards also show inline trends. Offline/stale readings stay labeled last known.
+#     # The picker switches between all reporters (including future arrivals) and a manual set
+#     # saved in this browser. It filters only this widget, not the shared store or Health tab.
+#     # Configured/remembered reporters not yet seen get placeholders. Generic ROS reporters
+#     # can be selected in the picker even without fleet identity metadata.
+#     # Also allowed inside a panel with the same compact overview.
 #     - type: health
-#       label: Camera temperatures
-#       # services: [cam_gige, cam_thermal]   # <instance> or <vehicle>/<instance>; omit = every
-#       #                                     #   instance publishing health
-#       # components: [camera]   # only these (camera | stream | recording); omit = all -- narrows
-#       #                        #   the pill too: [camera] ignores a lossy stream
-#       # details: true          # every status with all its values (default: temperatures + not-OK)
-#       # history_s: 300         # trend window, 0..600 s; 0 = no trend line
-#       # precision: 1           # decimals
-#       # warn_above: 60 / err_above: 70 / warn_below / err_below   colors EVERY temperature shown
-#       #                        #   (one widget per camera model when the limits differ). To have a
-#       #                        #   limit raise the status level and land in the recording's JSON,
-#       #                        #   set it on the camera instead: `health.limits` in its sensor config
+#       label: Sensor health
+#       # services: [vehicle/cam_front, vehicle/top] # omit = discover all; [] = initially none
+#       #                        # instance alone also accepted; qualify for multiple vehicles
+#       # lock: false            # true = hide picker, ignore browser choices, enforce YAML
+#       # components: [camera, temperature, power, stream, sensor alerts] # omit/[] = all
+#       #                        # exact component names, including alert/<vendor code>;
+#       #                        # filters verdict too (can hide excluded component faults)
+#       # details: false         # true = initially expand all components and their values
+#       # history_s: 300         # 0..600 seconds; 0 disables trends; bounded session history
+#       # precision: 1           # measurement decimals; integer 0..6
+#       # warn_above: 60         # illustrative TEMPERATURE-only display thresholds (degrees C)
+#       # err_above: 70          # do not affect watts, producer levels or recorded diagnostics
+#       # warn_below: 0          # choose sensor-specific limits; none enabled by default
+#       # err_below: -10
+#       # span: 1
+#     # Changing YAML services starts a fresh preference scope; distinct labels keep widgets
+#     # independent. Set operational limits in the producer's health.limits when they must
+#     # affect diagnostics/recording (producer uses error_above/error_below, not err_*).
 #
 #     # -- rig: the deployment at a glance (needs rig_agent: true) --------------------------------
 #     # The open run (label · age, New run / End run) and one row per vehicle.yaml entry with its
@@ -341,12 +411,40 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #         - id: fused
 #           label: Fused position
 #           topic: /localization/fix
+#           lat_field: latitude           # per-feed position and heading options
+#           lon_field: longitude
 #           orientation_topic: /imu/data   # independent optional heading per feed
+#           orientation_field: orientation
+#           orientation_frame: enu         # enu | ned
+#           heading_offset_deg: 0
 #           color: "#fbbf24"
 #         - id: reference
 #           label: Reference
 #           topic: /reference/fix
 #           visible: false       # operator can turn this on later
+#
+#     # -- pointcloud: compact ROS 3D scene -----------------------------------------------------
+#     # Inherits the full ros3d: block above. Every scene key (limits, TF, time, frames,
+#     # playback binding and displays) can be set directly here to override that default.
+#     # Unique labels keep per-view UI preferences independent. Not panel-capable.
+#     - type: pointcloud
+#       label: Lidar view
+#       # domain_id: 0
+#       # fixed_frame: map
+#       # time_source: live
+#       # displays:
+#       #   - {id: top, topic: /ouster/points, color: {mode: intensity}, history_s: 3}
+#       # span: full             # default full
+#
+#     # -- rosbag_playback: central controls for an existing player ------------------------------
+#     # Discovers advertised pause/resume/rate/seek capabilities. The snapshot adapter adds
+#     # paused previews, Restart and a runtime loop switch. Does not launch a player.
+#     - type: rosbag_playback
+#       label: Replay controls
+#       # domain_id: 0           # omit = sole visible domain (not inherited from ros3d)
+#       # service: /ros3d_replay  # player node/service BASE, not /pause; default discovery
+#       # state_topic: /ros3d/replay_state # default adapter snapshot topic
+#       # span: full             # default full; not panel-capable
 #
 #     # -- gauge: arc gauge for a numeric field -------------------------------------------------
 #     - type: gauge
@@ -356,8 +454,11 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       max: 100               # required
 #       # min: 0
 #       # unit: "%"
-#       # precision: 0
-#       # warn_below: 30 / err_below: 15 / warn_above / err_above   (arc color)
+#       # precision: 0         # example decimals; omitted = raw numeric formatting
+#       # warn_below: 30        # example arc/value thresholds; none by default
+#       # err_below: 15
+#       # warn_above: 95
+#       # err_above: 100
 #
 #     # -- sparkline: recent history of a numeric field ----------------------------------------
 #     - type: sparkline
@@ -365,10 +466,14 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       topic: /odom
 #       field: twist.twist.linear.x
 #       # window_s: 60         # history kept
-#       # min: 0 / max: 5      # fixed y-range (autoscaled when omitted)
+#       # min: 0               # optional lower y bound; omit for autoscale
+#       # max: 5               # optional upper y bound; must exceed min when both set
 #       # unit: m/s
-#       # precision: 1
-#       # warn_above: 4 ...    # colors the line + value
+#       # precision: 1         # example decimals; omitted = raw numeric formatting
+#       # warn_above: 4         # example line/value thresholds; none by default
+#       # err_above: 5
+#       # warn_below: 0
+#       # err_below: -1
 #
 #     # -- indicator: value -> colored state pill via rules ------------------------------------
 #     # First rule whose conditions all hold wins (conditions: equals, not_equals, below, above,
@@ -381,7 +486,13 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       rules:
 #         - { equals: true,  level: ok,   text: ARMED }
 #         - { equals: false, level: idle, text: disarmed }
-#       # default: { level: warn, text: "?" }
+#       # Other rule shapes (choose conditions for that field; first match wins):
+#       #   - {not_equals: false, level: warn, text: UNKNOWN}
+#       #   - {below: 10, above: 0, level: warn} # conditions on one rule combine with AND
+#       #   - {between: [10, 20], level: ok}   # inclusive bounds
+#       #   - {in: [GUIDED, AUTO], level: ok}
+#       #   - {matches: "^RTK", level: ok, text: RTK} # regex against the string form
+#       # default: { level: warn, text: "?" } # omitted = idle with the raw value
 #
 #     # -- text: static operator notes ---------------------------------------------------------
 #     - type: text
@@ -390,7 +501,13 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #         Ops channel 7. Call the tower before any lift.
 #
 #     # -- custom widgets: projects can add their own types (React, compiled into the image) ---
-#     # See app/src/extensions/README.md — the shipped example is `type: example_compass`.
+#     # See app/src/extensions/README.md. This extension is registered by default; if you remove
+#     # its import from app/src/extensions/index.ts, also remove it from your instance config.
+#     - type: example_compass
+#       label: Heading
+#       topic: /imu/heading
+#       field: data            # numeric heading; dot-path into the decoded message
+#       # units: deg           # deg (default) | rad; also works as a compact panel item
 #
 #     # -- topic_value: live readout — one field, or a format line ------------------------------
 #     - type: topic_value
@@ -403,6 +520,6 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # precision: 1         # decimals (default: raw value)
 #       # unit: V
 #       # warn_below: 22.0     # threshold coloring; any subset of warn/err below/above
-#       # warn_above:
+#       # warn_above: 27.0
 #       # err_below: 20.0
-#       # err_above:
+#       # err_above: 28.0

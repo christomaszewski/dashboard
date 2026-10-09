@@ -126,3 +126,33 @@ agent/                      # dashboard-rig-agent (python): the rig deployment o
 docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is its reference producer)
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
+
+## Sensor and service health
+
+Enable `tabs: [home, health]` for the Health tab; add a Home widget with `type: health` for
+a compact overview. Both consume native service health and standard ROS 2 DiagnosticArray
+messages discovered through Zenoh. They show temperature and electrical telemetry, faults,
+observation age and recent events. Offline observations remain visible for the session;
+Rig inventory also identifies services that have not reported health.
+
+The Home widget auto-populates by default. Use its **All reporters** picker to choose a
+subset; choices are remembered in this browser. Issue pills open details on hover, keyboard
+focus, or tap. Temperature/power readings include units, trends, and explicit last-known
+labels during outages. The Health tab provides attention-first sorting, issue search,
+expandable components, and session events.
+
+```yaml
+- type: health
+  label: Sensors
+  # services: [vehicle/cam_front, vehicle/top]  # optional initial selection
+  # lock: true        # enforce that selection and hide the picker
+  # details: true     # expand component details initially
+  history_s: 300      # 0 disables trends
+```
+
+Give independent widgets distinct labels. Omit `services` for discovery; the picker can
+restore automatic discovery at any time. Changing the YAML list resets its saved selection.
+
+The [shared health specification](docs/SERVICE_HEALTH.md) defines producer adoption, ROS
+identity metadata, topic/domain filters, configuration and validation. ROS health traffic
+must reach the dashboard's router; the browser does not connect to sensor HTTP endpoints.
