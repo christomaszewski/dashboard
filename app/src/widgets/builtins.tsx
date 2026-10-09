@@ -5,6 +5,7 @@ import "../home/widgets/specs";
 import { lazy, Suspense } from "react";
 import type { PointCloudWidgetConfig } from "../ros3d/spec";
 import type { RosbagPlaybackWidgetConfig } from "../playback/rosbagSpec";
+import type { RosImageWidgetConfig } from "../rosimage/spec";
 import { attachWidgetComponent } from "./registry";
 import { StatusWidget } from "../home/widgets/StatusWidget";
 import { ServiceButtonWidget } from "../home/widgets/ServiceButtonWidget";
@@ -43,6 +44,9 @@ attachWidgetComponent("indicator", IndicatorWidget);
 attachWidgetComponent("text", TextWidget);
 const PointCloudWidget = lazy(() => import("../ros3d/PointCloudWidget"));
 const RosbagPlaybackWidget = lazy(() => import("../playback/RosbagPlaybackWidget"));
+const RosImageWidget = lazy(() => import("../rosimage/RosImageWidget"));
+attachWidgetComponent("ros_image", ({ widget }: { widget: RosImageWidgetConfig }) =>
+  <Suspense fallback={<div className="widget-card">Loading image view…</div>}><RosImageWidget widget={widget} /></Suspense>);
 attachWidgetComponent("rosbag_playback", ({ widget }: { widget: RosbagPlaybackWidgetConfig }) =>
   <Suspense fallback={<div className="widget-card">Loading replay controls…</div>}><RosbagPlaybackWidget widget={widget} /></Suspense>);
 attachWidgetComponent("pointcloud", ({ widget }: { widget: PointCloudWidgetConfig }) =>

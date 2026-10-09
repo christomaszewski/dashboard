@@ -127,6 +127,33 @@ docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
 
+## ROS image previews
+
+Use `type: ros_image` on Home to display `sensor_msgs/msg/Image` directly over Zenoh.
+For Ouster, start with `/ouster/nearir_image`; `/ouster/reflec_image`, `/ouster/signal_image`
+and `/ouster/range_image` are alternate views. The driver's `IMG` processor publishes
+destaggered `mono16` panoramas. The existing Cameras widget continues to use WebRTC feeds.
+
+```yaml
+- type: ros_image
+  label: Ouster panorama
+  topic: /ouster/nearir_image
+  topics: [/ouster/nearir_image, /ouster/reflec_image, /ouster/signal_image, /ouster/range_image]
+  normalize: true
+  stale_after_s: 3
+```
+
+The picker subscribes to one topic at a time; ambiguous ROS domains require a choice or
+`domain_id`. Auto contrast changes only grayscale display brightness. Native aspect ratio,
+row padding and pixel byte order are preserved. Silence and disconnection label the last
+frame; changing topics clears it. Hidden Home views release their subscriptions.
+
+Supported encodings: `mono8`, `mono16`, `8UC1`, `16UC1`, `rgb8`, `bgr8`, `rgba8`, `bgra8`.
+Frames are limited to 2 megapixels / 16 MiB. The shared topic store renders at most 5 Hz;
+this does not reduce network traffic. Use vehicle-side per-topic rate limits for slow links.
+CompressedImage and other pixel encodings are reported as unsupported, not guessed.
+See the [complete example](config/infra/dashboard.example.yaml) for every option.
+
 ## Sensor and service health
 
 Enable `tabs: [home, health]` for the Health tab; add a Home widget with `type: health` for

@@ -423,6 +423,24 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #           topic: /reference/fix
 #           visible: false       # operator can turn this on later
 #
+#     # -- ros_image: raw ROS image preview over Zenoh ------------------------------------------
+#     # Separate from WebRTC camera feeds. Supports sensor_msgs/msg/Image mono8/mono16,
+#     # 8UC1/16UC1, rgb8/bgr8/rgba8/bgra8; row padding and pixel byte order are respected.
+#     # Selects one image topic at a time; pauses its subscription when Home is hidden.
+#     # Shared decoding is capped at 5 Hz, but network traffic remains at the publisher rate.
+#     - type: ros_image
+#       label: Ouster panorama
+#       topic: /ouster/nearir_image # initial image; driver proc_mask must include IMG
+#       # topics: [/ouster/nearir_image, /ouster/reflec_image, /ouster/signal_image, /ouster/range_image]
+#       #                         # picker allowlist including topic; omit = all ROS Image topics
+#       # domain_id: 0            # omit = unique matching topic; choose if domains are ambiguous
+#       # normalize: true         # per-frame grayscale contrast; off = full 8/16-bit range
+#       # stale_after_s: 3         # positive finite seconds; silence labels the retained frame
+#       # span: full              # default full; keeps native aspect ratio; not panel-capable
+#     # Ouster panoramas are already destaggered by its driver. No calibration/remapping needed.
+#     # Rendering limits: 2 megapixels, 16 MiB input, 16384 per dimension. Unsupported encodings
+#     # produce a visible error; JPEG/PNG CompressedImage topics need a different decoder.
+#
 #     # -- pointcloud: compact ROS 3D scene -----------------------------------------------------
 #     # Inherits the full ros3d: block above. Every scene key (limits, TF, time, frames,
 #     # playback binding and displays) can be set directly here to override that default.

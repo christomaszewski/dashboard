@@ -937,6 +937,17 @@ ul.plain {
 
 /* ---- home panels ------------------------------------------------------------------------------ */
 
+.widget-ros-image { min-width: 0; }
+.ros-image-heading, .ros-image-status { width: 100%; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem 1rem; font-size: 0.75rem; }
+.ros-image-heading .widget-label { margin-right: auto; }
+.ros-image-heading label { display: flex; align-items: center; gap: 0.4rem; min-width: 0; max-width: 100%; }
+.ros-image-heading select { min-width: 0; max-width: 100%; width: auto; padding: 0.3rem 0.4rem; }
+.ros-image-heading input { width: auto; margin: 0; }
+.ros-image-frame { width: 100%; min-height: 100px; background: #080b10; border-radius: var(--radius-sm); overflow: hidden; display: grid; place-items: center; }
+.ros-image-frame canvas { display: block; max-width: 100%; width: 100%; height: auto; max-height: 480px; object-fit: contain; }
+.ros-image-frame canvas[hidden] { display: none; }
+.ros-image-frame > span { padding: 1rem; font-size: 0.8rem; }
+
 .widget-panel {
   gap: 0.5rem;
 }

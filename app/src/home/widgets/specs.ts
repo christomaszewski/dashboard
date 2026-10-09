@@ -9,6 +9,7 @@ import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type T
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
 import "../../ros3d/spec";
 import "../../playback/rosbagSpec";
+import "../../rosimage/spec";
 
 export type { GaugeWidgetConfig, SparklineWidgetConfig, IndicatorWidgetConfig, TextWidgetConfig } from "./primitives/specs";
 
