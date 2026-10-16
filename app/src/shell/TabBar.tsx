@@ -2,6 +2,7 @@ import type { TabId } from "./useHashRoute";
 
 const LABELS: Record<TabId, string> = {
   home: "Home",
+  health: "Health",
   cameras: "Cameras",
   ros: "ROS",
   ros3d: "3D",

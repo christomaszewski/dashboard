@@ -29,6 +29,14 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   revision. Runtime edits last until the service restarts. Each camera session writes a
   `<prefix>.recording-settings.json` alongside its MKV/CSV files in the run directory, available
   through the Rig run browser. Older camera-service versions keep their existing start/stop UI.
+- Service health: a `health` Home widget (and a zero-config **Cameras → Health** card) reads the
+  health camera-service publishes on Zenoh (`fleet/<vehicle>/svc/<instance>/health{,/state}`, its
+  `docs/HEALTH.md` — ROS-diagnostics-shaped JSON, no ROS involved): per instance a verdict pill
+  (OK / WARN / ERROR / STALE, `offline` when its token drops, `silent` when snapshots stop), every
+  temperature it reports (`temp.<where>_c`: a GigE camera's GenICam `DeviceTemperature`, a FLIR
+  Boson's FPA) with a trend line, and each status that is not OK in the producer's own words.
+  Read-only. Thresholds on the widget color the reading; limits that should be recorded with the
+  data belong in the sensor config (`health.limits`).
 - ROS 3D: `pointcloud` Home widget and opt-in `ros3d` tab show timestamped PointCloud2 overlays
   and accumulated scans through TF. They follow live data or external playback; optional central
   controls use a separate `rosbag_playback` widget. See [docs/ROS_3D.md](docs/ROS_3D.md).
@@ -118,3 +126,60 @@ agent/                      # dashboard-rig-agent (python): the rig deployment o
 docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is its reference producer)
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
+
+## ROS image previews
+
+Use `type: ros_image` on Home to display `sensor_msgs/msg/Image` directly over Zenoh.
+For Ouster, start with `/ouster/nearir_image`; `/ouster/reflec_image`, `/ouster/signal_image`
+and `/ouster/range_image` are alternate views. The driver's `IMG` processor publishes
+destaggered `mono16` panoramas. The existing Cameras widget continues to use WebRTC feeds.
+
+```yaml
+- type: ros_image
+  label: Ouster panorama
+  topic: /ouster/nearir_image
+  topics: [/ouster/nearir_image, /ouster/reflec_image, /ouster/signal_image, /ouster/range_image]
+  normalize: true
+  stale_after_s: 3
+```
+
+The picker subscribes to one topic at a time; ambiguous ROS domains require a choice or
+`domain_id`. Auto contrast changes only grayscale display brightness. Native aspect ratio,
+row padding and pixel byte order are preserved. Silence and disconnection label the last
+frame; changing topics clears it. Hidden Home views release their subscriptions.
+
+Supported encodings: `mono8`, `mono16`, `8UC1`, `16UC1`, `rgb8`, `bgr8`, `rgba8`, `bgra8`.
+Frames are limited to 2 megapixels / 16 MiB. The shared topic store renders at most 5 Hz;
+this does not reduce network traffic. Use vehicle-side per-topic rate limits for slow links.
+CompressedImage and other pixel encodings are reported as unsupported, not guessed.
+See the [complete example](config/infra/dashboard.example.yaml) for every option.
+
+## Sensor and service health
+
+Enable `tabs: [home, health]` for the Health tab; add a Home widget with `type: health` for
+a compact overview. Both consume native service health and standard ROS 2 DiagnosticArray
+messages discovered through Zenoh. They show temperature and electrical telemetry, faults,
+observation age and recent events. Offline observations remain visible for the session;
+Rig inventory also identifies services that have not reported health.
+
+The Home widget auto-populates by default. Use its **All reporters** picker to choose a
+subset; choices are remembered in this browser. Issue pills open details on hover, keyboard
+focus, or tap. Temperature/power readings include units, trends, and explicit last-known
+labels during outages. The Health tab provides attention-first sorting, issue search,
+expandable components, and session events.
+
+```yaml
+- type: health
+  label: Sensors
+  # services: [vehicle/cam_front, vehicle/top]  # optional initial selection
+  # lock: true        # enforce that selection and hide the picker
+  # details: true     # expand component details initially
+  history_s: 300      # 0 disables trends
+```
+
+Give independent widgets distinct labels. Omit `services` for discovery; the picker can
+restore automatic discovery at any time. Changing the YAML list resets its saved selection.
+
+The [shared health specification](docs/SERVICE_HEALTH.md) defines producer adoption, ROS
+identity metadata, topic/domain filters, configuration and validation. ROS health traffic
+must reach the dashboard's router; the browser does not connect to sensor HTTP endpoints.

@@ -9,6 +9,7 @@ import { isObj, optBool, optNum, optStr, optThresholds, reqStr, type Obj, type T
 import "./primitives/specs"; // gauge / sparkline / indicator / text register alongside
 import "../../ros3d/spec";
 import "../../playback/rosbagSpec";
+import "../../rosimage/spec";
 
 export type { GaugeWidgetConfig, SparklineWidgetConfig, IndicatorWidgetConfig, TextWidgetConfig } from "./primitives/specs";
 
@@ -154,6 +155,26 @@ export interface LifecycleWidgetConfig extends BaseWidgetConfig {
   confirm?: boolean; // two-step click before a transition
   run_id?: string; // passed with activate (recording run prefix suffix)
 }
+
+/** Service health (docs/SERVICE_HEALTH.md): a verdict, temperature/power trends, and issue pills.
+ *  The thresholds color each
+ *  temperature here; the producer's own limits (`health.limits` in the sensor config) arrive as the
+ *  status level + message, and are the ones recorded with the data. */
+export interface HealthWidgetConfig extends BaseWidgetConfig, Thresholds {
+  type: "health";
+  /** Instances (`cam0`) or vehicle-qualified (`veh1/cam0`) — fleet/<v>/svc/<instance>/health.
+   *  Omit = every instance publishing health. */
+  services?: string[];
+  /** Only these components (camera | stream | recording | …). Omit = all. */
+  components?: string[];
+  /** Hide the picker and always use the configured services (or all reporters when omitted). */
+  lock?: boolean;
+  /** Open component details by default (default false: compact metrics and issue pills). */
+  details?: boolean;
+  history_s: number; // trend window (default 300, at most the 600 the app keeps); 0 = no trend line
+  precision: number; // decimals on measurements (default 1)
+}
+export const HEALTH_HISTORY_MAX_S = 600;
 
 export interface RigWidgetConfig extends BaseWidgetConfig {
   type: "rig";
@@ -364,6 +385,33 @@ defineWidget<MapWidgetConfig>({
   defaultSpan: 2,
   label: (w) => w.label ?? w.topic ?? "Position",
   parse: parseMapWidget,
+});
+
+defineWidget<HealthWidgetConfig>({
+  type: "health",
+  description: "sensor/service health: discovered or selected reporters, temperature/power trends, and issue pills with details",
+  panelCapable: true,
+  label: (w) => w.label ?? "health",
+  parse: (raw: Obj) => {
+    const history = optNum(raw, "history_s") ?? 300;
+    if (history < 0 || history > HEALTH_HISTORY_MAX_S) {
+      throw new Error(`'history_s' must be between 0 (no trend line) and ${HEALTH_HISTORY_MAX_S}, got ${history}`);
+    }
+    const precision = optNum(raw, "precision") ?? 1;
+    if (!Number.isInteger(precision) || precision < 0 || precision > 6) {
+      throw new Error(`'precision' must be an integer from 0 to 6, got ${precision}`);
+    }
+    return {
+      label: optStr(raw, "label"),
+      services: optStrList(raw, "services"),
+      components: optStrList(raw, "components"),
+      lock: optBool(raw, "lock"),
+      details: optBool(raw, "details"),
+      history_s: history,
+      precision,
+      ...optThresholds(raw),
+    };
+  },
 });
 
 defineWidget<LifecycleWidgetConfig>({

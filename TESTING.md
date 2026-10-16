@@ -192,6 +192,29 @@ Needs a camera-service core with the zenoh control plane (`feat/zenoh-control-pl
    without any click (state publication). Kill the core → pill shows `… · offline`, card survives
    the 15 s grace, and a restart resumes the last commanded state (`resumed` chip).
 
+## Service health (camera-service temperatures — on-vehicle acceptance)
+
+Needs a camera-service core with health (`feat/health` — on by default, published on the control
+plane's session, so `control.enabled: true`). Contract: camera-service `docs/HEALTH.md`. The
+`camera` component (the temperatures) exists only where a device provider applies: a `gige` source
+(GenICam), or a `usb` source with `usb.control_protocol: flir-boson` + `usb.control_device` set.
+1. **Discovery**: each core's token appears in Bus debug liveliness as
+   `fleet/<vehicle>/svc/<instance>/health`, and `…/health/state` carries one JSON snapshot a second.
+   The Cameras tab grows a **Health** card listing every instance with all statuses and values. No
+   config needed.
+2. **Temperatures**: a `type: health` home widget shows per instance a pill and one row per
+   `temp.<where>_c` — GigE: one per `DeviceTemperatureSelector` entry (`sensor`, `mainboard`, …) or a
+   single `device`; Boson: `sensor` (the FPA) — each with a trend line that fills in over the first
+   seconds. The readings track the camera (cover the Boson's lens/body, or compare against the
+   vendor tool with the service stopped — one process per serial port).
+3. **Limits**: set `health.limits: {temp.sensor_c: {warn_above: <below the current reading>}}` in the
+   sensor config and restart that camera → pill `WARN`, a line `camera WARN · temp.sensor_c 41.2 > 30`.
+   Widget thresholds (`warn_above:` on the widget) color the reading without touching the level.
+4. **Silence and absence**: `docker pause <core>` → `silent Ns` after ~5 s with the last readings
+   dimmed, back to `OK` on unpause. Kill the core → `offline`, kept for the 15 s grace, then gone
+   (a `services:`-listed instance stays as `not advertised`). Unplug the Boson's USB → `camera`
+   goes `STALE` after `stale_after_s` while `stream` reports the reconnect.
+
 ## Rig control surface (rig agent — bench + on-vehicle acceptance)
 
 Contract: [docs/RIG_AGENT.md](docs/RIG_AGENT.md). Producer: `agent/` (`dashboard-rig-agent`, opt-in
