@@ -51,3 +51,14 @@ it("puts faults first and searches their messages and vendor codes", () => {
   fireEvent.change(screen.getByLabelText("Filter health services"), { target: { value: "POWER_LOW" } });
   expect(names()).toEqual(["z_fault"]);
 });
+
+it("shows healthy navigation in the shared summary without expanding component details", () => {
+  renderWith(<HealthTab />, { healths: [health("ins", {
+    gnss: { values: { "gnss.fix_type": "RTK_INT", "gnss.sv_used": "21" } },
+    ekf: { values: { "ekf.solution_mode": "NAV_POSITION" } },
+    "gnss heading": { values: { "gnss.heading_valid": "true" } },
+  })] });
+  for (const name of ["GNSS: RTK fixed", "satellites: 21", "EKF: Nav position", "heading: Valid"])
+    expect(screen.getByRole("button", { name })).toBeTruthy();
+  expect(document.querySelector(".health-component-details")?.hasAttribute("open")).toBe(false);
+});
