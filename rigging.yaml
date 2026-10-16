@@ -23,15 +23,16 @@ host_ports:           # config keys rig reads to validate cross-service port cla
 
 external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar is a stateless client
 
-# Image resolution is NOT read by rig -- it's dash-up's env contract, documented here for reference:
+# dash-up's registry contract; images.override_env below lets rig inject catalog digests:
 #   DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY, which dash-up honors) -> <registry>/<name>:<tag>
 #   DASH_IMAGE_TAG default = arm64 (platform-agnostic: no NVENC/JetPack split)
 #   per-image overrides: DASH_ZENOH_IMAGE, DASH_WEB_IMAGE
 
 build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
   command: tools/build-images.sh
-  arch: arm64                       # plain arm64 (also runs on an x86 off-vehicle host)
   images: [dashboard-zenoh, dashboard-web, dashboard-rig-agent]   # all built + pushed by build-images.sh
+  architectures: [arm64, amd64]
+  capabilities: {no_cache: true, platforms: true}
 
 # (no `mirror:` -- the web layer is now a built image with caddy + the bundle baked in, not a mirrored base)
 
@@ -49,3 +50,6 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)
   - config/infra/dashboard.example.yaml
+
+images:
+  override_env: {dashboard-zenoh: DASH_ZENOH_IMAGE, dashboard-web: DASH_WEB_IMAGE, dashboard-rig-agent: DASH_AGENT_IMAGE}

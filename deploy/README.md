@@ -85,3 +85,11 @@ reproducibility. If/when an official `zenoh-bridge-remote-api` image exists, swa
 
 - Pin `ZENOH_TS_REF` to a release tag (the workspace pulls `zenoh` from git `main`).
 - Swap to an official remote-api image if one is published.
+
+## Portable image builds
+
+The build contract declares Linux arm64 and amd64. A portable `rig build` publishes all three
+Dashboard images as multiarch indexes, and `--no-cache` reaches every image build (`--pull` also
+refreshes parents). Standalone `tools/build-images.sh REGISTRY TAG` still builds the host architecture;
+set `RIG_BUILD_PLATFORMS=linux/arm64,linux/amd64` for a standalone multiarch push. Verify forwarding
+with `rig certify --repo . --require-build-check` from the repository root.
