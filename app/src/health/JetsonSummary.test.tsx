@@ -12,6 +12,7 @@ import { diagnosticStatuses } from "./diagnostics";
 import { HealthTab } from "./HealthTab";
 import { statusCurrent, type HealthService } from "./types";
 import fixture from "./jetson-fixture.json";
+import jp7 from "./jetson-jp7-live.json";
 
 vi.mock("../rig/RigContext", () => ({ useRigContext: () => ({ agents: [] }) }));
 afterEach(() => { cleanup(); localStorage.clear(); });
@@ -31,6 +32,27 @@ const profile = () => screen.getByRole("button", { name: /^Power profile:/ });
 const mode = (service: HealthService) => service.snapshot.status.find((s) => s.name === "jetson: power_mode")!;
 
 describe("Jetson ROS health", () => {
+  it.each([["Home", widget], ["compact panel", <HealthWidget widget={{ type: "health", history_s: 0, precision: 1 }} compact />], ["Health tab", <HealthTab />]])(
+    "renders live JP7 CDR in %s, preserving lowercase zones, unavailable sensors and MAXN", async (_name, view) => {
+      const decoder = await buildRos2StaticDecoder(jp7.type);
+      const message = decoder.decode(Uint8Array.from(atob(jp7.diagnostics), (c) => c.charCodeAt(0)));
+      expect(jp7.synthetic).toBe(false);
+      expect(decoder.lastWarning?.()).toBeUndefined();
+      const service = health("jetson", {}, { vehicleId: "dev_orin", source: "ros2" });
+      service.snapshot = { ...service.snapshot, service: "jetson-manager", status: diagnosticStatuses(message) };
+      renderWith(view, { healths: [service] });
+      expect(profile().textContent).toContain("MAXN (id 0)");
+      for (const name of ["cpu", "soc0", "soc1", "soc2", "tj", "nvme0"]) {
+        const reading = screen.getByRole("button", { name: new RegExp(`^${name} temperature:`) });
+        expect(reading.querySelector(".row-value")?.textContent).not.toContain("—");
+      }
+      for (const name of ["gpu", "cv0", "cv1", "cv2"]) {
+        const reading = screen.getByRole("button", { name: new RegExp(`^${name} temperature:`) });
+        expect(reading.querySelector(".row-value")?.textContent).toContain("—");
+        expect(reading.textContent).toContain("unavailable");
+      }
+    });
+
   it.each([["Home", widget], ["compact panel", <HealthWidget widget={{ type: "health", history_s: 0, precision: 1 }} compact />], ["Health tab", <HealthTab />]])(
     "shows real producer temperatures and observed power profile in %s", async (_name, view) => {
       const { service } = await jetson();

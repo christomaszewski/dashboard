@@ -39,3 +39,8 @@ python3 tools/generate_health_fixture.py > jetson-fixture.json
 it through the fleet health store and tests all three UI views, missing/stale
 readings, disconnects, component filters and switching semantics. Hardware
 verification is separate; this fixture is not a real Orin capture.
+
+`app/src/health/jetson-jp7-live.json` is a separate **real** capture from an AGX
+Orin 64GB on L4T 39.2.1, collected by `tools/check_health.py --capture` from the
+running Lyrical ROS node. It exercises the same three views with the board's
+lowercase zone names, unavailable GPU/CV sensors and observed `MAXN` (ID 0).
