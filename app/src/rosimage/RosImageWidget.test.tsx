@@ -20,24 +20,62 @@ const frame = { width: 2, height: 1, step: 4, encoding: "mono16", is_bigendian: 
 let callbacks: Map<string, (sample: Sample) => void>;
 let put: ReturnType<typeof vi.fn>;
 let subscribe: ReturnType<typeof vi.fn>;
+let declareRosSubscriber: ReturnType<typeof vi.fn>;
+let announcements: Map<string, { bufferAware: boolean }>;
 const tick = (ms = 210) => act(async () => { await vi.advanceTimersByTimeAsync(ms); });
 const publish = async (entry = world.topics[0], message = frame) => {
-  await act(async () => callbacks.get(entry.dataKeyexpr)?.({ kind: "put", keyexpr: entry.dataKeyexpr, payload: new TextEncoder().encode(JSON.stringify(message)) }));
+  // Lyrical buffer-aware publishers need a matching CPU endpoint, not just a Zenoh listener.
+  const needsCpu = entry.publishers.some((p) => p.keyexpr.includes("/backends:"));
+  if (!needsCpu || announcements.get(`${entry.domainId}:${entry.name}`)?.bufferAware) {
+    await act(async () => callbacks.get(entry.dataKeyexpr)?.({ kind: "put", keyexpr: entry.dataKeyexpr, payload: new TextEncoder().encode(JSON.stringify(message)) }));
+  }
   await tick();
 };
 beforeEach(() => {
   vi.useFakeTimers();
   callbacks = new Map(); world.topics = [topic()]; world.status = "connected"; world.active = true;
+  announcements = new Map();
   put = vi.fn();
   const ctx = { createImageData: (width: number, height: number) => ({ width, height, data: new Uint8ClampedArray(width * height * 4) }), putImageData: put };
   vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(ctx as unknown as CanvasRenderingContext2D);
   subscribe = vi.fn(async (key: string, cb: (sample: Sample) => void) => {
     callbacks.set(key, cb); return { close: async () => { callbacks.delete(key); } };
   });
-  const transport = { subscribe, get: async () => [], close: async () => {}, liveliness: { get: async () => [], subscribe: async () => ({ close: async () => {} }) } } as Transport;
+  declareRosSubscriber = vi.fn(async (info: Parameters<NonNullable<Transport["declareRosSubscriber"]>>[0]) => {
+    const id = `${info.domainId}:${info.name}`;
+    announcements.set(id, info);
+    return { close: async () => { announcements.delete(id); } };
+  });
+  const transport = { subscribe, declareRosSubscriber, get: async () => [], close: async () => {}, liveliness: { get: async () => [], subscribe: async () => ({ close: async () => {} }) } } as Transport;
   world.store = new TopicStore({ transport, lingerMs: 0, resolver: { resolve: async () => ({ decode: (bytes) => JSON.parse(new TextDecoder().decode(bytes)) }) } });
 });
 afterEach(() => { cleanup(); world.store?.closeAll(); vi.restoreAllMocks(); vi.useRealTimers(); });
+
+it("starts each buffer-aware image without topic echo and releases its ROS announcement", async () => {
+  world.topics = [topic(), topic("/ouster/reflec_image")].map((t) => buildGraph(
+    t.publishers.map((p) => `${p.keyexpr}/backends:cpu:`),
+  ).topics[0]);
+  const view = render(<RosImageWidget widget={settings} />);
+  await tick(); await publish();
+  expect(screen.getByText("live")).toBeTruthy();
+  expect(declareRosSubscriber).toHaveBeenCalledWith(expect.objectContaining({
+    domainId: 1, name: "/ouster/nearir_image", typeDds: "sensor_msgs::msg::dds_::Image_",
+    typeHash: "RIHS01_image", transientLocal: false, bufferAware: true,
+  }));
+
+  // Our own announcement rebuilds the graph; this must not cause a subscribe/announce loop.
+  world.topics = world.topics.map((t) => ({ ...t, publishers: [...t.publishers] }));
+  view.rerender(<RosImageWidget widget={settings} />); await tick();
+  expect(subscribe).toHaveBeenCalledTimes(1);
+  expect(declareRosSubscriber).toHaveBeenCalledTimes(1);
+
+  fireEvent.change(screen.getByRole("combobox", { name: "Image topic for Lidar" }), { target: { value: "/ouster/reflec_image" } });
+  await tick(); await publish(world.topics[1]);
+  expect(screen.getByText("live")).toBeTruthy();
+  expect([...announcements.keys()]).toEqual(["1:/ouster/reflec_image"]);
+  world.active = false; view.rerender(<RosImageWidget widget={settings} />); await tick();
+  expect(announcements.size).toBe(0);
+});
 
 it("renders decoded pixels, ages a stopped stream, and does not refresh it on contrast changes", async () => {
   render(<RosImageWidget widget={settings} />);

@@ -2,8 +2,8 @@ import { formatValue, thresholdLevel } from "../home/value";
 import { HealthInstance, temperatureLabel, useTrend, type HealthViewOptions, type Measurement } from "./HealthInstance";
 import { HealthTooltip } from "./HealthTooltip";
 import { healthIssues, observationText } from "./summary";
-import { componentOf, healthVerdict, metricUnit, reporterCurrent, selectStatuses, statusCurrent, temperatureWhere,
-  type HealthService, type HealthStatus } from "./types";
+import { componentOf, healthVerdict, levelClass, metricUnit, reporterCurrent, selectStatuses, statusCurrent, temperatureWhere,
+  type HealthService, type HealthStatus, type HealthValue } from "./types";
 
 function SourceDetail({ service }: { service: HealthService }) {
   return <span className="health-tooltip-source">{service.vehicleId} · {service.sourceLabel ?? "Zenoh JSON"}<br />{service.key}</span>;
@@ -55,6 +55,55 @@ function SummaryMetric({ service, reading, options, nowMs, connected, missing }:
       <path d={trend.d} fill="none" vectorEffect="non-scaling-stroke" />
     </svg>}
     {!current && <span className="health-metric-quality">{missing ? "unavailable" : "last known"}</span>}
+  </HealthTooltip>;
+}
+
+interface NavigationField {
+  key: string;
+  label: string;
+  format: (value: HealthValue) => string | null;
+}
+
+function navigationState(value: HealthValue, labels: Record<string, string>): string | null {
+  if (typeof value !== "string") return null;
+  const text = value.trim();
+  if (!text || text === "null") return null;
+  return Object.hasOwn(labels, text) ? labels[text] : text;
+}
+
+// ROS preserves these vendor KeyValues as strings; native health may use numbers/booleans.
+// Interpret only these displayed fields, leaving the underlying diagnostics untouched.
+const NAVIGATION_FIELDS: readonly NavigationField[] = [
+  { key: "gnss.fix_type", label: "GNSS", format: (v) => navigationState(v, {
+    NO_SOLUTION: "No fix", SINGLE: "Single", SBAS: "SBAS", RTK_FLOAT: "RTK float", RTK_INT: "RTK fixed",
+  }) },
+  { key: "gnss.sv_used", label: "satellites", format: (v) => {
+    const n = typeof v === "number" ? v : typeof v === "string" && /^\d+$/.test(v.trim()) ? Number(v) : NaN;
+    return Number.isSafeInteger(n) && n >= 0 ? String(n) : null;
+  } },
+  { key: "ekf.solution_mode", label: "EKF", format: (v) => navigationState(v, {
+    UNINITIALIZED: "Uninitialized", VERTICAL_GYRO: "Vertical gyro", AHRS: "AHRS",
+    NAV_VELOCITY: "Nav velocity", NAV_POSITION: "Nav position",
+  }) },
+  { key: "gnss.heading_valid", label: "heading", format: (v) =>
+    v === true || v === "true" ? "Valid" : v === false || v === "false" ? "Invalid" : null },
+];
+
+function NavigationIndicator({ service, status, field, nowMs, connected }: {
+  service: HealthService; status: HealthStatus; field: NavigationField; nowMs: number; connected: boolean;
+}) {
+  const text = field.format(status.values[field.key]);
+  const state = status.values[`health.metric.${field.key}.state`];
+  const current = text !== null && connected && reporterCurrent(service, nowMs) &&
+    (!state || state === "current") && statusCurrent(service, status, nowMs);
+  const color = current ? levelClass(status.level) : "idle";
+  const quality = text === null ? "unavailable" : current ? null : "last known";
+  return <HealthTooltip className={`health-summary-metric health-summary-navigation ${color}`}
+    label={`${field.label}: ${text ?? "—"}${quality ? `, ${quality}` : ""}`}
+    detail={<StatusDetail service={service} status={status} nowMs={nowMs} connected={connected} />}>
+    <span className="health-metric-label">{field.label}</span>
+    <span className={`row-value ${color}`}>{text ?? "—"}</span>
+    {quality && <span className="health-metric-quality">{quality}</span>}
   </HealthTooltip>;
 }
 
@@ -142,6 +191,9 @@ export function HealthSummary({ service, options = {}, nowMs, qualified = false,
     return [{ reading: { status, component: componentOf(status, service.instance), key, where: where ?? "power",
       value: typeof value === "number" ? value : 0, unit: where === null ? "W" : "°C" }, missing: value === null }];
   }));
+  const navigation = NAVIGATION_FIELDS.flatMap((field) => statuses
+    .filter((status) => Object.hasOwn(status.values, field.key) && status.values[`health.metric.${field.key}.state`] !== "unsupported")
+    .map((status) => ({ field, status })));
   const hardware = [...new Set(statuses.map((s) => s.hardware_id).filter(Boolean))];
   return <div className="health-instance health-summary" data-instance={service.instance} data-service-key={service.key}>
     <div className="health-head">
@@ -156,9 +208,11 @@ export function HealthSummary({ service, options = {}, nowMs, qualified = false,
         {!connected && verdict.level === "ok" ? "last known OK" : verdict.text}
       </HealthTooltip>
     </div>
-    {readings.length > 0 && <div className="health-summary-metrics">{readings.map(({ reading, missing }) =>
+    {(readings.length > 0 || navigation.length > 0) && <div className="health-summary-metrics">{readings.map(({ reading, missing }) =>
       <SummaryMetric key={`${reading.status.name}/${reading.key}`} service={service} reading={reading} missing={missing}
-        options={options} nowMs={nowMs} connected={connected} />)}</div>}
+        options={options} nowMs={nowMs} connected={connected} />)}
+      {navigation.map(({ field, status }) => <NavigationIndicator key={`${status.name}/${field.key}`}
+        service={service} status={status} field={field} nowMs={nowMs} connected={connected} />)}</div>}
     <RadioSummary service={service} statuses={statuses} nowMs={nowMs} connected={connected} />
     <PowerModeSummary service={service} statuses={statuses} nowMs={nowMs} connected={connected} />
     {issues.length > 0 && <div className="health-issues" aria-label={`${service.instance} issues`}>

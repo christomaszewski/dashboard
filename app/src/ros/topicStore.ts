@@ -10,14 +10,11 @@ import type { Subscription, Transport } from "../transport/types";
 import type { DecodedMessage, Decoder, SchemaResolver } from "../schema/types";
 import { RateMonitor } from "../home/rate";
 import { topicStreams } from "./topicStreamPool";
+import type { TopicEntry } from "./graph";
 
-export interface TopicKeyInfo {
-  /** The store key — the rmw_zenoh data keyexpr (embeds domain/name/type/hash). */
-  dataKeyexpr: string;
-  typeName: string;
-  typeHash: string;
-  transientLocal: boolean;
-}
+// Keep the graph metadata through to the stream pool: a data subscription alone does not
+// activate CPU delivery from Lyrical buffer-aware publishers (including sensor_msgs/Image).
+export type TopicKeyInfo = TopicEntry;
 
 export interface TopicSnapshot {
   key: string;
@@ -200,7 +197,7 @@ export class TopicStore {
         entry.monitor.record(this.now());
         entry.sampleCount += 1;
         // No React work here — samples can arrive at hundreds of Hz; flush() notifies at 5 Hz.
-      })
+      }, entry.info)
       .then((sub) => {
         if (entry.closed) return void sub.close();
         entry.sub = sub;

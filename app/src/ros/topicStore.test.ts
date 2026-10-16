@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { TopicStore, type TopicKeyInfo } from "./topicStore";
+import { buildGraph } from "./graph";
+import { topicStreams } from "./topicStreamPool";
 import type { GetReply, Sample, Subscription, Transport } from "../transport/types";
 import type { Decoder, SchemaResolver, TypeIdentity } from "../schema/types";
 
@@ -12,6 +14,8 @@ class FakeTransport implements Transport {
   deferSubscribe = false;
   failSubscribe = false;
   private pendingSubs: (() => void)[] = [];
+  tokenClose = vi.fn(async () => undefined);
+  declareRosSubscriber = vi.fn(async () => ({ close: this.tokenClose }));
 
   subscribe(keyexpr: string, onSample: (s: Sample) => void): Promise<Subscription> {
     if (this.failSubscribe) return Promise.reject(new Error("bridge down"));
@@ -65,12 +69,9 @@ class FakeResolver implements SchemaResolver {
   }
 }
 
-const INFO: TopicKeyInfo = {
-  dataKeyexpr: "0/battery_state/sensor_msgs::msg::dds_::BatteryState_/RIHS01_aa",
-  typeName: "sensor_msgs/msg/BatteryState",
-  typeHash: "RIHS01_aa",
-  transientLocal: false,
-};
+const INFO: TopicKeyInfo = buildGraph([
+  "@ros2_lv/0/z/1/1/MP/%/%/battery/%battery_state/sensor_msgs::msg::dds_::BatteryState_/RIHS01_aa/2:2:1,10",
+]).topics[0];
 const KEY = INFO.dataKeyexpr;
 
 // ---- spec -------------------------------------------------------------------------------------
@@ -103,7 +104,32 @@ describe("TopicStore", () => {
     store.acquire(INFO);
     await tick(0);
     expect(transport.subs).toHaveLength(1);
+    expect(transport.declareRosSubscriber).toHaveBeenCalledTimes(1);
+    expect(transport.declareRosSubscriber).toHaveBeenCalledWith(expect.objectContaining({
+      domainId: 0, name: INFO.name, typeDds: INFO.typeDds, typeHash: INFO.typeHash, bufferAware: false,
+    }));
     expect(resolver.resolveCalls).toHaveLength(1);
+  });
+
+  it("announces rate-only consumers and shares the endpoint with raw viewers until the last release", async () => {
+    const info = buildGraph([
+      "@ros2_lv/1/z/1/2/MP/%/%ouster/driver/%ouster%nearir_image/sensor_msgs::msg::dds_::Image_/RIHS01_image/2:2:1,10/backends:cpu:",
+    ]).topics[0];
+    const handle = store.acquire(info, { decode: false });
+    await tick(0);
+    expect(resolver.resolveCalls).toHaveLength(0);
+    expect(transport.declareRosSubscriber).toHaveBeenCalledWith(expect.objectContaining({
+      domainId: 1, name: info.name, bufferAware: true,
+    }));
+    const raw = await topicStreams(transport).subscribe(info.dataKeyexpr, vi.fn(), info);
+    expect(transport.subs).toHaveLength(1);
+    expect(transport.declareRosSubscriber).toHaveBeenCalledTimes(1);
+    handle.release(); await tick(1000);
+    expect(transport.tokenClose).not.toHaveBeenCalled();
+    expect(transport.subs[0].closed).toBe(false);
+    await raw.close(); await tick(0);
+    expect(transport.tokenClose).toHaveBeenCalledTimes(1);
+    expect(transport.subs[0].closed).toBe(true);
   });
 
   it("decodes at most once per flush and shares the message", async () => {

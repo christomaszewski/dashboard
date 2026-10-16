@@ -166,11 +166,67 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #   layout:
 #     columns: "2fr 1fr 1fr"   # optional grid-template-columns tracks (default: equal columns)
 #     areas:
+#       - "preflight preflight preflight"
 #       - "cams cams power"
 #       - "cams cams nav"
 #       - "ctrl ctrl  nav"
 #
 #   widgets:
+#
+#     # -- preflight: a thin, grouped readiness strip (opt-in) -----------------------------------
+#     # Add this widget only to dashboards that need it. The named area above puts it across
+#     # the top row; without a named layout, put it first in widgets and use span: full.
+#     # Omit groups for one Services group with all discovered health reporters. Explicit health
+#     # service references keep required-but-never-seen services visible as red dots.
+#     # Green = healthy/recording/advertised; yellow = warnings or not recording; red = error,
+#     # missing, stale, or disconnected. Hover, keyboard focus, or tap a dot for details.
+#     - type: preflight
+#       area: preflight        # optional named layout region
+#       # span: full           # 1 | 2 | full (default full); ignored when area is supplied
+#       # label: Preflight     # optional widget title; omitted by default
+#       # display: pills       # pills (default: labels + dots) | dots (labels in tooltips only)
+#       # poll_s: 3            # seconds between bag is_paused polls; default 3, minimum 0.5
+#                              # Each call has a fixed 2 s timeout; calls never overlap.
+#       # Group labels and order are yours to choose; any group can mix check types.
+#       # If supplied, groups and each group's checks must be non-empty lists.
+#       groups:
+#         - label: Services    # required group label; shown even with display: dots
+#           checks:
+#             - type: health
+#               service: ouster # optional; omit to show one dot per discovered health reporter
+#               label: Lidar    # optional check label; defaults to the service identity
+#             - type: health
+#               service: ins
+#               label: Navigation
+#               # components: [gps] # optional filter; default is all diagnostic components
+#                                   # Use exact names from Health; a missing component is red.
+#             # For automatic discovery instead of explicit services, use one check:
+#             # - { type: health }
+#         - label: Logging
+#           checks:
+#             - type: bag_recording
+#               recorder: /bag_logger/rosbag2_recorder # required absolute recorder node name
+#                                                      # Do not append /is_paused.
+#               label: ROS bag   # optional; defaults to the recorder name
+#               # domain_id: 0   # optional non-negative integer; otherwise infer a unique domain
+#               # Green = is_paused false; yellow = paused; red = missing or failed status call.
+#               # This checks recorder state, not bytes written to disk.
+#             - type: camera_recording
+#               service: cam0    # required health reporter reference (same format as health)
+#               label: Front     # optional; defaults to the service identity
+#               # Uses stream + recording diagnostics and actual recorded frame counts.
+#               # Green = recording; yellow = up but idle/starting; red = down, stale, or failed.
+#         - label: Readiness
+#           checks:
+#             - type: ros_service
+#               service: /ouster/get_config # required absolute ROS service name
+#               label: Lidar config        # optional; defaults to the service name
+#               # domain_id: 0             # optional non-negative integer; infer if unambiguous
+#               # Green = a server is advertised; red = unavailable or ambiguous.
+#               # This does not call the service or prove that it can respond.
+#     # health/camera references: instance, vehicle/instance, or the full health key. Ambiguous
+#     # references are red. Replace all example names with identities from your deployment.
+#     # domain_id applies only to bag_recording and ros_service; components only to health.
 #
 #     # -- status: presence / rate indicator ----------------------------------------------------
 #     - type: status

@@ -127,6 +127,58 @@ docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
 
+## Preflight strip
+
+Add `type: preflight` as the first Home widget for a thin, full-width readiness strip. It is
+opt-in per dashboard YAML. Groups and checks appear in the configured order; `display: dots`
+hides pill labels while retaining accessible names and hover/focus/tap tooltips.
+
+```yaml
+home:
+  version: 1
+  widgets:
+    - type: preflight
+      span: full
+      groups:
+        - label: Services
+          checks:
+            - { type: health, service: ouster, label: Lidar }
+            - { type: health, service: ins, label: Navigation }
+        - label: Logging
+          checks:
+            - { type: bag_recording, recorder: /bag_logger/rosbag2_recorder, label: ROS bag, domain_id: 0 }
+            - { type: camera_recording, service: cam0, label: Front }
+        - label: Readiness
+          checks:
+            - { type: ros_service, service: /ouster/get_config, label: Lidar config, domain_id: 0 }
+```
+
+With a named grid layout, add a full-width `preflight` row to `home.layout.areas` and assign
+`area: preflight` instead. The strip wraps on narrow screens.
+
+- **Health:** shared native/ROS diagnostics; green for current OK, yellow for warnings or
+  incomplete observations, red for errors, missing reports, or expired observations. Optional
+  `components: [gps, imu]` limits a check to exact diagnostic component names. Missing selected
+  components stay red. Use actual instance/component names from the Health view.
+- **Camera recording:** shared camera health's `stream` and `recording` components, plus camera
+  diagnostics when present. Green requires an active recording with recorded frames and current
+  healthy capture. Inactive, disabled, or still starting is yellow; faults/stalls/silence are red.
+- **Bag recording:** a read-only `is_paused` query every `poll_s` seconds (default 3, minimum 0.5),
+  scheduled after the previous query completes, with a 2-second deadline. Unpaused is green,
+  paused is yellow, missing/invalid/nonresponsive is red. Bag players are excluded. Unpaused
+  does not prove disk throughput. Polling stops while Home is hidden or disconnected.
+- **ROS service:** green when a server is advertised in the selected domain, red when absent.
+  No service is called by this check; advertised presence does not prove the server can respond.
+
+Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Ambiguous
+references or ROS domains require an explicit selection and show red. A disconnected dashboard
+shows red rather than retaining green from an earlier observation. Tooltips explain the reason.
+
+Omitting `groups` gives one Services group containing every discovered health reporter. A
+`{ type: health }` check also expands to all reporters inside a custom group. Explicit service
+references are recommended for required equipment: discovery cannot identify a service that
+has never appeared. The existing health store retains reporters that go offline during a session.
+
 ## ROS image previews
 
 Use `type: ros_image` on Home to display `sensor_msgs/msg/Image` directly over Zenoh.
@@ -148,6 +200,13 @@ The picker subscribes to one topic at a time; ambiguous ROS domains require a ch
 row padding and pixel byte order are preserved. Silence and disconnection label the last
 frame; changing topics clears it. Hidden Home views release their subscriptions.
 
+Watched ROS topics also announce a ROS subscriber, including CPU buffer support when advertised
+by the publisher. Lyrical `rmw_zenoh` image publishers need this announcement to start CPU delivery;
+a plain Zenoh data subscription is insufficient. If Ouster images appear only after running
+`ros2 topic echo` on each topic, rebuild/redeploy `dashboard-web` and reload the page. Affected
+middleware versions can retain departed subscriber state, explaining why delivery may continue
+after echo exits; see the [upstream investigation](https://github.com/ros2/rmw_zenoh/issues/1075).
+
 Supported encodings: `mono8`, `mono16`, `8UC1`, `16UC1`, `rgb8`, `bgr8`, `rgba8`, `bgra8`.
 Frames are limited to 2 megapixels / 16 MiB. The shared topic store renders at most 5 Hz;
 this does not reduce network traffic. Use vehicle-side per-topic rate limits for slow links.
@@ -167,6 +226,15 @@ subset; choices are remembered in this browser. Issue pills open details on hove
 focus, or tap. Temperature/power readings include units, trends, and explicit last-known
 labels during outages. The Health tab provides attention-first sorting, issue search,
 expandable components, and session events.
+
+When reported, the compact summary also shows **GNSS fix**, **satellites used**, **EKF state**,
+and dual-antenna **heading validity** beside temperature. These read `gnss.fix_type`,
+`gnss.sv_used`, `ekf.solution_mode`, and `gnss.heading_valid` from existing diagnostics;
+no widget configuration or extra subscriptions are needed. ROS string values and native
+numeric/boolean values are supported. Each indicator follows its own component's freshness
+and producer severity; cached values are dimmed and labeled last known, while existing
+warning/error pills remain visible. Missing fields and explicitly unsupported metrics are
+omitted; null or invalid values display an unavailable dash, and zero satellites remains zero.
 
 Doodle radio diagnostics add **TX power** in dBm, **Target** (for example, `low (23 dBm)`),
 and **RF state** to both views. The `radio` component supplies `rf.tx_power_dbm` and
