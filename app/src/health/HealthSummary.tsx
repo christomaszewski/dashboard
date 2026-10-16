@@ -49,7 +49,7 @@ function SummaryMetric({ service, reading, options, nowMs, connected, missing }:
         <p>{formatValue(trend.low, precision)} … {formatValue(trend.high, precision)} {reading.unit} over {historyS} s</p></>}
       <StatusDetail service={service} status={reading.status} nowMs={nowMs} connected={connected} />
     </>}>
-    <span className="health-metric-label">{reading.key === "supply.power_w" ? "power" : reading.component === "temperature" ? reading.where : label}</span>
+    <span className="health-metric-label">{reading.key === "supply.power_w" ? "power" : reading.component === "temperature" || reading.component.startsWith("temperature/") ? reading.where : label}</span>
     <span className={`row-value ${color}`}>{missing ? "—" : formatValue(reading.value, precision)}<small> {reading.unit}</small></span>
     {trend && <svg className={`sparkline-svg ${color}`} viewBox="0 0 90 20" preserveAspectRatio="none" aria-hidden>
       <path d={trend.d} fill="none" vectorEffect="non-scaling-stroke" />
@@ -154,6 +154,28 @@ function RadioSummary({ service, statuses, nowMs, connected }: {
   })}</div>;
 }
 
+function PowerModeSummary({ service, statuses, nowMs, connected }: {
+  service: HealthService; statuses: readonly HealthStatus[]; nowMs: number; connected: boolean;
+}) {
+  const status = statuses.find((s) => "power.mode_name" in s.values);
+  if (!status) return null;
+  const raw = status.values["power.mode_name"], id = status.values["power.mode_id"];
+  const name = typeof raw === "string" && raw.trim() && raw !== "null" ? raw : null;
+  const text = name ? `${name}${typeof id === "number" && Number.isInteger(id) && id >= 0 ? ` (id ${id})` : ""}` : "—";
+  const state = status.values["health.metric.power.mode_name.state"];
+  const current = name !== null && connected && reporterCurrent(service, nowMs) && statusCurrent(service, status, nowMs) &&
+    status.values["health.availability"] !== "retrying" && (!state || state === "current");
+  const note = name === null ? "unavailable" : !current ? "last known" : status.values["power.switching"] === true ? "switching" : "";
+  return <div className="health-summary-metrics"><HealthTooltip className={`health-summary-metric ${current ? "ok" : "idle"}`}
+    label={`Power profile: ${text}${note ? `, ${note}` : ""}`}
+    detail={<><strong>Active power profile · {text}</strong><p>{note || "Observed nvpmodel setting"}</p>
+      <StatusDetail service={service} status={status} nowMs={nowMs} connected={connected} /></>}>
+    <span className="health-metric-label">Power profile</span>
+    <span className={`row-value ${current ? "ok" : "idle"}`}>{text}</span>
+    {note && <span className="health-metric-quality">{note}</span>}
+  </HealthTooltip></div>;
+}
+
 /** Shared scannable summary: per-component freshness, named readings, and one pill per issue. */
 export function HealthSummary({ service, options = {}, nowMs, qualified = false, connected = true, expandable = false }: {
   service: HealthService; options?: HealthViewOptions; nowMs: number; qualified?: boolean; connected?: boolean; expandable?: boolean;
@@ -192,6 +214,7 @@ export function HealthSummary({ service, options = {}, nowMs, qualified = false,
       {navigation.map(({ field, status }) => <NavigationIndicator key={`${status.name}/${field.key}`}
         service={service} status={status} field={field} nowMs={nowMs} connected={connected} />)}</div>}
     <RadioSummary service={service} statuses={statuses} nowMs={nowMs} connected={connected} />
+    <PowerModeSummary service={service} statuses={statuses} nowMs={nowMs} connected={connected} />
     {issues.length > 0 && <div className="health-issues" aria-label={`${service.instance} issues`}>
       {issues.map((issue) => <HealthTooltip key={issue.status.name} className={`pill health-issue ${issue.color}`}
         label={`${issue.severity} ${issue.label}`}

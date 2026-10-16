@@ -1,0 +1,19 @@
+name: build contract
+on:
+  push: {branches: [main]}
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  certify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: christomaszewski/rig
+          path: .rig
+      - run: python3 -m pip install --user pyyaml
+      - uses: ./.rig/.github/actions/setup-build-probe
+      - run: ./.rig/rig certify --repo . --require-build-check
