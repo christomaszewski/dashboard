@@ -127,6 +127,58 @@ docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
 
+## Preflight strip
+
+Add `type: preflight` as the first Home widget for a thin, full-width readiness strip. It is
+opt-in per dashboard YAML. Groups and checks appear in the configured order; `display: dots`
+hides pill labels while retaining accessible names and hover/focus/tap tooltips.
+
+```yaml
+home:
+  version: 1
+  widgets:
+    - type: preflight
+      span: full
+      groups:
+        - label: Services
+          checks:
+            - { type: health, service: ouster, label: Lidar }
+            - { type: health, service: ins, label: Navigation }
+        - label: Logging
+          checks:
+            - { type: bag_recording, recorder: /bag_logger/rosbag2_recorder, label: ROS bag, domain_id: 0 }
+            - { type: camera_recording, service: cam0, label: Front }
+        - label: Readiness
+          checks:
+            - { type: ros_service, service: /ouster/get_config, label: Lidar config, domain_id: 0 }
+```
+
+With a named grid layout, add a full-width `preflight` row to `home.layout.areas` and assign
+`area: preflight` instead. The strip wraps on narrow screens.
+
+- **Health:** shared native/ROS diagnostics; green for current OK, yellow for warnings or
+  incomplete observations, red for errors, missing reports, or expired observations. Optional
+  `components: [gps, imu]` limits a check to exact diagnostic component names. Missing selected
+  components stay red. Use actual instance/component names from the Health view.
+- **Camera recording:** shared camera health's `stream` and `recording` components, plus camera
+  diagnostics when present. Green requires an active recording with recorded frames and current
+  healthy capture. Inactive, disabled, or still starting is yellow; faults/stalls/silence are red.
+- **Bag recording:** a read-only `is_paused` query every `poll_s` seconds (default 3, minimum 0.5),
+  scheduled after the previous query completes, with a 2-second deadline. Unpaused is green,
+  paused is yellow, missing/invalid/nonresponsive is red. Bag players are excluded. Unpaused
+  does not prove disk throughput. Polling stops while Home is hidden or disconnected.
+- **ROS service:** green when a server is advertised in the selected domain, red when absent.
+  No service is called by this check; advertised presence does not prove the server can respond.
+
+Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Ambiguous
+references or ROS domains require an explicit selection and show red. A disconnected dashboard
+shows red rather than retaining green from an earlier observation. Tooltips explain the reason.
+
+Omitting `groups` gives one Services group containing every discovered health reporter. A
+`{ type: health }` check also expands to all reporters inside a custom group. Explicit service
+references are recommended for required equipment: discovery cannot identify a service that
+has never appeared. The existing health store retains reporters that go offline during a session.
+
 ## ROS image previews
 
 Use `type: ros_image` on Home to display `sensor_msgs/msg/Image` directly over Zenoh.

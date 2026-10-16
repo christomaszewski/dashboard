@@ -114,6 +114,12 @@ const TRIGGER_RESPONSE: MessageDefinition[] = [
 /** Keyed by ROS type name ("pkg/srv/Name") — the form ddsToRosName produces from SS tokens. */
 export const STATIC_SRVS: Record<string, StaticSrvDef> = {
   "type_description_interfaces/srv/GetTypeDescription": GET_TYPE_DESCRIPTION_SRV,
+  // Read-only preflight polling must work without the optional get_type_description service.
+  // https://github.com/ros2/rosbag2/blob/rolling/rosbag2_interfaces/srv/IsPaused.srv
+  "rosbag2_interfaces/srv/IsPaused": {
+    requestDefs: [{ name: "rosbag2_interfaces/srv/IsPaused_Request", definitions: [] }],
+    responseDefs: [{ name: "rosbag2_interfaces/srv/IsPaused_Response", definitions: [{ type: "bool", name: "paused" }] }],
+  },
   // Empty definitions round-trip as the CDR placeholder byte (structure_needs_at_least_one_member).
   "std_srvs/srv/Empty": {
     requestDefs: [{ name: "std_srvs/srv/Empty_Request", definitions: [] }],

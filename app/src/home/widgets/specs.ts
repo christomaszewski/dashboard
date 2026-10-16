@@ -10,6 +10,7 @@ import "./primitives/specs"; // gauge / sparkline / indicator / text register al
 import "../../ros3d/spec";
 import "../../playback/rosbagSpec";
 import "../../rosimage/spec";
+import "../../preflight/spec";
 
 export type { GaugeWidgetConfig, SparklineWidgetConfig, IndicatorWidgetConfig, TextWidgetConfig } from "./primitives/specs";
 
