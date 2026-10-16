@@ -67,7 +67,7 @@ export function temperatureLabel(t: Measurement): string {
   if (t.key === "rf.tx_power_dbm") return `${t.component} TX power`;
   if (t.key === "rf.target_dbm") return "target power";
   if (t.key.startsWith("supply.")) return `input ${t.where}`;
-  if (t.component === "temperature") return `${t.where} temperature`;
+  if (t.component === "temperature" || t.component.startsWith("temperature/")) return `${t.where} temperature`;
   return t.component === "camera" ? t.where : `${t.component} ${t.where}`;
 }
 
