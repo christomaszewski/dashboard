@@ -1,8 +1,8 @@
 import type { TopicEntry } from "../ros/graph";
 import { parseStatus, type HealthStatus, type HealthValue } from "./types";
 
-const NUMBER = /^(?:health\.(?:sequence|sample_age_s|publish_interval_s|stale_after_s|last_level)|temp\..+_c|supply\.(?:voltage_v|current_a|power_w)|alerts\.active|alert\.cursor)$/;
-const BOOL = new Set(["alert.active", "alerts.history_gap"]);
+const NUMBER = /^(?:health\.(?:sequence|sample_age_s|publish_interval_s|stale_after_s|last_level)|temp\..+_c|supply\.(?:voltage_v|current_a|power_w)|rf\.(?:tx_power_dbm|target_dbm)|alerts\.active|alert\.cursor)$/;
+const BOOL = new Set(["alert.active", "alerts.history_gap", "rf.converged"]);
 
 /** Only contract fields are coerced. Generic ROS KeyValue strings retain their meaning. */
 export function diagnosticStatuses(message: Record<string, unknown>): HealthStatus[] {

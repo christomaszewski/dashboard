@@ -177,6 +177,14 @@ and producer severity; cached values are dimmed and labeled last known, while ex
 warning/error pills remain visible. Missing fields and explicitly unsupported metrics are
 omitted; null or invalid values display an unavailable dash, and zero satellites remains zero.
 
+Doodle radio diagnostics add **TX power** in dBm, **Target** (for example, `low (23 dBm)`),
+and **RF state** to both views. The `radio` component supplies `rf.tx_power_dbm` and
+`rf.state`; the `service` component supplies `rf.target` and `rf.target_dbm`. If only the
+service component is present, its observed power/state are used. RF off shows a dash for
+TX power, missing readings stay unavailable, and retrying/stale/offline observations are
+marked last known independently of the target. These are radio-reported settings, not
+measurements of radiated power. No extra topic or widget configuration is needed.
+
 ```yaml
 - type: health
   label: Sensors

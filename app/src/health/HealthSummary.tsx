@@ -107,6 +107,53 @@ function NavigationIndicator({ service, status, field, nowMs, connected }: {
   </HealthTooltip>;
 }
 
+function RadioSummary({ service, statuses, nowMs, connected }: {
+  service: HealthService; statuses: readonly HealthStatus[]; nowMs: number; connected: boolean;
+}) {
+  const control = statuses.find((s) => componentOf(s, service.instance) === "service");
+  const radio = statuses.find((s) => componentOf(s, service.instance) === "radio");
+  if (![control, radio].some((s) => s && (service.snapshot.service === "doodle" ||
+    ["rf.tx_power_dbm", "rf.target", "rf.target_dbm", "rf.state"].some((key) => key in s.values)))) return null;
+
+  // The radio poll owns observed RF state/power. Never replace an off, missing or stale
+  // radio observation with the supervisor's independently sampled copy.
+  const observed = radio ?? control;
+  const rf = observed?.values["rf.state"];
+  const dbm = (value: unknown) => typeof value === "number" && Number.isFinite(value) ? `${formatValue(value)} dBm` : null;
+  const power = dbm(observed?.values["rf.tx_power_dbm"]);
+  const target = control?.values["rf.target"];
+  const targetName = typeof target === "string" && target.trim() && target !== "null" ? target : null;
+  const targetPower = dbm(control?.values["rf.target_dbm"]);
+  const targetText = targetName && targetPower && targetName !== targetPower
+    ? `${targetName} (${targetPower})` : targetName ?? targetPower;
+  const fields = [
+    ...(observed ? [
+      { label: "TX power", key: "rf.tx_power_dbm", text: rf === "off" ? "—" : power,
+        status: observed, note: rf === "off" ? "RF off" : "" },
+    ] : []),
+    ...(control ? [{ label: "Target", key: "rf.target", text: targetText, status: control, note: "" }] : []),
+    ...(observed ? [{ label: "RF state", key: "rf.state", text: rf === "on" ? "On" : rf === "off" ? "Off" : null,
+      status: observed, note: "" }] : []),
+  ];
+  return <div className="health-summary-metrics health-radio-metrics">{fields.map(({ label, key, text, status, note }) => {
+    const state = status.values[`health.metric.${key}.state`];
+    const current = text !== null && connected && reporterCurrent(service, nowMs) && statusCurrent(service, status, nowMs) &&
+      status.values["health.availability"] !== "retrying" && (!state || state === "current");
+    const quality = text === null ? "unavailable" : !current ? "last known" : note;
+    const color = current ? "ok" : "idle";
+    return <HealthTooltip key={key} className={`health-summary-metric ${color}`}
+      label={`${label}: ${text ?? "—"}${quality ? `, ${quality}` : ""}`}
+      detail={<><strong>{label} · {text ?? "—"}</strong>
+        {quality && <p>{quality}</p>}
+        <StatusDetail service={service} status={status} nowMs={nowMs} connected={connected} />
+      </>}>
+      <span className="health-metric-label">{label}</span>
+      <span className={`row-value ${color}`}>{text ?? "—"}</span>
+      {quality && <span className="health-metric-quality">{quality}</span>}
+    </HealthTooltip>;
+  })}</div>;
+}
+
 /** Shared scannable summary: per-component freshness, named readings, and one pill per issue. */
 export function HealthSummary({ service, options = {}, nowMs, qualified = false, connected = true, expandable = false }: {
   service: HealthService; options?: HealthViewOptions; nowMs: number; qualified?: boolean; connected?: boolean; expandable?: boolean;
@@ -144,6 +191,7 @@ export function HealthSummary({ service, options = {}, nowMs, qualified = false,
         options={options} nowMs={nowMs} connected={connected} />)}
       {navigation.map(({ field, status }) => <NavigationIndicator key={`${status.name}/${field.key}`}
         service={service} status={status} field={field} nowMs={nowMs} connected={connected} />)}</div>}
+    <RadioSummary service={service} statuses={statuses} nowMs={nowMs} connected={connected} />
     {issues.length > 0 && <div className="health-issues" aria-label={`${service.instance} issues`}>
       {issues.map((issue) => <HealthTooltip key={issue.status.name} className={`pill health-issue ${issue.color}`}
         label={`${issue.severity} ${issue.label}`}
