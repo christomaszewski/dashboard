@@ -28,8 +28,8 @@ export function useTopic(topicName: string | null | undefined, opts?: TopicAcqui
   const decode = opts?.decode;
 
   useEffect(() => {
-    if (!store || !dataKeyexpr || !typeName || !typeHash) return;
-    const handle = store.acquire({ dataKeyexpr, typeName, typeHash, transientLocal }, { windowMs, decode });
+    if (!store || !topic) return;
+    const handle = store.acquire(topic, { windowMs, decode });
     return () => handle.release();
   }, [store, dataKeyexpr, typeName, typeHash, transientLocal, windowMs, decode]);
 

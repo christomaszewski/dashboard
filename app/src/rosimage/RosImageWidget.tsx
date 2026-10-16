@@ -24,9 +24,10 @@ function ImageView({ topic, name, normalize, staleAfterS, active }: {
   const key = active ? topic?.dataKeyexpr : undefined;
   const typeName = topic?.typeName, typeHash = topic?.typeHash, transientLocal = topic?.transientLocal ?? false;
   useEffect(() => {
-    if (!store || !key || !typeName || !typeHash) return;
-    const handle = store.acquire({ dataKeyexpr: key, typeName, typeHash, transientLocal });
+    if (!store || !key || !topic) return;
+    const handle = store.acquire(topic);
     return () => handle.release();
+    // The announcement updates the graph too; depend on topic identity, not graph object identity.
   }, [store, key, typeName, typeHash, transientLocal]);
   const subscribe = useCallback((cb: () => void) => store && key ? store.subscribe(key, cb) : () => {}, [store, key]);
   const snapshot = useSyncExternalStore(subscribe, useCallback(() => store && key ? store.getSnapshot(key) : null, [store, key]));

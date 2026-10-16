@@ -148,6 +148,13 @@ The picker subscribes to one topic at a time; ambiguous ROS domains require a ch
 row padding and pixel byte order are preserved. Silence and disconnection label the last
 frame; changing topics clears it. Hidden Home views release their subscriptions.
 
+Watched ROS topics also announce a ROS subscriber, including CPU buffer support when advertised
+by the publisher. Lyrical `rmw_zenoh` image publishers need this announcement to start CPU delivery;
+a plain Zenoh data subscription is insufficient. If Ouster images appear only after running
+`ros2 topic echo` on each topic, rebuild/redeploy `dashboard-web` and reload the page. Affected
+middleware versions can retain departed subscriber state, explaining why delivery may continue
+after echo exits; see the [upstream investigation](https://github.com/ros2/rmw_zenoh/issues/1075).
+
 Supported encodings: `mono8`, `mono16`, `8UC1`, `16UC1`, `rgb8`, `bgr8`, `rgba8`, `bgra8`.
 Frames are limited to 2 megapixels / 16 MiB. The shared topic store renders at most 5 Hz;
 this does not reduce network traffic. Use vehicle-side per-topic rate limits for slow links.
