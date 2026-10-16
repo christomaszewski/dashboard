@@ -2,6 +2,8 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import L from "leaflet";
+import dashboardCss from "../../index.css?raw";
+import leafletCss from "leaflet/dist/leaflet.css?raw";
 import { StrictMode } from "react";
 import { MapWidget } from "./MapWidget";
 import { defaultBasemap, mapLayers } from "../basemaps";
@@ -148,4 +150,28 @@ describe("map basemaps", () => {
     fireEvent.click(screen.getByRole("button", { name: /center/ }));
     expect(map.getCenter()).toEqual(L.latLng(35, -85));
   });
+});
+
+it("contains Leaflet panes, controls and follow overlay beneath the sticky dashboard header", () => {
+  const style = document.createElement("style");
+  style.textContent = leafletCss + dashboardCss;
+  document.head.append(style);
+  try {
+    const view = render(<><header className="topbar">Dashboard</header>
+      <MapWidget widget={{ type: "map", topic: "/fix", basemap: "none", follow: false }} /></>);
+    const frame = view.container.querySelector<HTMLElement>(".map-frame")!;
+    const header = getComputedStyle(screen.getByRole("banner"));
+    // Leaflet's high z-index values stay inside the map frame's stacking context.
+    expect(getComputedStyle(frame).isolation).toBe("isolate");
+    expect(header.position).toBe("sticky");
+    expect(Number(header.zIndex)).toBeGreaterThan(0);
+    for (const selector of [".leaflet-map-pane", ".leaflet-top", ".map-follow"]) {
+      const layer = view.container.querySelector<HTMLElement>(selector)!;
+      expect(layer).not.toBeNull();
+      expect(frame.contains(layer)).toBe(true);
+      expect(Number(getComputedStyle(layer).zIndex)).toBeGreaterThan(Number(header.zIndex));
+    }
+  } finally {
+    style.remove();
+  }
 });

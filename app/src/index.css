@@ -1241,6 +1241,8 @@ ul.plain {
 
 .map-frame {
   position: relative;
+  /* Keep Leaflet panes/controls and our overlays below the sticky dashboard header. */
+  isolation: isolate;
   width: 100%;
   flex: 1;
   min-height: 260px;
@@ -2247,6 +2249,7 @@ ul.plain {
 .health-summary-metric { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.3rem 0.5rem; max-width: 100%; padding: 0.3rem 0.5rem; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface); text-align: left; }
 .health-metric-label { color: var(--text-dim); font-size: 0.68rem; overflow-wrap: anywhere; }
 .health-summary-metric .row-value { font: 600 0.82rem var(--mono); white-space: nowrap; }
+.health-summary-navigation .row-value { white-space: normal; overflow-wrap: anywhere; }
 .health-summary-metric .row-value small { font-size: 0.68rem; font-weight: 400; }
 .health-summary-metric.ok .row-value { color: var(--text); }
 .health-summary-metric.warn .row-value { color: var(--warn); }

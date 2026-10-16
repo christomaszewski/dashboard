@@ -168,6 +168,15 @@ focus, or tap. Temperature/power readings include units, trends, and explicit la
 labels during outages. The Health tab provides attention-first sorting, issue search,
 expandable components, and session events.
 
+When reported, the compact summary also shows **GNSS fix**, **satellites used**, **EKF state**,
+and dual-antenna **heading validity** beside temperature. These read `gnss.fix_type`,
+`gnss.sv_used`, `ekf.solution_mode`, and `gnss.heading_valid` from existing diagnostics;
+no widget configuration or extra subscriptions are needed. ROS string values and native
+numeric/boolean values are supported. Each indicator follows its own component's freshness
+and producer severity; cached values are dimmed and labeled last known, while existing
+warning/error pills remain visible. Missing fields and explicitly unsupported metrics are
+omitted; null or invalid values display an unavailable dash, and zero satellites remains zero.
+
 ```yaml
 - type: health
   label: Sensors
