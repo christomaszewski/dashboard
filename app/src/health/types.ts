@@ -203,7 +203,8 @@ export function statusCurrent(service: HealthService, status: HealthStatus, nowM
 
 export function metricUnit(key: string): string | null {
   if (temperatureWhere(key) !== null) return "°C";
-  return ({ "supply.voltage_v": "V", "supply.current_a": "A", "supply.power_w": "W" } as Record<string, string>)[key] ?? null;
+  return ({ "supply.voltage_v": "V", "supply.current_a": "A", "supply.power_w": "W",
+    "rf.tx_power_dbm": "dBm", "rf.target_dbm": "dBm" } as Record<string, string>)[key] ?? null;
 }
 
 export interface HealthVerdict {

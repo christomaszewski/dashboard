@@ -64,6 +64,8 @@ function temperatureLevel(celsius: number, thresholds: Thresholds, current: bool
 /** The row label: where the reading is taken; the component too when it is not the camera's (a
  *  future host-side `temp.*_c` must not read as the camera's). */
 export function temperatureLabel(t: Measurement): string {
+  if (t.key === "rf.tx_power_dbm") return `${t.component} TX power`;
+  if (t.key === "rf.target_dbm") return "target power";
   if (t.key.startsWith("supply.")) return `input ${t.where}`;
   if (t.component === "temperature") return `${t.where} temperature`;
   return t.component === "camera" ? t.where : `${t.component} ${t.where}`;

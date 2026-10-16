@@ -168,6 +168,14 @@ focus, or tap. Temperature/power readings include units, trends, and explicit la
 labels during outages. The Health tab provides attention-first sorting, issue search,
 expandable components, and session events.
 
+Doodle radio diagnostics add **TX power** in dBm, **Target** (for example, `low (23 dBm)`),
+and **RF state** to both views. The `radio` component supplies `rf.tx_power_dbm` and
+`rf.state`; the `service` component supplies `rf.target` and `rf.target_dbm`. If only the
+service component is present, its observed power/state are used. RF off shows a dash for
+TX power, missing readings stay unavailable, and retrying/stale/offline observations are
+marked last known independently of the target. These are radio-reported settings, not
+measurements of radiated power. No extra topic or widget configuration is needed.
+
 ```yaml
 - type: health
   label: Sensors
