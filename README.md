@@ -139,6 +139,7 @@ home:
   widgets:
     - type: preflight
       span: full
+      recording_controls: true
       groups:
         - label: Services
           checks:
@@ -173,6 +174,26 @@ With a named grid layout, add a full-width `preflight` row to `home.layout.areas
 Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Ambiguous
 references or ROS domains require an explicit selection and show red. A disconnected dashboard
 shows red rather than retaining green from an earlier observation. Tooltips explain the reason.
+
+Set `recording_controls: true` to add compact **Record all** (●) and **Stop recording** (■) icon
+buttons. Their labels appear on hover and are available to screen readers. The default is false.
+Targets come only from this widget's `bag_recording` and
+`camera_recording` checks, across all groups; repeated checks resolving to the same recorder
+receive one command. Health and ROS availability checks are never commanded. Missing, offline,
+disabled, ambiguous, and unsupported targets remain visible as failures rather than disappearing.
+
+Commands run independently: bags resume/pause and verify `is_paused`; cameras activate/deactivate
+through their lifecycle control, preserving the recording-settings revision guard. The existing
+preflight dots show recording status; controls add no counts, success messages, or expanding rows.
+A small **!** appears only if a command fails or camera finalization reports trouble. Click it for
+an overlay containing only the issues and **Retry failed**, which retries only failed targets for
+the last action. Successful targets keep their state; nothing is automatically retried on reconnect.
+Finalization warnings remain available there (retrying cannot repair a truncated file).
+
+Stopping pauses the existing bag session and finalizes each camera session while keeping camera
+preview running. Starting resumes bags and opens camera sessions; it does not create a Rig run or
+guarantee synchronized start times. For standby at boot, set bag `control.start_paused: true` and
+camera `control.initial_state: inactive`, with camera `recording.enabled: true`.
 
 Omitting `groups` gives one Services group containing every discovered health reporter. A
 `{ type: health }` check also expands to all reporters inside a custom group. Explicit service

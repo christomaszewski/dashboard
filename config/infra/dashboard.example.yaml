@@ -185,6 +185,11 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #       # span: full           # 1 | 2 | full (default full); ignored when area is supplied
 #       # label: Preflight     # optional widget title; omitted by default
 #       # display: pills       # pills (default: labels + dots) | dots (labels in tooltips only)
+#       # recording_controls: true # default false; compact record/stop icons; ! on errors only
+#                                  # Click ! for details + Retry failed; never expands the bar.
+#                                  # Targets only the bag_recording/camera_recording checks below.
+#                                  # Bags resume/pause; cameras activate/finalize. Does not open a Rig run.
+#                                  # Missing targets remain failures; successful targets keep running.
 #       # poll_s: 3            # seconds between bag is_paused polls; default 3, minimum 0.5
 #                              # Each call has a fixed 2 s timeout; calls never overlap.
 #       # Group labels and order are yours to choose; any group can mix check types.

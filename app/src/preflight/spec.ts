@@ -12,6 +12,7 @@ export interface PreflightWidgetConfig extends BaseWidgetConfig {
   type: "preflight";
   display: "pills" | "dots";
   poll_s: number;
+  recording_controls?: boolean;
   groups: PreflightGroup[];
 }
 
@@ -74,9 +75,11 @@ defineWidget<PreflightWidgetConfig>({
     const poll = raw.poll_s ?? 3;
     if (typeof poll !== "number" || !Number.isFinite(poll) || poll < 0.5)
       throw new Error("'poll_s' must be a finite number of seconds, at least 0.5");
+    if (raw.recording_controls !== undefined && typeof raw.recording_controls !== "boolean")
+      throw new Error("'recording_controls' must be a boolean");
     const groups = raw.groups ?? [{ label: "Services", checks: [{ type: "health" }] }];
     if (!Array.isArray(groups) || !groups.length) throw new Error("'groups' must be a non-empty list");
-    return { label: string(raw, "label"), display, poll_s: poll,
+    return { label: string(raw, "label"), display, poll_s: poll, recording_controls: raw.recording_controls ?? false,
       groups: groups.map((g, i) => {
         if (!isObj(g)) throw new Error(`groups[${i}] must be a mapping`);
         const label = string(g, "label", true)!;

@@ -25,6 +25,25 @@
 .preflight-dots .preflight-check { justify-content: center; padding: 2px; background: transparent; }
 .preflight-details { padding-left: 16px; margin: 8px 0 0; }
 .preflight-details li + li { margin-top: 5px; }
+.preflight-recording { margin-left: auto; display: flex; align-items: center; gap: 2px; flex: none; min-width: 76px; }
+.preflight-recording-button { display: inline-flex; justify-content: center; align-items: center; width: 24px; height: 24px;
+  padding: 0; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.preflight-recording-button:hover:not(:disabled) { background: var(--surface-2); border-color: var(--border-strong); }
+.preflight-recording-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.preflight-recording-button:disabled { opacity: 0.4; cursor: default; }
+.preflight-record-icon { width: 9px; height: 9px; border-radius: 50%; background: var(--err); }
+.preflight-stop-icon { width: 8px; height: 8px; background: currentColor; }
+.preflight-recording-issue { color: var(--warn); font-weight: 700; }
+.preflight-recording-issue > span { width: 15px; height: 15px; border: 1px solid currentColor; border-radius: 50%; font: bold 11px/14px var(--font); }
+.preflight-recording-spinner { width: 11px; height: 11px; border: 1px solid currentColor; border-right-color: transparent;
+  border-radius: 50%; animation: preflight-spin 0.8s linear infinite; }
+@keyframes preflight-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .preflight-recording-spinner { animation: none; } }
+.health-tooltip.preflight-recording-errors { width: min(340px, calc(100vw - 24px)); }
+.preflight-recording-errors-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.preflight-recording-errors-heading button { flex: none; }
+.preflight-recording-errors ul { padding-left: 18px; margin: 8px 0; }
+.preflight-recording-errors li + li { margin-top: 6px; }
 @media (max-width: 560px) {
   .preflight-strip { gap: 5px 10px; }
   .preflight-group + .preflight-group { padding-left: 0; border-left: 0; }

@@ -8,6 +8,8 @@ import type { HealthService } from "../health/types";
 import type { PreflightCheck, PreflightWidgetConfig } from "./spec";
 import { cameraRecordingStatus, disconnected, healthStatus, matchingHealth, problem, rosServiceStatus, type CheckStatus } from "./status";
 import { useRecorderStatus } from "./useRecorderStatus";
+import { recordingChecks } from "./recording";
+import { RecordingControls } from "./RecordingControls";
 import "./preflight.css";
 
 function Dot({ label, source, result }: { label: string; source: string; result: CheckStatus }) {
@@ -52,6 +54,7 @@ export function PreflightWidget({ widget }: { widget: PreflightWidgetConfig }) {
   const { status } = useTransportContext();
   const connected = status === "connected";
   const now = useNow();
+  const checks = recordingChecks(widget.groups);
   return <div className={`preflight-strip preflight-${widget.display}`} role="region" aria-label={widget.label ?? "Preflight"}>
     {widget.label && <span className="preflight-title">{widget.label}</span>}
     {widget.groups.map((group, i) => <div className="preflight-group" role="group" aria-label={group.label} key={i}>
@@ -65,5 +68,6 @@ export function PreflightWidget({ widget }: { widget: PreflightWidgetConfig }) {
             : <HealthCheck key={j} check={check} services={services} now={now} connected={connected} />)}
       </div>
     </div>)}
+    {widget.recording_controls && <RecordingControls key={JSON.stringify(checks)} checks={checks} />}
   </div>;
 }
