@@ -131,4 +131,79 @@ describe("bridge selection", () => {
     expect(open).toHaveBeenCalledOnce();
     expect(selected).not.toHaveBeenCalled();
   });
+
+  it("distinguishes failed localhost dials from the successfully selected vehicle route", async () => {
+    const diagnostic = vi.fn();
+    const direct = bridge();
+    const selector = new BridgeSelection({ vehicleLocator: VEHICLE, localLocator: LOCAL,
+      onDiagnostic: diagnostic,
+      open: async endpoint => { if (endpoint === LOCAL) throw new Error("connection refused"); return direct; } });
+    expect(await selector.open()).toBe(direct);
+    expect(diagnostic).toHaveBeenCalledWith("bridge-dial-start", {
+      endpoint: LOCAL, route: "local", deadlineMs: 1200,
+    });
+    expect(diagnostic).toHaveBeenCalledWith("bridge-dial-failure", expect.objectContaining({
+      endpoint: LOCAL, route: "local", reason: "connection refused", elapsedMs: expect.any(Number),
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("bridge-dial-success", expect.objectContaining({
+      endpoint: VEHICLE, route: "vehicle", deadlineMs: 8000, elapsedMs: expect.any(Number),
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("bridge-verification-success", expect.objectContaining({
+      endpoint: VEHICLE, route: "vehicle", operation: "identity", optional: true,
+    }));
+    expect(diagnostic).toHaveBeenLastCalledWith("bridge-selected", {
+      endpoint: VEHICLE, route: "vehicle", previousEndpoint: undefined,
+    });
+    // A subsequent reconnect still retries localhost; the trace must identify that as another dial.
+    expect(await selector.open()).toBe(direct);
+    expect(diagnostic.mock.calls.filter(([event]) => event === "bridge-dial-failure")).toHaveLength(2);
+    expect(diagnostic).toHaveBeenLastCalledWith("bridge-selected", {
+      endpoint: VEHICLE, route: "vehicle", previousEndpoint: VEHICLE,
+    });
+    selector.close();
+  });
+
+  it("identifies vehicle-route verification failure separately from a successful local WebSocket dial", async () => {
+    const diagnostic = vi.fn();
+    const local = bridge(), direct = bridge();
+    vi.mocked(local.verifyVehicle).mockRejectedValue(new Error("vehicle uplink unreachable"));
+    const selector = new BridgeSelection({ vehicleLocator: VEHICLE, localLocator: LOCAL,
+      onDiagnostic: diagnostic, loadVehicleId: () => "abc",
+      open: async endpoint => endpoint === LOCAL ? local : direct });
+    expect(await selector.open()).toBe(direct);
+    expect(diagnostic).toHaveBeenCalledWith("bridge-dial-success", expect.objectContaining({ endpoint: LOCAL }));
+    expect(diagnostic).toHaveBeenCalledWith("bridge-verification-failure", expect.objectContaining({
+      endpoint: LOCAL, route: "local", operation: "vehicle-route", optional: false,
+      deadlineMs: 4000, reason: "vehicle uplink unreachable", elapsedMs: expect.any(Number),
+    }));
+    expect(local.close).toHaveBeenCalledOnce();
+    selector.close();
+  });
+
+  it("marks optional identity lookup failures without reporting a failed direct connection", async () => {
+    const diagnostic = vi.fn();
+    const direct = bridge();
+    vi.mocked(direct.bridgeId).mockRejectedValue(new Error("identity unavailable"));
+    const selector = new BridgeSelection({ vehicleLocator: VEHICLE, onDiagnostic: diagnostic, open: async () => direct });
+    expect(await selector.open()).toBe(direct);
+    expect(diagnostic).toHaveBeenCalledWith("bridge-verification-failure", expect.objectContaining({
+      operation: "identity", optional: true, reason: "identity unavailable",
+    }));
+    expect(diagnostic).toHaveBeenLastCalledWith("bridge-selected", expect.objectContaining({ endpoint: VEHICLE }));
+    expect(direct.close).not.toHaveBeenCalled();
+    selector.close();
+  });
+
+  it("preserves fallback and verification when the diagnostic observer throws", async () => {
+    const direct = bridge();
+    const selected = vi.fn();
+    const selector = new BridgeSelection({ vehicleLocator: VEHICLE, localLocator: LOCAL,
+      onDiagnostic: () => { throw new Error("broken observer"); }, onSelected: selected,
+      open: async endpoint => { if (endpoint === LOCAL) throw new Error("refused"); return direct; } });
+    expect(await selector.open()).toBe(direct);
+    expect(selected).toHaveBeenCalledExactlyOnceWith(VEHICLE);
+    expect(direct.close).not.toHaveBeenCalled();
+    expect(vi.getTimerCount()).toBe(0);
+    selector.close();
+  });
 });

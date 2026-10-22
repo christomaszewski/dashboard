@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { memo, useState } from "react";
 import { useRosGraphContext } from "./RosGraphContext";
-import type { TopicEntry } from "./graph";
+import type { RosGraph, TopicEntry } from "./graph";
 import { TopicInspector } from "./TopicInspector";
 import { EndpointNames } from "./TopicTrafficTable";
 
@@ -18,14 +18,35 @@ function QosChips({ topic }: { topic: TopicEntry }) {
  * (useRosGraph), with per-topic drill-down into a decoding inspector. The graph shows whatever the
  * bus advertises even when no data flows — same view `ros2 topic list` would give on the vehicle.
  */
-export function RosExplorer() {
+export function RosExplorer({ active = true }: { active?: boolean }) {
   const { graph } = useRosGraphContext();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const selected = graph.topics.find((t) => t.dataKeyexpr === selectedId) ?? null;
+  const selected = selectedId === null ? null : graph.topics.find((t) => t.dataKeyexpr === selectedId) ?? null;
 
   return (
     <section className="card">
+      <GraphTopics active={active} graph={graph} selectedId={selectedId} selectTopic={setSelectedId} />
+      {/* Keep the inspector on the live graph: hiding the tables must not change subscriptions. */}
+      {selected && <TopicInspector key={selected.dataKeyexpr} topic={selected} />}
+      <GraphDetails active={active} graph={graph} />
+    </section>
+  );
+}
+
+interface GraphViewProps { active: boolean; graph: RosGraph }
+interface GraphTopicsProps extends GraphViewProps {
+  selectedId: string | null;
+  selectTopic: (id: string | null) => void;
+}
+
+// Keep these tables stateless and free of context subscriptions so updates stop at the memo boundary.
+// Initially hidden tables stay empty; after a visit their DOM (including open details) is retained.
+// Returning to ROS renders the latest graph. No render-time refs or duplicate graph state needed.
+const GraphTopics = memo(function GraphTopics({ active, graph, selectedId, selectTopic }: GraphTopicsProps) {
+  if (!active) return null;
+  return (
+    <>
       <div className="card-header">
         <h2>ROS graph</h2>
         <span className="meta">
@@ -53,10 +74,10 @@ export function RosExplorer() {
               const id = t.dataKeyexpr;
               const isSel = id === selectedId;
               return (
-                <tr key={id} className={isSel ? "selected" : undefined} onClick={() => setSelectedId(isSel ? null : id)}>
+                <tr key={id} className={isSel ? "selected" : undefined} onClick={() => selectTopic(isSel ? null : id)}>
                   <td>
                     <button className="ros-topic-button" aria-expanded={isSel} onClick={(e) => {
-                      e.stopPropagation(); setSelectedId(isSel ? null : id);
+                      e.stopPropagation(); selectTopic(isSel ? null : id);
                     }}>{t.name}</button> <QosChips topic={t} />
                   </td>
                   <td className="dim">{t.typeName}</td>
@@ -70,8 +91,15 @@ export function RosExplorer() {
         </table></div>
       )}
       {graph.topics.length > 0 && <p className="dim ros-traffic-note">Select a topic to inspect messages and measure each publisher’s traffic.</p>}
-      {selected && <TopicInspector key={selected.dataKeyexpr} topic={selected} />}
+    </>
+  );
+}, (previous, next) => !next.active || (previous.active === next.active && previous.graph === next.graph &&
+  previous.selectedId === next.selectedId && previous.selectTopic === next.selectTopic));
 
+const GraphDetails = memo(function GraphDetails({ active, graph }: GraphViewProps) {
+  if (!active) return null;
+  return (
+    <>
       {graph.nodes.length > 0 && (
         <details className="panel">
           <summary>Nodes ({graph.nodes.length})</summary>
@@ -101,6 +129,6 @@ export function RosExplorer() {
           </div>
         </details>
       )}
-    </section>
+    </>
   );
-}
+}, (previous, next) => !next.active || (previous.active === next.active && previous.graph === next.graph));

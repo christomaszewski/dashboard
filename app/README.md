@@ -66,6 +66,29 @@ itself supply a geographic heading. Missing/invalid orientation, a zero quaterni
 [`orientation_covariance[0] == -1`](https://github.com/ros2/common_interfaces/blob/rolling/sensor_msgs/msg/Imu.msg)
 leaves the dot marker. Position and heading update independently using their latest samples.
 
+The map receives each full orientation message at the publisher's rate; its 5 Hz display updates
+do not limit network traffic. For high-rate heading sources, cap dashboard delivery at 10 Hz with
+top-level instance keys like these. Replace these illustrative names with the full ROS topic names
+used by your `orientation_topic` settings, including namespaces; include only the topics you use:
+
+```yaml
+topic_rates:
+  /imu/data: 10
+  /gps/heading: 10
+```
+
+Rig supplies the ROS domain through `ROS_DOMAIN_ID`; otherwise set top-level `ros_domain_id` to
+the actual domain number. These caps run in the vehicle's `dashboard-zenoh` sidecar before the
+WebSocket hop, preserving the onboard publisher and recorder rates. Widgets watching the same
+orientation topic share one subscription and see the same capped stream. Use either `topic_rates`
+or the global `topic_rate_hz`, never both, and leave shared diagnostic topics such as `/diagnostics`
+uncapped. A laptop bridge connected directly to the router bypasses the vehicle sidecar's caps.
+
+After editing, use the existing Rig deployment or the same configured launcher and Compose project
+to regenerate the configuration and recreate `dashboard-zenoh`, so it loads the new limits and
+config mount. Updating an already-mounted config file alone need not trigger a Compose recreation;
+force recreation in that case. A browser refresh does not reload the sidecar configuration.
+
 To compare position sources, replace the single `topic:` and its orientation/field options with
 `feeds:`. Feed IDs must be unique. Labels and colors are optional (colors default to a palette):
 

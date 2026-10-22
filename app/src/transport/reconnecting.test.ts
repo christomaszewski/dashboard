@@ -55,7 +55,7 @@ class FakeInner implements Transport {
   }
 }
 
-function world(opts: { failFirst?: number } = {}) {
+function world(opts: { failFirst?: number; onDiagnostic?: (event: string, detail: Record<string, unknown>) => void } = {}) {
   const inners: FakeInner[] = [];
   let failures = opts.failFirst ?? 0;
   const statuses: LinkStatus[] = [];
@@ -76,6 +76,7 @@ function world(opts: { failFirst?: number } = {}) {
     retryBaseMs: 200,
     retryMaxMs: 800,
     onStatus: (s) => statuses.push(s),
+    onDiagnostic: opts.onDiagnostic,
   });
   return { t, inners, statuses, current: () => inners[inners.length - 1] };
 }
@@ -320,5 +321,105 @@ describe("ReconnectingTransport", () => {
     expect(w.current().closed).toBe(true);
     await vi.advanceTimersByTimeAsync(5000);
     expect(w.current().probes()).toBe(0);
+  });
+
+  it("diagnoses a watchdog drop with its deadline, generation, subscription counts and pending queries", async () => {
+    const diagnostic = vi.fn();
+    const w = world({ onDiagnostic: diagnostic });
+    await w.t.start();
+    await w.t.subscribe("topic/**", () => undefined);
+    await w.t.liveliness.subscribe("fleet/*/health", () => undefined);
+    const pending = w.t.get("svc/pending", { timeoutMs: 5000 }).catch(e => e);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(await pending).toMatchObject({ code: "disconnected" });
+    expect(diagnostic).toHaveBeenCalledWith("probe-failure", expect.objectContaining({
+      probeId: 1, generation: 1, currentGeneration: 1, deadlineMs: 500,
+      elapsedMs: expect.any(Number), reason: "link probe: no answer within 500 ms",
+      subscriptions: { sample: 1, liveliness: 1, ros: 0 }, pendingQueries: 1,
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("connection-drop", expect.objectContaining({
+      reason: "link probe: no answer within 500 ms", generation: 1,
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("connection-status", expect.objectContaining({
+      previousStatus: "connected", status: "reconnecting", generation: 2,
+    }));
+    expect(w.current().closed).toBe(true);
+    await w.t.close();
+  });
+
+  it("distinguishes a declaration acknowledgement timeout from a watchdog timeout", async () => {
+    const diagnostic = vi.fn();
+    const w = world({ onDiagnostic: diagnostic });
+    await w.t.start();
+    vi.spyOn(w.current(), "subscribe").mockRejectedValueOnce(new Error("Remote api request timeout"));
+    await w.t.subscribe("topic/slow", () => undefined);
+    await flush();
+    expect(diagnostic).toHaveBeenCalledWith("declaration-failure", expect.objectContaining({
+      operation: "declare", kind: "sample", keyexpr: "topic/slow", generation: 1,
+      reason: "Remote api request timeout", linkFailure: true,
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("connection-drop", expect.objectContaining({
+      reason: "declare failed: Error: Remote api request timeout",
+    }));
+    expect(diagnostic.mock.calls.some(([event]) => event === "probe-failure")).toBe(false);
+    expect(w.t.status()).toBe("reconnecting");
+    await w.t.close();
+  });
+
+  it("records failed connection attempts and retry timing without inventing a connected-session drop", async () => {
+    const diagnostic = vi.fn();
+    const w = world({ failFirst: 1, onDiagnostic: diagnostic });
+    await w.t.start();
+    expect(diagnostic).toHaveBeenCalledWith("connection-attempt", expect.objectContaining({ attemptId: 1, first: true }));
+    expect(diagnostic).toHaveBeenCalledWith("connection-failure", expect.objectContaining({
+      attemptId: 1, elapsedMs: expect.any(Number), reason: "ECONNREFUSED",
+    }));
+    expect(diagnostic).toHaveBeenCalledWith("connection-retry", expect.objectContaining({
+      delayMs: 200, nextDelayMs: 400, reason: "ECONNREFUSED",
+    }));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(diagnostic).toHaveBeenCalledWith("connection-open", expect.objectContaining({
+      attemptId: 2, first: false, generation: 1, discarded: false, elapsedMs: expect.any(Number),
+    }));
+    expect(diagnostic.mock.calls.some(([event]) => event === "connection-drop")).toBe(false);
+    expect(w.t.status()).toBe("connected");
+    await w.t.close();
+  });
+
+  it("records query deadlines and successful probes without recording request contents", async () => {
+    const diagnostic = vi.fn();
+    const w = world({ onDiagnostic: diagnostic });
+    await w.t.start();
+    const pending = w.t.get("svc/slow", {
+      timeoutMs: 300, payload: new TextEncoder().encode("private request"), attachment: new Uint8Array([1, 2, 3]),
+    }).catch(e => e);
+    await vi.advanceTimersByTimeAsync(400);
+    expect(await pending).toMatchObject({ code: "deadline" });
+    expect(diagnostic).toHaveBeenCalledWith("query-deadline", expect.objectContaining({
+      operation: "query", keyexpr: "svc/slow", generation: 1, timeoutMs: 300, deadlineMs: 400, pendingQueries: 1,
+    }));
+    w.current().answerProbes();
+    await flush();
+    expect(diagnostic).toHaveBeenCalledWith("probe-success", expect.objectContaining({
+      probeId: 1, generation: 1, currentGeneration: 1, pendingQueries: 0, elapsedMs: expect.any(Number),
+    }));
+    expect(JSON.stringify(diagnostic.mock.calls)).not.toMatch(/private request|payload|attachment/);
+    expect(w.t.status()).toBe("connected");
+    await w.t.close();
+  });
+
+  it("keeps connection, query and reconnect behavior when the diagnostic observer throws", async () => {
+    const w = world({ onDiagnostic: () => { throw new Error("broken observer"); } });
+    await w.t.start();
+    await w.t.subscribe("topic/**", () => undefined);
+    const query = w.t.get("svc/ok");
+    w.current().answerAll();
+    expect(await query).toEqual([]);
+    await vi.advanceTimersByTimeAsync(1500);
+    expect(w.t.status()).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(200);
+    expect(w.t.status()).toBe("connected");
+    expect(w.current().subs.map(s => s.keyexpr)).toEqual(["topic/**"]);
+    await w.t.close();
   });
 });

@@ -11,6 +11,8 @@ export interface BridgeSelectionOptions {
   localLocator?: string;
   open: (locator: string, signal: AbortSignal, timeoutMs: number) => Promise<BridgeTransport>;
   onSelected?: (locator: string) => void;
+  /** Optional metadata-only diagnostics. Observer failures never affect bridge selection. */
+  onDiagnostic?: (event: string, detail: Record<string, unknown>) => void;
   loadVehicleId?: () => string | undefined;
   saveVehicleId?: (id: string) => void;
   localTimeoutMs?: number;
@@ -31,6 +33,26 @@ export class BridgeSelection {
   }
 
   close(): void { this.lifetime.abort(); }
+
+  private diagnostic(event: string, detail: Record<string, unknown>): void {
+    try { this.opts.onDiagnostic?.(event, detail); }
+    catch { /* Diagnostic observers cannot change route selection or connection outcomes. */ }
+  }
+
+  private observe<T>(event: string, detail: Record<string, unknown>, work: () => Promise<T>): Promise<T> {
+    if (!this.opts.onDiagnostic) return work();
+    const startedAt = performance.now();
+    this.diagnostic(`${event}-start`, detail);
+    const pending = work();
+    void pending.then(
+      () => this.diagnostic(`${event}-success`, { ...detail, elapsedMs: performance.now() - startedAt }),
+      error => this.diagnostic(`${event}-failure`, {
+        ...detail, elapsedMs: performance.now() - startedAt,
+        reason: error instanceof Error ? error.message : String(error),
+      }),
+    );
+    return pending;
+  }
 
   private bounded<T>(work: (signal: AbortSignal) => Promise<T>, timeoutMs: number,
     dispose: (value: T) => void = () => undefined): Promise<T> {
@@ -76,15 +98,20 @@ export class BridgeSelection {
   }
 
   private dial(locator: string, timeoutMs: number): Promise<BridgeTransport> {
-    return this.bounded(signal => this.opts.open(locator, signal, timeoutMs), timeoutMs,
-      t => { void t.close().catch(() => undefined); });
+    return this.observe("bridge-dial", {
+      endpoint: locator, route: locator === this.opts.localLocator ? "local" : "vehicle", deadlineMs: timeoutMs,
+    }, () => this.bounded(signal => this.opts.open(locator, signal, timeoutMs), timeoutMs,
+      t => { void t.close().catch(() => undefined); }));
   }
 
   private async vehicle(): Promise<BridgeTransport> {
     const t = await this.dial(this.opts.vehicleLocator, this.opts.vehicleTimeoutMs ?? 8_000);
     try {
       // Identity lookup is optional for direct use: an older bridge can still serve the page.
-      this.vehicleId = await this.bounded(() => t.bridgeId(), this.opts.verifyTimeoutMs ?? 4_000);
+      this.vehicleId = await this.observe("bridge-verification", {
+        endpoint: this.opts.vehicleLocator, route: "vehicle", operation: "identity", optional: true,
+        deadlineMs: this.opts.verifyTimeoutMs ?? 4_000,
+      }, () => this.bounded(() => t.bridgeId(), this.opts.verifyTimeoutMs ?? 4_000));
       this.opts.saveVehicleId?.(this.vehicleId);
     } catch {
       this.vehicleId = undefined;
@@ -94,7 +121,11 @@ export class BridgeSelection {
   }
 
   private choose(t: BridgeTransport, locator: string): BridgeTransport {
+    const previousEndpoint = this.selected;
     this.selected = locator;
+    this.diagnostic("bridge-selected", {
+      endpoint: locator, previousEndpoint, route: locator === this.opts.localLocator ? "local" : "vehicle",
+    });
     this.opts.onSelected?.(locator);
     return t;
   }
@@ -115,7 +146,10 @@ export class BridgeSelection {
         if (!this.vehicleId) direct = await this.vehicle();
         const id = this.vehicleId;
         if (!id) throw new Error("Vehicle bridge identity unavailable");
-        await this.bounded(() => local!.verifyVehicle(id), this.opts.verifyTimeoutMs ?? 4_000);
+        await this.observe("bridge-verification", {
+          endpoint: localLocator, route: "local", operation: "vehicle-route", optional: false,
+          deadlineMs: this.opts.verifyTimeoutMs ?? 4_000,
+        }, () => this.bounded(() => local!.verifyVehicle(id), this.opts.verifyTimeoutMs ?? 4_000));
         if (this.lifetime.signal.aborted) throw new Error("Bridge selection cancelled");
         local.useVehicleProbe(id);
         if (direct) { void direct.close().catch(() => undefined); direct = undefined; }

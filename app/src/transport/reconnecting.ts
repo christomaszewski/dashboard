@@ -50,6 +50,8 @@ export interface ReconnectingOptions {
   retryMaxMs?: number;
   /** Where the status goes (the provider); also readable via status(). */
   onStatus?: (status: LinkStatus, error: string) => void;
+  /** Optional metadata-only diagnostics. Observer failures never affect the connection. */
+  onDiagnostic?: (event: string, detail: Record<string, unknown>) => void;
 }
 
 const PROBE_KEY = "@dashboard/link-probe";
@@ -82,12 +84,15 @@ export class ReconnectingTransport implements Transport {
   private generation = 0; // bumps on every drop: callbacks from an old inner are ignored
   private readonly records = new Map<number, Record_>();
   private nextId = 1;
+  private nextAttemptId = 1;
+  private nextProbeId = 1;
+  private pendingQueries = 0;
   private readonly dropWaiters = new Set<(e: TransportError) => void>();
   private probeTimer: ReturnType<typeof setInterval> | null = null;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
   private readonly resyncTimers = new Set<ReturnType<typeof setTimeout>>();
   private backoffMs: number;
-  private readonly opts: Required<Omit<ReconnectingOptions, "onStatus">> & Pick<ReconnectingOptions, "onStatus">;
+  private readonly opts: Required<Omit<ReconnectingOptions, "onStatus" | "onDiagnostic">> & Pick<ReconnectingOptions, "onStatus" | "onDiagnostic">;
 
   constructor(opts: ReconnectingOptions) {
     this.opts = {
@@ -118,9 +123,39 @@ export class ReconnectingTransport implements Transport {
   }
 
   private setStatus(status: LinkStatus, error: string): void {
+    const previousStatus = this.status_;
     this.status_ = status;
     this.error_ = error;
+    this.diagnostic("connection-status", { previousStatus, reason: error });
     this.opts.onStatus?.(status, error);
+  }
+
+  private diagnostic(event: string, detail: Record<string, unknown>): void {
+    if (!this.opts.onDiagnostic) return;
+    try {
+      const subscriptions = { sample: 0, liveliness: 0, ros: 0 };
+      for (const record of this.records.values()) subscriptions[record.kind] += 1;
+      this.opts.onDiagnostic(event, {
+        generation: this.generation,
+        status: this.status_,
+        subscriptions,
+        pendingQueries: this.pendingQueries,
+        ...detail,
+      });
+    } catch { /* Diagnostics are observers, never a reason to lose the connection. */ }
+  }
+
+  private declarationFailure(operation: "declare" | "re-declare", r: Record_, gen: number, error: unknown): void {
+    if (!this.opts.onDiagnostic) return;
+    this.diagnostic("declaration-failure", {
+      operation,
+      kind: r.kind,
+      ...(r.kind === "ros" ? { topic: r.topic.name, domainId: r.topic.domainId } : { keyexpr: r.keyexpr }),
+      generation: gen,
+      currentGeneration: this.generation,
+      reason: error instanceof Error ? error.message : String(error),
+      linkFailure: declarationLinkFailure(error),
+    });
   }
 
   private get connected(): boolean {
@@ -131,23 +166,29 @@ export class ReconnectingTransport implements Transport {
 
   private async attempt(first: boolean): Promise<void> {
     if (this.closed) return;
+    const attemptId = this.nextAttemptId++;
+    const startedAt = performance.now();
+    this.diagnostic("connection-attempt", { attemptId, first });
     let t: Transport;
     try {
       t = await this.opts.open();
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
+      this.diagnostic("connection-failure", { attemptId, first, elapsedMs: performance.now() - startedAt, reason: msg });
       // first dial: surface the error (the page shows it) but keep trying; later: stay "reconnecting"
       this.setStatus(first ? "error" : "reconnecting", msg);
       this.scheduleRetry();
       return;
     }
     if (this.closed) {
+      this.diagnostic("connection-open", { attemptId, first, elapsedMs: performance.now() - startedAt, discarded: true });
       void t.close().catch(() => undefined);
       return;
     }
     this.inner = t;
     this.generation += 1;
     this.backoffMs = this.opts.retryBaseMs;
+    this.diagnostic("connection-open", { attemptId, first, elapsedMs: performance.now() - startedAt, discarded: false });
     // "connected" BEFORE the re-declaration, not after: the history replay delivers PUTs while it
     // runs, and every consumer answers a PUT by fetching its descriptor through get() -- which is
     // refused while the link is not connected. Seen on the bench: tokens replayed, descriptors
@@ -200,6 +241,7 @@ export class ReconnectingTransport implements Transport {
     if (this.closed || this.retryTimer !== null) return;
     const wait = this.backoffMs;
     this.backoffMs = Math.min(this.backoffMs * 2, this.opts.retryMaxMs);
+    this.diagnostic("connection-retry", { delayMs: wait, nextDelayMs: this.backoffMs, reason: this.error_ });
     this.retryTimer = setTimeout(() => {
       this.retryTimer = null;
       void this.attempt(false);
@@ -210,6 +252,7 @@ export class ReconnectingTransport implements Transport {
    *  that threw): close the inner, fail what is in flight, and start reconnecting. */
   private drop(reason: string): void {
     if (this.closed || this.inner === null) return;
+    this.diagnostic("connection-drop", { reason });
     const dead = this.inner;
     this.inner = null;
     this.generation += 1;
@@ -241,10 +284,22 @@ export class ReconnectingTransport implements Transport {
     const t = this.inner;
     if (t === null || !this.connected) return;
     const gen = this.generation;
+    const probeId = this.nextProbeId++;
+    const startedAt = performance.now();
+    this.diagnostic("probe-start", { probeId, deadlineMs: this.opts.probeTimeoutMs });
     try {
       const probe = t.checkConnection ? t.checkConnection() : t.liveliness.get(PROBE_KEY).then(() => undefined);
       await this.withDeadline(probe, this.opts.probeTimeoutMs, "link probe");
+      this.diagnostic("probe-success", {
+        probeId, generation: gen, currentGeneration: this.generation,
+        elapsedMs: performance.now() - startedAt, deadlineMs: this.opts.probeTimeoutMs,
+      });
     } catch (e) {
+      this.diagnostic("probe-failure", {
+        probeId, generation: gen, currentGeneration: this.generation,
+        elapsedMs: performance.now() - startedAt, deadlineMs: this.opts.probeTimeoutMs,
+        reason: e instanceof Error ? e.message : String(e),
+      });
       if (gen === this.generation && this.inner === t) this.drop(e instanceof Error ? e.message : String(e));
     }
   }
@@ -288,6 +343,7 @@ export class ReconnectingTransport implements Transport {
         }
         await this.declare(t, gen, id, r);
       } catch (e) {
+        this.declarationFailure("re-declare", r, gen, e);
         // A healthy heartbeat cannot repair a missing subscription. Rebuild the session, but
         // never let a late failure from a retired session knock out its replacement.
         if (declarationLinkFailure(e)) {
@@ -331,6 +387,7 @@ export class ReconnectingTransport implements Transport {
     if (t !== null && this.connected) {
       const gen = this.generation;
       void this.declare(t, gen, id, r).catch((e) => {
+        this.declarationFailure("declare", r, gen, e);
         if (declarationLinkFailure(e)) {
           if (gen === this.generation && this.records.has(id)) this.drop(`declare failed: ${String(e)}`);
         } else console.warn("[transport] declare failed", e);
@@ -361,13 +418,13 @@ export class ReconnectingTransport implements Transport {
       this.track({ kind: "liveliness", keyexpr, handler: onEvent, inner: null, alive: new Set() }),
     get: async (keyexpr: string): Promise<string[]> => {
       const t = this.requireLink();
-      return this.guarded(t.liveliness.get(keyexpr), this.opts.defaultTimeoutMs, `liveliness ${keyexpr}`);
+      return this.guarded(t.liveliness.get(keyexpr), this.opts.defaultTimeoutMs, "liveliness", keyexpr);
     },
   };
 
   async get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]> {
     const t = this.requireLink();
-    return this.guarded(t.get(keyexpr, opts), opts?.timeoutMs ?? this.opts.defaultTimeoutMs, `query ${keyexpr}`);
+    return this.guarded(t.get(keyexpr, opts), opts?.timeoutMs ?? this.opts.defaultTimeoutMs, "query", keyexpr);
   }
 
   private requireLink(): Transport {
@@ -378,12 +435,24 @@ export class ReconnectingTransport implements Transport {
 
   /** A query with the client-side deadline (zenoh timeout + margin): past it, the socket is the
    *  suspect, so a probe runs at once and decides. */
-  private async guarded<T>(p: Promise<T>, timeoutMs: number, what: string): Promise<T> {
+  private async guarded<T>(p: Promise<T>, timeoutMs: number, operation: "query" | "liveliness", keyexpr: string): Promise<T> {
+    const gen = this.generation;
+    const startedAt = performance.now();
+    this.pendingQueries += 1;
     try {
-      return await this.withDeadline(p, timeoutMs + this.opts.deadlineMarginMs, what);
+      return await this.withDeadline(p, timeoutMs + this.opts.deadlineMarginMs, `${operation} ${keyexpr}`);
     } catch (e) {
-      if (e instanceof TransportError && e.code === "deadline") void this.probe();
+      if (e instanceof TransportError && e.code === "deadline") {
+        this.diagnostic("query-deadline", {
+          operation, keyexpr, generation: gen, currentGeneration: this.generation,
+          timeoutMs, deadlineMs: timeoutMs + this.opts.deadlineMarginMs,
+          elapsedMs: performance.now() - startedAt, reason: e.message,
+        });
+        void this.probe();
+      }
       throw e;
+    } finally {
+      this.pendingQueries -= 1;
     }
   }
 

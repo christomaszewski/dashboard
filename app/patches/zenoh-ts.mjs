@@ -8,13 +8,13 @@ const root = new URL('../node_modules/@eclipse-zenoh/zenoh-ts/', import.meta.url
 const version = JSON.parse(readFileSync(new URL('package.json', root), 'utf8')).version;
 if (version !== '1.9.0') throw new Error(`Review the dashboard connection patch for zenoh-ts ${version}`);
 const marker = '// dashboard: bounded, cancellable connection attempts';
-function patch(file, edit) {
+function patch(file, edit, patchMarker = marker) {
   const path = fileURLToPath(new URL(`dist/${file}`, root));
   const source = readFileSync(path, 'utf8');
-  if (source.includes(marker)) return;
+  if (source.includes(patchMarker)) return;
   const result = edit(source);
   if (result === source) throw new Error(`zenoh-ts patch no longer matches ${file}`);
-  writeFileSync(path, `${marker}\n${result}`);
+  writeFileSync(path, `${patchMarker}\n${result}`);
 }
 function replace(source, from, to) {
   if (!source.includes(from)) throw new Error(`zenoh-ts patch missing: ${from}`);
@@ -110,3 +110,92 @@ patch('session.js', source => {
     'SessionInner.open(config.locator, config.messageResponseTimeoutMs, config.openTimeoutMs, config.signal)');
   return replace(source, '        this.inner.close();', '        await this.inner.close();');
 });
+
+// Separate marker also upgrades an existing node_modules containing the original connection
+// patch. Observers only collect metadata: no timeout, wire protocol or reconnect policy changes.
+const diagnosticsMarker = '// dashboard: passive WebSocket diagnostics v1';
+patch('link.js', source => {
+  source = replace(source, '    static async new(locator, timeoutMs = 3000, signal) {',
+    '    static async new(locator, timeoutMs = 3000, signal, onDiagnostic) {');
+  source = replace(source, '        ws.binaryType = "arraybuffer";',
+    '        ws.binaryType = "arraybuffer";\n        dashboardObserveSocket(ws, onDiagnostic);');
+  source = replace(source, '            const fail = (message) => {', '            const fail = (message, cause) => {');
+  source = replace(source, '                try { ws.close(); } catch { /* already closed */ }',
+    '                if (ws.readyState !== WebSocket.CLOSED) dashboardSocketDiagnostics.get(ws)?.requestClose(cause);\n                try { ws.close(); } catch { /* already closed */ }');
+  source = replace(source, 'const abort = () => fail("Connection cancelled");',
+    'const abort = () => fail("Connection cancelled", "abort");');
+  source = replace(source, 'setTimeout(() => fail("WebSocket connection timeout"), timeoutMs)',
+    'setTimeout(() => fail("WebSocket connection timeout", "dial-timeout"), timeoutMs)');
+  source = replace(source, 'const close = () => { try { ws.close(); } catch {} };',
+    'const close = () => { dashboardSocketDiagnostics.get(ws)?.requestClose("abort"); try { ws.close(); } catch {} };');
+  source = replace(source, 'fail("WebSocket connection failed or browser access denied")',
+    'fail("WebSocket connection failed or browser access denied", "dial-error")');
+  source = replace(source, 'fail("WebSocket closed before connecting")',
+    'fail("WebSocket closed before connecting", "dial-closed")');
+  source = replace(source, '        this.ws.send(msg);',
+    '        this.ws.send(msg);\n        dashboardSocketDiagnostics.get(this.ws)?.sent(msg);');
+  source = replace(source, '        if (this.ws.readyState === WebSocket.CLOSED) return;',
+    '        if (this.ws.readyState === WebSocket.CLOSED) return;\n        dashboardSocketDiagnostics.get(this.ws)?.requestClose("sdk-close");');
+  return source + `
+const dashboardSocketDiagnostics = new WeakMap();
+function dashboardObserveSocket(ws, onDiagnostic) {
+    if (typeof onDiagnostic !== "function") return;
+    let rxBytes = 0, rxMessages = 0, txBytes = 0, txMessages = 0;
+    let lastReceivedAt = null, appInitiated = false, timer = null;
+    const size = data => {
+        if (typeof data === "string") return new TextEncoder().encode(data).byteLength;
+        if (data instanceof ArrayBuffer || ArrayBuffer.isView(data)) return data.byteLength;
+        if (typeof Blob !== "undefined" && data instanceof Blob) return data.size;
+        return 0;
+    };
+    const snapshot = () => ({ rxBytes, rxMessages, txBytes, txMessages,
+        lastReceivedAgeMs: lastReceivedAt === null ? null : Math.max(0, Date.now() - lastReceivedAt),
+        bufferedAmount: ws.bufferedAmount, readyState: ws.readyState, appInitiated });
+    const emit = (event, detail = {}) => {
+        try { onDiagnostic(event, { ...snapshot(), ...detail }); } catch { /* diagnostics cannot affect transport */ }
+    };
+    const stopTimer = () => { if (timer !== null) clearInterval(timer); timer = null; };
+    const opened = () => {
+        emit("ws-open");
+        if (timer === null) timer = setInterval(() => emit("ws-snapshot"), 5000);
+    };
+    const errored = () => emit("ws-error");
+    const received = event => { rxMessages++; rxBytes += size(event.data); lastReceivedAt = Date.now(); };
+    const closed = event => {
+        emit("ws-snapshot");
+        emit("ws-close", { code: event.code, reason: event.reason, wasClean: event.wasClean });
+        stopTimer();
+        ws.removeEventListener("open", opened);
+        ws.removeEventListener("error", errored);
+        ws.removeEventListener("message", received);
+        ws.removeEventListener("close", closed);
+        dashboardSocketDiagnostics.delete(ws);
+    };
+    dashboardSocketDiagnostics.set(ws, {
+        sent: data => { txMessages++; txBytes += size(data); },
+        requestClose: cause => {
+            appInitiated = true;
+            emit("ws-close-request", { cause });
+            // Keep the close listener until the browser supplies its actual close code, but do
+            // not retain a periodic timer if the browser leaves a closing socket pending.
+            stopTimer();
+        },
+    });
+    ws.addEventListener("open", opened);
+    ws.addEventListener("error", errored);
+    ws.addEventListener("message", received);
+    ws.addEventListener("close", closed);
+}
+`;
+}, diagnosticsMarker);
+
+patch('session_inner.js', source => {
+  source = replace(source, 'static async open(locator, messageResponseTimeoutMs, openTimeoutMs, signal) {',
+    'static async open(locator, messageResponseTimeoutMs, openTimeoutMs, signal, onDiagnostic) {');
+  return replace(source, 'RemoteLink.new(locator, openTimeoutMs, signal)',
+    'RemoteLink.new(locator, openTimeoutMs, signal, onDiagnostic)');
+}, diagnosticsMarker);
+
+patch('session.js', source => replace(source,
+  'SessionInner.open(config.locator, config.messageResponseTimeoutMs, config.openTimeoutMs, config.signal)',
+  'SessionInner.open(config.locator, config.messageResponseTimeoutMs, config.openTimeoutMs, config.signal, config.onDiagnostic)'), diagnosticsMarker);

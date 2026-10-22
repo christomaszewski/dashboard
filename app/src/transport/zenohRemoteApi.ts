@@ -43,9 +43,10 @@ export class ZenohRemoteApiTransport implements Transport {
   private readonly nodeId = String(Math.floor(Math.random() * Number.MAX_SAFE_INTEGER));
   private constructor(private readonly session: Session) {}
 
-  static async open(locator: string, signal?: AbortSignal, openTimeoutMs = 8_000): Promise<ZenohRemoteApiTransport> {
+  static async open(locator: string, signal?: AbortSignal, openTimeoutMs = 8_000,
+    onDiagnostic?: (event: string, detail: Record<string, unknown>) => void): Promise<ZenohRemoteApiTransport> {
     // Extra dial options are supplied by our version-checked SDK patch (app/patches/zenoh-ts.mjs).
-    const config = Object.assign(new Config(locator, 3_000), { signal, openTimeoutMs });
+    const config = Object.assign(new Config(locator, 3_000), { signal, openTimeoutMs, onDiagnostic });
     const session = await Session.open(config);
     if (signal?.aborted) { await session.close(); throw new Error("Connection cancelled"); }
     return new ZenohRemoteApiTransport(session);

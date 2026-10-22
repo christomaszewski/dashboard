@@ -50,6 +50,10 @@ reachable, then checks vehicle fallback and restored subscriptions. See
 
 ## Verify (browser on the mesh)
 
+For disconnect investigations, see [connection diagnostics](docs/CONNECTION_DIAGNOSTICS.md)
+and the [previous/current build comparison](docs/dashboard-build-comparison.md). The connection
+status pill downloads a local trace; these diagnostics do not alter retry or timeout behavior.
+
 Open `http://<vehicle-ip>:8080`. The app is tabbed (Home / Cameras / ROS / Rig / Clouds / Bus debug,
 hash-routed — `#/ros` deep-links). Tabs beyond Home are OPT-IN — `tabs: [cameras, ros, clouds, debug]`
 in the instance YAML; Rig comes with `rig_agent: true` — and all opted-in tabs stay mounted, so

@@ -14,6 +14,7 @@ import { visibleTabs, type TabVisibility } from "../config/schema";
 import { TabBar } from "./TabBar";
 import { useHashRoute, type TabId } from "./useHashRoute";
 import { TabActivity } from "./TabActivity";
+import { connectionDiagnostics } from "../transport/connectionDiagnostics";
 
 // Lazy: three.js + the BPF loaders live in their own chunk, downloaded on first visit only.
 const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
@@ -48,7 +49,9 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
         <TabBar tabs={visible} tab={tab} navigate={navigate} />
         <span className="spacer" />
         <span className="locator">{locator}</span>
-        <span className={`pill ${pillClass}`}>{status}</span>
+        <button type="button" className={`pill ${pillClass}`} aria-label="Download connection diagnostics"
+          title={`${error ? `${error}\n` : ""}Download connection diagnostics`}
+          onClick={() => { connectionDiagnostics(); window.dashboardConnectionDiagnostics?.download(); }}>{status}</button>
       </header>
       {status === "error" && (
         <main className="page">
@@ -74,7 +77,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       )}
       {visible.includes("ros") && (
         <main className={panelClass("ros")}>
-          <RosExplorer />
+          <RosExplorer active={tab === "ros"} />
         </main>
       )}
       {visible.includes("rig") && (
