@@ -10,6 +10,8 @@ verbs:
   status: "ps"        # rig may append `--format json` to parse `docker compose ps`
   logs: "logs"
   config: "config"
+  images: "images"   # YAML list of the images this configuration actually selects
+  runtime-images: "runtime-images"  # read-only JSON v1 inventory; replay pins exact image IDs
 tier: infra           # rig bring-up tier: a vehicle-wide sidecar on the zenoh router, not a sensor --
                       #   up right after the router (infra, ordered after it), torn down last, and
                       #   `rig add dashboard` lands it in vehicle.yaml's `infra:` as an ENABLED row.
@@ -40,6 +42,7 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - dash-up           #   The Caddyfile + React bundle are baked into the dashboard-web image, so not here.
   - tools/dash_env.py
   - tools/dash_zenoh_config.py                  # renders the sidecar's topic rate limits (var/run/<name>/)
+  - tools/runtime_images.py                    # inventory and immutable native replay launches
   - deploy/docker-compose.yml
   - deploy/docker-compose.external-config.yml   # bind-mounts the instance YAML into dashboard-web
   - deploy/docker-compose.clouds.yml            # optional /clouds mount (only when clouds_dir set)

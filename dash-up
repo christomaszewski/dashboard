@@ -11,6 +11,7 @@
 #   dash-up config/infra/dashboard.example.yaml ps
 #   dash-up config/infra/dashboard.example.yaml logs
 #   dash-up config/infra/dashboard.example.yaml config       # render the merged compose
+#   dash-up config/infra/dashboard.example.yaml runtime-images  # read-only Rig image inventory
 #
 # Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY); run `pull` then `up -d`.
 # Images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, plus dashboard-rig-agent
@@ -23,6 +24,14 @@ PYTHON="${DASH_PYTHON:-python3}"
 COMPOSE="$REPO/deploy/docker-compose.yml"
 
 CONFIG="${1:?usage: dash-up <dashboard-config.yaml> [compose args...]}"; shift || true
+READ_ONLY=0
+case "${1:-}" in
+  runtime-images|images)
+    [ "$#" -eq 1 ] || { echo "dash-up: image inventory does not accept Compose arguments" >&2; exit 2; }
+    READ_ONLY=1
+    export PYTHONDONTWRITEBYTECODE=1
+    ;;
+esac
 # Accept the config as given (abs / cwd-relative -- e.g. a rig-supplied vehicle path), or fall back to
 # the repo-relative short form so `dash-up config/infra/dashboard.example.yaml` works anywhere.
 if [ ! -f "$CONFIG" ] && [ -f "$REPO/$CONFIG" ]; then CONFIG="$REPO/$CONFIG"; fi
@@ -40,10 +49,17 @@ export DASH_CONFIG_HOST="$CONFIG_ABS"
 # rendered into a copy of the sidecar's zenoh config as downsampling rules on its ingress from the
 # router, scoped to the ROS domain (rig's ROS_DOMAIN_ID, or `ros_domain_id:`), so high-rate topics
 # reach the wireless link at a viewing rate. No limits configured -> the stock template is mounted.
-if ZC="$("$PYTHON" "$REPO/tools/dash_zenoh_config.py" "$CONFIG_ABS" "$REPO/var/run/${DASH_NAME:-dashboard}/zenohd-dashboard.json5")"; then
-  [ -n "$ZC" ] && export DASH_ZENOH_CONFIG="$ZC"
+ZENOH_OUTPUT="$REPO/var/run/${DASH_NAME:-dashboard}/zenohd-dashboard.json5"
+if [ "$READ_ONLY" = 1 ]; then
+  # Resolve the same mount and validate the same rules without writing a generated config.
+  ZC="$("$PYTHON" "$REPO/tools/runtime_images.py" validate-config "$CONFIG_ABS" "$ZENOH_OUTPUT")"
+elif ZC="$("$PYTHON" "$REPO/tools/dash_zenoh_config.py" "$CONFIG_ABS" "$ZENOH_OUTPUT")"; then
+  :
 else
   exit 1
+fi
+if [ -n "$ZC" ]; then
+  export DASH_ZENOH_CONFIG="$ZC"
 fi
 # rig owns the compose project (<name>-vehicle-<id>) and exports COMPOSE_PROJECT_NAME per call; honor
 # it so rig/bake/the launcher all manage ONE project. The instance name is the standalone fallback.
@@ -114,7 +130,7 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
     # The agent's state dir (job records) lives under the tree's var/ — create it as the OPERATOR
     # before docker can create it root-owned; on Linux run the agent as this uid so everything rig
     # writes (var/rendered, run manifests) stays operator-owned.
-    mkdir -p "$RIG_ROOT_HOST/var/dashboard-rig-agent/home"
+    [ "$READ_ONLY" = 1 ] || mkdir -p "$RIG_ROOT_HOST/var/dashboard-rig-agent/home"
     if [ "$(uname -s)" = Linux ] && [ -S /var/run/docker.sock ]; then
       export DASH_AGENT_USER="${DASH_AGENT_USER:-$(id -u):$(id -g)}"
       export DASH_DOCKER_GID="${DASH_DOCKER_GID:-$(stat -c %g /var/run/docker.sock)}"
@@ -131,4 +147,21 @@ fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
 echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}${DASH_ZENOH_CONFIG:+ topic-rate-limit=on}$RIG_STATUS config=$CONFIG_ABS" >&2
+case "${ARGS[0]}" in
+  runtime-images|images)
+    exec "$PYTHON" "$REPO/tools/runtime_images.py" "${ARGS[0]}" -f "$COMPOSE" "${OVERLAYS[@]}"
+    ;;
+  up)
+    if [ "${RIG_RUNTIME_IMAGE_PINS+x}" = x ]; then
+      exec "$PYTHON" "$REPO/tools/runtime_images.py" pinned-up -f "$COMPOSE" "${OVERLAYS[@]}" -- "${ARGS[@]:1}"
+    fi
+    ;;
+  down|ps|logs|config|top|version) : ;;
+  *)
+    if [ "${RIG_RUNTIME_IMAGE_PINS+x}" = x ]; then
+      echo "dash-up: pinned replay supports up and read/teardown verbs only; cannot run ${ARGS[0]}" >&2
+      exit 2
+    fi
+    ;;
+esac
 exec docker compose -f "$COMPOSE" "${OVERLAYS[@]}" "${ARGS[@]}"

@@ -15,5 +15,6 @@ jobs:
           repository: christomaszewski/rig
           path: .rig
       - run: python3 -m pip install --user pyyaml
+      - run: python3 tools/test_runtime_image_contract.py
       - uses: ./.rig/.github/actions/setup-build-probe
       - run: ./.rig/rig certify --repo . --require-build-check

@@ -115,6 +115,20 @@ Then `rig up|down|status|logs dashboard`. Fleet deploy:
 injects `RIG_IMAGE_REGISTRY`; `dash-up` resolves images to `<registry>/dashboard-zenoh:<tag>` and runs
 `pull` + `up` (no build/source on the vehicle).
 
+For replay, `dash-up <config> runtime-images` returns the version-1 JSON inventory of the
+resolved Compose stack; `images` returns the same image references as a YAML list. Both queries
+are read-only, honor registry and per-image overrides, and include `dashboard-rig-agent` only
+when the agent is enabled and its deployment root resolves. They validate topic rate limits
+without generating config or state directories.
+
+Rig supplies `RIG_RUNTIME_IMAGE_PINS` for replay `up`: the launcher requires an exact map of the
+active references to full `sha256:` image IDs, honors native `RIG_TARGET_ARCH`, and starts that
+frozen Compose model with building and pulling disabled. The agent's detached jobs use its
+pinned image too. Replay rejects platform mismatches, changed image selections and extra image
+policy/service-selection flags. Standalone launches without pins retain normal Compose behavior.
+Update the dashboard launcher package in existing deployments to use this contract; no dashboard
+image rebuild is required for the launcher change alone.
+
 ## Layout
 
 ```
