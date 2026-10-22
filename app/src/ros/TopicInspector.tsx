@@ -1,6 +1,7 @@
 import type { TopicEntry } from "./graph";
 import { useTopic } from "./useTopic";
 import { MessageTree } from "./MessageTree";
+import { TopicTrafficTable } from "./TopicTrafficTable";
 
 /**
  * Live view of one ROS topic off the shared TopicStore: decoded latest sample at the store's flush
@@ -10,21 +11,23 @@ import { MessageTree } from "./MessageTree";
  * rate every flush), where the old inspector froze at the last computed value.
  */
 export function TopicInspector({ topic }: { topic: TopicEntry }) {
-  const { snapshot } = useTopic(topic.name);
+  const { snapshot } = useTopic(topic);
   const message = snapshot?.message;
   const hasData = message !== undefined || snapshot?.lastBytes !== undefined;
+  const hz = snapshot?.traffic?.count ? snapshot.traffic.hz : snapshot?.hz;
 
   return (
     <div className="inspector">
       <div className="inspector-header">
         <strong>{topic.name}</strong>
         <span className="dim">{topic.typeName}</span>
+        <span className="chip">domain {topic.domainId}</span>
         <span className="dim" title={topic.typeHash}>
           {topic.typeHash.slice(0, 14)}…
         </span>
-        <span className={`pill ${hasData ? "ok" : "idle"}`} style={{ marginLeft: "auto" }}>
-          {snapshot?.hz !== undefined
-            ? `${snapshot.hz.toFixed(1)} Hz`
+        <span className={`pill ${hasData && hz !== 0 ? "ok" : "idle"}`} style={{ marginLeft: "auto" }}>
+          {hz !== undefined
+            ? `${hz.toFixed(1)} Hz`
             : hasData
               ? snapshot?.latched
                 ? "latched"
@@ -33,6 +36,7 @@ export function TopicInspector({ topic }: { topic: TopicEntry }) {
           {snapshot?.lastBytes !== undefined ? ` · ${snapshot.lastBytes} B` : ""}
         </span>
       </div>
+      <TopicTrafficTable topic={topic} traffic={snapshot?.traffic} />
       {snapshot?.error && <div className="error-box">{snapshot.error}</div>}
       {snapshot?.warning && (
         <p className="dim" style={{ color: "var(--warn)", margin: ".5rem .9rem" }}>

@@ -14,9 +14,11 @@ export interface UseTopicResult {
  * Watch one ROS topic by name through the shared TopicStore. All consumers of a topic share one
  * zenoh subscription and one decode per flush — pluck what you need from the shared message.
  */
-export function useTopic(topicName: string | null | undefined, opts?: TopicAcquireOptions): UseTopicResult {
+export function useTopic(topicName: string | TopicEntry | null | undefined, opts?: TopicAcquireOptions): UseTopicResult {
   const { graph, store } = useRosGraphContext();
-  const topic = topicName ? graph.topics.find((t) => t.name === topicName) : undefined;
+  const topic = typeof topicName === "object" && topicName !== null
+    ? graph.topics.find((t) => t.dataKeyexpr === topicName.dataKeyexpr)
+    : topicName ? graph.topics.find((t) => t.name === topicName) : undefined;
 
   // Graph rebuilds mint new TopicEntry objects for the same topic — key the effect on the
   // subscription-relevant fields, never the entry object.

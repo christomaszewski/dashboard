@@ -219,6 +219,22 @@ The ROS graph is rebuilt client-side from rmw_zenoh's `@ros2_lv/**` liveliness t
 `@foxglove/rosmsg-msgs-common` bundled definitions (`schema/decoders/staticDefs.ts`, loaded as an
 async chunk). Unit tests cover the parsers and a write→decode round-trip: `npm test`.
 
+The topic table lists publisher and subscriber nodes; Services lists server and client nodes.
+Domains remain separate, including when inspecting identically named topics. Hover an endpoint
+name for its session/node/endpoint identity (two endpoints can have the same node name).
+
+Selecting a topic also shows received message counts, Hz, and serialized payload bandwidth for
+each publisher. The dashboard matches message attachment GIDs to the full rmw_zenoh liveliness
+token's XXH3-128 hash (`hash-wasm`; little-endian fleet targets). Unsupported/missing IDs or
+publishers no longer in the graph remain in explicit unmatched rows, never attributed by guesswork.
+Rates use a five-second window in 100 ms buckets and fall to zero when traffic stops. Counts
+accumulate for the shared subscription's lifetime (possibly opened earlier by a Home widget),
+reset after it closes, and exclude transient-local cache-query replies. Subscription-delivered
+history counts as received traffic. These are browser observations, not lifetime publisher totals
+or wire bandwidth: transport filtering/loss can reduce them and network overhead is excluded.
+Traffic monitoring uses the existing shared subscription and works even without a message decoder.
+Only selected/already-watched topics are subscribed; the graph table itself adds no traffic.
+
 Known behaviors:
 
 - **Bundled defs only (topics)**: vendor types (novatel/sbg/vectornav…) aren't in the bundle and

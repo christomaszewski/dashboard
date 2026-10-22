@@ -11,6 +11,7 @@ import type { DecodedMessage, Decoder, SchemaResolver } from "../schema/types";
 import { RateMonitor } from "../home/rate";
 import { topicStreams } from "./topicStreamPool";
 import type { TopicEntry } from "./graph";
+import { TopicTraffic, type TopicTrafficSnapshot } from "./topicTraffic";
 
 // Keep the graph metadata through to the stream pool: a data subscription alone does not
 // activate CPU delivery from Lyrical buffer-aware publishers (including sensor_msgs/Image).
@@ -26,6 +27,7 @@ export interface TopicSnapshot {
   hz?: number;
   lastBytes?: number;
   latched?: boolean; // message came from the transient-local get, not a live sample
+  traffic?: TopicTrafficSnapshot;
 }
 
 export interface TopicAcquireOptions {
@@ -74,6 +76,7 @@ interface Entry {
   latest: { payload: Uint8Array; latched: boolean } | null;
   monitor: RateMonitor;
   sampleCount: number;
+  traffic: TopicTraffic;
   seeded: boolean; // transient-local get fired (once per entry lifetime)
   // observable state (mirrored into the cached snapshot)
   message?: DecodedMessage;
@@ -123,6 +126,7 @@ export class TopicStore {
         latest: null,
         monitor: new RateMonitor(this.defaultWindowMs),
         sampleCount: 0,
+        traffic: new TopicTraffic(this.now()),
         seeded: false,
         snapshot: null,
       };
@@ -163,6 +167,7 @@ export class TopicStore {
         hz: entry.hz,
         lastBytes: entry.lastBytes,
         latched: entry.latched,
+        traffic: entry.traffic.snapshot(this.now()),
       };
     }
     return entry.snapshot;
@@ -196,6 +201,7 @@ export class TopicStore {
         entry.latest = { payload: s.payload, latched: false };
         entry.monitor.record(this.now());
         entry.sampleCount += 1;
+        entry.traffic.record(s, this.now());
         // No React work here — samples can arrive at hundreds of Hz; flush() notifies at 5 Hz.
       }, entry.info)
       .then((sub) => {
@@ -246,7 +252,12 @@ export class TopicStore {
   }
 
   private flush(entry: Entry): void {
-    let changed = false;
+    // Traffic rates also decay while idle, even when the legacy Hz estimate is unchanged.
+    const traffic = entry.traffic.snapshot(this.now());
+    const previous = entry.snapshot?.traffic;
+    let changed = traffic.count !== previous?.count || traffic.hz !== previous?.hz ||
+      traffic.bytesPerSecond !== previous?.bytesPerSecond || traffic.publishers.some((p, i) =>
+        p.hz !== previous?.publishers[i]?.hz || p.bytesPerSecond !== previous?.publishers[i]?.bytesPerSecond);
     const hz = round1(entry.monitor.hz(this.now()));
     if (hz !== entry.hz) {
       entry.hz = hz;

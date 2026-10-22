@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useRosGraphContext } from "./RosGraphContext";
 import type { TopicEntry } from "./graph";
 import { TopicInspector } from "./TopicInspector";
+import { EndpointNames } from "./TopicTrafficTable";
 
 function QosChips({ topic }: { topic: TopicEntry }) {
   return (
@@ -21,7 +22,7 @@ export function RosExplorer() {
   const { graph } = useRosGraphContext();
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  const selected = graph.topics.find((t) => `${t.domainId}|${t.name}|${t.typeHash}` === selectedId) ?? null;
+  const selected = graph.topics.find((t) => t.dataKeyexpr === selectedId) ?? null;
 
   return (
     <section className="card">
@@ -37,34 +38,39 @@ export function RosExplorer() {
           No <span className="mono">@ros2_lv/**</span> liveliness tokens seen — is an rmw_zenoh graph routed to this bus?
         </p>
       ) : (
-        <table className="data-table">
+        <div className="ros-table-scroll"><table className="data-table">
           <thead>
             <tr>
               <th>topic</th>
               <th>type</th>
-              <th style={{ width: 50 }}>pubs</th>
-              <th style={{ width: 50 }}>subs</th>
+              <th>domain</th>
+              <th>Publisher nodes</th>
+              <th>Subscriber nodes</th>
             </tr>
           </thead>
           <tbody>
             {graph.topics.map((t) => {
-              const id = `${t.domainId}|${t.name}|${t.typeHash}`;
+              const id = t.dataKeyexpr;
               const isSel = id === selectedId;
               return (
                 <tr key={id} className={isSel ? "selected" : undefined} onClick={() => setSelectedId(isSel ? null : id)}>
                   <td>
-                    {t.name} <QosChips topic={t} />
+                    <button className="ros-topic-button" aria-expanded={isSel} onClick={(e) => {
+                      e.stopPropagation(); setSelectedId(isSel ? null : id);
+                    }}>{t.name}</button> <QosChips topic={t} />
                   </td>
                   <td className="dim">{t.typeName}</td>
-                  <td>{t.publishers.length}</td>
-                  <td>{t.subscribers.length}</td>
+                  <td>{t.domainId}</td>
+                  <td><EndpointNames endpoints={t.publishers} /></td>
+                  <td><EndpointNames endpoints={t.subscribers} /></td>
                 </tr>
               );
             })}
           </tbody>
-        </table>
+        </table></div>
       )}
-      {selected && <TopicInspector topic={selected} />}
+      {graph.topics.length > 0 && <p className="dim ros-traffic-note">Select a topic to inspect messages and measure each publisher’s traffic.</p>}
+      {selected && <TopicInspector key={selected.dataKeyexpr} topic={selected} />}
 
       {graph.nodes.length > 0 && (
         <details className="panel">
@@ -72,7 +78,7 @@ export function RosExplorer() {
           <div className="panel-body">
             <ul className="plain" style={{ columns: 2 }}>
               {graph.nodes.map((n) => (
-                <li key={n.keyexpr}>{n.nodeFq}</li>
+                <li key={n.keyexpr} title={`Session ${n.zid} · node ${n.nid}`}>{n.nodeFq} <span className="dim">· domain {n.domainId}</span></li>
               ))}
             </ul>
           </div>
@@ -82,13 +88,16 @@ export function RosExplorer() {
         <details className="panel">
           <summary>Services ({graph.services.length})</summary>
           <div className="panel-body">
-            <ul className="plain">
-              {graph.services.map((s) => (
-                <li key={s.name + s.typeName}>
-                  {s.name} <span className="dim">{s.typeName}</span>
-                </li>
-              ))}
-            </ul>
+            <div className="ros-table-scroll"><table className="data-table ros-endpoint-table">
+              <thead><tr><th>Service</th><th>Type</th><th>Domain</th><th>Server nodes</th><th>Client nodes</th></tr></thead>
+              <tbody>{graph.services.map((s) => {
+                const domain = (s.servers[0] ?? s.clients[0]).domainId;
+                return <tr key={`${domain}|${s.name}|${s.typeName}`}>
+                  <td>{s.name}</td><td className="dim">{s.typeName}</td><td>{domain}</td>
+                  <td><EndpointNames endpoints={s.servers} /></td><td><EndpointNames endpoints={s.clients} /></td>
+                </tr>;
+              })}</tbody>
+            </table></div>
           </div>
         </details>
       )}

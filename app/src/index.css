@@ -581,6 +581,14 @@ body {
 }
 
 /* ── Inspector / trees ── */
+.ros-table-scroll { overflow-x: auto; }
+.ros-endpoints { margin: 0; overflow-wrap: anywhere; }
+.ros-endpoint-table tbody tr { cursor: default; }
+.ros-topic-button { color: inherit; font: inherit; text-align: left; border: 0; padding: 0; background: none; cursor: pointer; }
+.ros-topic-button:hover { text-decoration: underline; }
+.ros-traffic { padding: 0.6rem 0; border-bottom: 1px solid var(--border); }
+.ros-traffic h3 { margin: 0.2rem 0.9rem 0.6rem; font-size: 0.8rem; }
+.ros-traffic-note { margin: 0.7rem 1.1rem; font-size: 0.75rem; line-height: 1.5; }
 .inspector {
   margin: 0 1.1rem 1rem;
   border: 1px solid var(--border-strong);

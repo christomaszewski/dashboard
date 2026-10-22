@@ -236,10 +236,27 @@ describe("TopicStore", () => {
     await tick(200);
     expect(store.getSnapshot(KEY)?.latched).toBe(true);
     expect(store.getSnapshot(KEY)?.message).toEqual({ n: 5 });
+    expect(store.getSnapshot(KEY)?.traffic?.count).toBe(0); // cache replies aren't fresh traffic
     // live samples flip latched off
     transport.push(new Uint8Array([6]));
     await tick(200);
     expect(store.getSnapshot(KEY)?.latched).toBe(false);
+    expect(store.getSnapshot(KEY)?.traffic?.count).toBe(1);
+  });
+
+  it("reports every received message even when decoding coalesces or is unavailable", async () => {
+    resolver.failWith = "vendor schema unavailable";
+    store.acquire(INFO);
+    await tick(0);
+    for (let i = 0; i < 1000; i++) transport.push(new Uint8Array(20));
+    await tick(1000);
+    expect(store.getSnapshot(KEY)?.traffic).toMatchObject({ count: 1000, bytes: 20000, hz: 1000, bytesPerSecond: 20000 });
+    expect(resolver.decodeCalls).toBe(0);
+    await tick(5000);
+    expect(store.getSnapshot(KEY)?.traffic).toMatchObject({ count: 1000, hz: 0, bytesPerSecond: 0 });
+    const idle = store.getSnapshot(KEY);
+    await tick(1000);
+    expect(store.getSnapshot(KEY)).toBe(idle); // no idle React renders after rates reach zero
   });
 
   it("decode errors set error and clear on the next good sample", async () => {
