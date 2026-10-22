@@ -73,7 +73,7 @@ def build_descriptor(cfg, *, vehicle: str, vehicle_id: str, rig_version: Optiona
         "rig_version": rig_version,
         "root": str(cfg.root),
         "data_dir": str(cfg.data_dir) if cfg.data_dir else None,
-        "capabilities": {"actuate": bool(cfg.actuate), "verbs": list(VERBS), "jobs": True},
+        "capabilities": {"actuate": bool(cfg.actuate), "verbs": list(VERBS), "jobs": True, "docker_logs": True},
         "self_instance": self_instance,
         "poll_s": cfg.poll_s,
         "since_unix_s": since_unix_s,

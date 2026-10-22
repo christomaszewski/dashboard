@@ -1,3 +1,4 @@
+import json
 import subprocess
 import unittest
 from pathlib import Path
@@ -5,7 +6,7 @@ from pathlib import Path
 from helpers import make_config, make_tree, result, scripted_run_rig, tmpdir
 
 from rig_agent.jobs import Job, JobStore
-from rig_agent.runner import DockerRunner, RunnerError, container_name, docker_run_argv, run_job, run_result
+from rig_agent.runner import DockerRunner, RunnerError, RunnerStartUncertain, container_name, docker_run_argv, run_job, run_result
 
 
 def _job(argv, timeout_s=300, **kw) -> Job:
@@ -76,28 +77,70 @@ class DockerRunnerTests(unittest.TestCase):
         self.replies["run"] = _Proc(0, "abcdef0123456789\n")
         info = self.runner.spawn(_job(["up"]))
         self.assertEqual(info, {"kind": "docker", "container": "rig-agent-job-j-20260902T140000Z-0001", "id": "abcdef012345"})
-        self.replies["inspect"] = _Proc(0, "true 0\n")
+        self.replies["inspect"] = _Proc(0, '{"Status":"running","ExitCode":0}')
         self.assertEqual(self.runner.poll(info), (True, None))
-        self.replies["inspect"] = _Proc(0, "false 3\n")
+        self.replies["inspect"] = _Proc(0, '{"Status":"exited","ExitCode":3}')
         self.assertEqual(self.runner.poll(info), (False, 3))
         self.replies["inspect"] = _Proc(1, "", "No such object")
         self.assertEqual(self.runner.poll(info), (False, None))
         self.runner.stop(info)
         self.assertEqual(self.calls[-1][:4], ["docker", "stop", "-t", "15"])
         self.runner.cleanup(info)
-        self.assertEqual(self.calls[-1], ["docker", "rm", "-f", info["container"]])
+        self.assertEqual(self.calls[-1], ["docker", "rm", info["container"]])
 
     def test_spawn_failure(self):
         self.replies["run"] = _Proc(125, "", "docker: image not found")
-        with self.assertRaises(RunnerError):
+        with self.assertRaises(RunnerStartUncertain) as caught:
             self.runner.spawn(_job(["up"]))
+        self.assertEqual(caught.exception.info["container"], container_name(_job(["up"]).job_id))
 
     def test_sweep(self):
-        self.replies["ps"] = _Proc(0, "rig-agent-job-j-1\tj-1\trunning\nrig-agent-job-j-0\tj-0\texited\nweird line\n")
+        self.replies["ps"] = _Proc(0, "rig-agent-job-j-1\tj-1\trunning\nrig-agent-job-j-0\tj-0\texited\n")
         self.assertEqual(self.runner.sweep(), [
             {"job_id": "j-1", "info": {"kind": "docker", "container": "rig-agent-job-j-1"}, "running": True},
             {"job_id": "j-0", "info": {"kind": "docker", "container": "rig-agent-job-j-0"}, "running": False}])
         self.assertIn("label=dashboard.rig-agent.vehicle=1", self.calls[-1])
+
+    def test_observation_errors_and_malformed_output_are_never_exit_evidence(self):
+        info = {"container": "rig-agent-job-j-1"}
+        for error in ("Cannot connect to Docker", "permission denied", "No such object"):
+            with self.subTest(error=error):
+                self.replies["inspect"] = _Proc(1, "", error)
+                self.replies["ps"] = _Proc(1, "", "daemon unavailable")
+                with self.assertRaises(RunnerError):
+                    self.runner.poll(info)
+                with self.assertRaises(RunnerError):
+                    self.runner.sweep()
+                self.replies["ps"] = _Proc(0, "rig-agent-job-j-1\n")
+                with self.assertRaises(RunnerError):
+                    self.runner.poll(info)
+        for text in ("", "false 0", "{}", "[]", '{"Status":"exited","ExitCode":"0"}',
+                     '{"Status":"removing","ExitCode":0}'):
+            self.replies["inspect"] = _Proc(0, text)
+            with self.subTest(text=text), self.assertRaises(RunnerError):
+                self.runner.poll(info)
+        for state in ("created", "paused", "restarting"):
+            self.replies["inspect"] = _Proc(0, json.dumps({"Status": state, "ExitCode":0}))
+            self.assertEqual(self.runner.poll(info), (True, None))
+            self.replies["ps"] = _Proc(0, f"rig-agent-job-j-1\tj-1\t{state}\n")
+            self.assertTrue(self.runner.sweep()[0]["running"])
+        for text in ("garbled", "rig-agent-job-j-1\tj-1\tunknown\n"):
+            self.replies["ps"] = _Proc(0, text)
+            with self.assertRaises(RunnerError):
+                self.runner.sweep()
+
+    def test_timeout_and_failed_stop_or_cleanup_are_reported(self):
+        def timeout(*args, **kwargs):
+            raise subprocess.TimeoutExpired(args[0], 30)
+        self.runner._run = timeout
+        with self.assertRaises(RunnerStartUncertain):
+            self.runner.spawn(_job(["up"]))
+        with self.assertRaises(RunnerError):
+            self.runner.poll({"container": "c"})
+        self.runner._run = lambda *a, **kw: _Proc(1, "", "daemon unavailable")
+        for operation in (self.runner.stop, self.runner.cleanup):
+            with self.assertRaises(RunnerError):
+                operation({"container": "c"})
 
 
 class RunJobTests(unittest.TestCase):

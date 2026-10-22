@@ -254,6 +254,17 @@ poll inside the container with the tree identity-mounted and the socket —
 `docker run --rm -v ~/ws:~/ws:ro -v ~/ws/bringup/var:~/ws/bringup/var -v /var/run/docker.sock:/var/run/docker.sock -e RIG_ROOT=~/ws/bringup -e RIG_MOUNT=~/ws -e ZENOH_CONNECT= dashboard-rig-agent:local status`
 (expand `~`) → `"ok": true` with every row (verified 2026-09-03: rig 0.2.46 ran inside the image).
 
+**Automated Docker bench (2026-10-21):** `agent/tests/test_docker_integration.py` adds disposable
+real Docker runners with client-side fault injection. See [agent/README.md](agent/README.md) for
+the opt-in command. It checks that transient inspection failures preserve a live job, plain cleanup
+refuses to remove a live runner, failed startup recovery preserves records and retries, an agent
+restart reattaches to its detached runner, a lost launch reply never repeats the verb, cancellation
+acknowledges without blocking and retries a failed stop, and real rig creates/seals a scratch run.
+The rig CLI case uses an empty deployment and requires rig v0.2.70 or later for the no-stacks
+`down --end-run` fix.
+This does not exercise physical devices, vehicle networking, or actual removal of the agent's
+own compose project; the on-vehicle acceptance below is still required.
+
 **On the vehicle** (`rig_agent: true` in the dashboard instance YAML, `rig up`):
 1. **Discovery**: Bus debug liveliness shows `fleet/<vid>/rig`; the Rig tab header reads
    `advertising`, rig version = the tree's, `root`/`data_dir` as mounted; `docker compose ps` in the

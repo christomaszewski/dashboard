@@ -70,7 +70,8 @@ class AdvertiseTests(unittest.TestCase):
         s = h.session
         self.assertEqual(s.connect, ["tcp/localhost:7447"])
         self.assertEqual(set(s.queryables), {BASE, BASE + "/state", BASE + "/runs", BASE + "/run/*", BASE + "/jobs",
-                                             BASE + "/jobs/submit", BASE + "/jobs/cancel"})
+                                             BASE + "/jobs/submit", BASE + "/jobs/cancel",
+                                             BASE + "/docker/containers", BASE + "/docker/logs"})
         self.assertEqual(set(s.publishers), {BASE + "/state", BASE + "/jobs/events"})
         self.assertEqual(s.tokens[0].key, BASE)
         self.assertEqual(s.order[-1], "t", "the token is declared after every queryable and publisher")
@@ -139,7 +140,7 @@ class QueryTests(unittest.TestCase):
     def test_descriptor_and_state(self):
         d = self.h.query(BASE)
         self.assertEqual((d["schema_version"], d["service"], d["vehicle_id"], d["rig_version"]), (1, "rig-agent", "1", "0.2.46"))
-        self.assertEqual(d["capabilities"], {"actuate": True, "verbs": ["standby", "activate", "up", "down", "new-run", "end-run"], "jobs": True})
+        self.assertEqual(d["capabilities"], {"actuate": True, "verbs": ["standby", "activate", "up", "down", "new-run", "end-run"], "jobs": True, "docker_logs": True})
         self.assertEqual(d["self_instance"], "dashboard")
         self.assertEqual(d["root"], str(self.h.root))
         s = self.h.query(BASE + "/state")
@@ -220,6 +221,8 @@ class JobTests(unittest.TestCase):
         self.assertEqual(h.query(BASE + "/jobs/cancel", json.dumps({"job_id": "j-nope"}).encode())["error"], "no such job")
         cancel = h.query(BASE + "/jobs/cancel", json.dumps({"job_id": job_id}).encode())
         self.assertTrue(cancel["ok"])
+        self.assertEqual(h.runner.stopped, [], "cancel acknowledges before any Docker call")
+        self.assertFalse(h.agent.supervise_once(), "supervision requests the stop")
         self.assertEqual(h.runner.stopped, [job_id])
         self.assertTrue(h.agent.supervise_once())
         final = h.events()[-1]
@@ -264,6 +267,7 @@ class JobTests(unittest.TestCase):
         self.assertEqual(reply["job"]["argv"], ["down", "--end-run"])
         self.assertEqual(reply["job"]["timeout_s"], 900)
         h.query(BASE + "/jobs/cancel", json.dumps({"job_id": reply["job_id"]}).encode())
+        h.agent.supervise_once()
         h.agent.supervise_once()
         h.runner = FakeRunner(fail_spawn="docker: no such image")
         h.agent._runner = h.runner

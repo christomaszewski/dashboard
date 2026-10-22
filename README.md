@@ -9,7 +9,9 @@ logs, and a run-registry browser with downloads — backed by the vehicle-side `
 [docs/RIG_AGENT.md](docs/RIG_AGENT.md)), a **Clouds** point-cloud viewer (vendored from
 github.com/christomaszewski/cloud-viewer, lazy-loaded; BPF and LAS, from a drop, a `clouds_dir`, or any
 directory of any rig run in the served registry), and a raw **Bus debug** tab. Tabs beyond
-Home are opt-in per project from the same YAML (`tabs: [cameras, ros]`). Runs as an optional sidecar next to the
+Home are opt-in per project from the same YAML (`tabs: [cameras, ros]`). An optional **Logs** tab
+shows a selected vehicle container's Docker log tail through the Rig agent (see below).
+Runs as an optional sidecar next to the
 vehicle's rmw_zenoh router; one generic service — projects customize only their instance YAML.
 
 - Transport: browser `zenoh-ts` → a verified laptop `remote-api` bridge when available, otherwise
@@ -126,6 +128,34 @@ agent/                      # dashboard-rig-agent (python): the rig deployment o
 docs/RIG_AGENT.md           # the rig-over-zenoh contract (generic; the agent is its reference producer)
 app/                        # the React/Vite frontend (see app/README.md for the seam map)
 ```
+
+## Docker logs
+
+Add `logs` to the dashboard YAML's tabs and enable the vehicle agent:
+
+```yaml
+rig_agent: true
+rig_actuate: false
+tabs: [logs]             # Home + Rig + Logs; preserve any other tabs you already use
+```
+
+To show Logs without Rig, use `tabs: { logs: true, rig: false }`. Rebuild/redeploy both
+`dashboard-web` and `dashboard-rig-agent`, then bring up the dashboard with the updated YAML.
+The agent uses the same deployment-tree and Docker-socket mounts as the Rig tab; no new port or
+browser access to Docker is needed. Existing agent images show an upgrade message in Logs.
+
+Choose a container by name or its Compose project/service. All containers on the agent's Docker
+host are listed, including stopped containers; service replicas are separate choices. If multiple
+vehicles advertise, choose the vehicle first. The selected container's timestamped stdout/stderr
+tail refreshes two seconds after each completed query. Choose 100, 200, or 500 lines, pause/resume
+updates, or turn off auto-scroll to inspect a line. Each snapshot is capped at 64 KiB; this is a
+rolling tail, so busy containers can produce more lines between refreshes than the viewer retains.
+It is not a log archive. The inventory refreshes every ten seconds and can be refreshed manually.
+
+Polling stops while Logs or the browser tab is hidden, or the connection is lost. Cached output is
+labeled on disconnect/error; reconnect fetches a fresh tail. Removed containers require selecting
+their replacement. Docker permission errors and unsupported logging drivers appear in the viewer.
+Log access works with `rig_actuate: false` and follows the existing trusted-mesh access model.
 
 ## Preflight strip
 

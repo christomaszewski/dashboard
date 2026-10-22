@@ -18,6 +18,7 @@ rig_agent/
   jobs.py       job records + the on-disk store
   runner.py     detached job runners (docker sibling container | subprocess) + the in-runner entry
   snapshot.py   state / descriptor documents
+  docker_logs.py read-only Docker inventory + bounded timestamped log tails (Logs tab)
   agent.py      the Zenoh adapter, poll/watch/worker threads, job supervision
   __main__.py   serve | run-job <id> | status
 tests/          stdlib unittest; the pure modules import with no zenoh binding and no docker
@@ -26,7 +27,7 @@ tests/          stdlib unittest; the pure modules import with no zenoh binding a
 ## Run
 
 ```sh
-cd agent && python3 -m unittest -v                                  # tests (needs pyyaml only)
+cd agent && python3 -m unittest discover -s tests -v                  # tests (needs pyyaml only)
 
 # bench: natively, against a dev tree, jobs as child processes, talking to a vehicle's router
 pip install -r requirements.txt
@@ -39,6 +40,32 @@ On the vehicle the compose overlay runs `serve` in the `dashboard-rig-agent` ima
 the deployment tree (read-only, at its host path) and its `var/` (read-write) mounted — see
 [deploy/README.md](../deploy/README.md).
 
+The optional Logs tab uses the same agent, including in read-only mode. Docker reads run on at
+most two separate workers, with a three-second command deadline and bounded output; they never
+queue behind rig jobs or block Zenoh callbacks. No `docker logs --follow` processes are left
+running. See [the log query contract](../docs/RIG_AGENT.md#docker-logs).
+
+Job supervision preserves active work when Docker cannot answer. Recovery retries before accepting
+new commands; a lost launch reply is reconciled without rerunning the verb. Cleanup never force-removes
+runners. Cancellation is acknowledged immediately and performed by supervision, including retries
+after a failed stop. Read-only mode refuses both submit and cancel.
+
+For the opt-in Docker bench, build an image containing the current code, then run from `agent/`:
+
+```sh
+RIG_AGENT_DOCKER_TEST_IMAGE=dashboard-rig-agent:local \
+RIG_AGENT_TEST_RIG_SOURCE=/absolute/path/to/rig \
+PYTHONPATH=tests python3 -m unittest -v test_docker_integration
+```
+
+This creates uniquely labeled disposable runners and scratch directories. It tests observation
+outages, recovery after closing/recreating the agent, lost launch replies, failed-stop retries,
+and real rig run creation/sealing in an empty deployment. It does not restart the Docker daemon
+or operate vehicle services. Without the image variable the tests are skipped; without the rig
+source variable only the real CLI test is skipped. The CLI check requires rig v0.2.70 or later,
+which makes `rig down --end-run` seal even when no stacks are selected. Update the deployment's
+rig CLI along with the agent image to include this fix.
+
 ## Environment
 
 | Variable | Meaning | Default |
@@ -49,7 +76,7 @@ the deployment tree (read-only, at its host path) and its `var/` (read-write) mo
 | `RIG_VEHICLE_LOCAL` / `RIG_VEHICLE_LOCAL_HOST` | machine identity file inside the container / on the host | `/etc/rig/vehicle.local.yaml` / unset |
 | `ZENOH_CONNECT` / `ZENOH_LISTEN` | endpoints (comma-separated; empty `ZENOH_CONNECT` = scout only) | `tcp/localhost:7447` / none |
 | `RIG_AGENT_POLL_S` | `rig status` cadence | 10 |
-| `RIG_AGENT_ACTUATE` | `0` = read-only agent (every submit refused) | 1 |
+| `RIG_AGENT_ACTUATE` | `0` = read-only agent (submit and cancel refused) | 1 |
 | `RIG_AGENT_RUNNER` | `docker` (detached sibling container) or `subprocess` (bench) | docker |
 | `RIG_AGENT_IMAGE` | the image `docker run` uses for jobs (the agent's own) | `dashboard-rig-agent:local` |
 | `RIG_AGENT_PROJECT` | the compose project hosting the agent → the `self` row | unset |

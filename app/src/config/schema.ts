@@ -35,14 +35,14 @@ export type {
 export const HOME_SCHEMA_VERSION = 1;
 
 /** Tab ids — the routing/config vocabulary (useHashRoute imports these; order = display order). */
-export const TAB_IDS = ["home", "health", "cameras", "ros", "ros3d", "rig", "clouds", "debug"] as const;
+export const TAB_IDS = ["home", "health", "cameras", "ros", "ros3d", "rig", "logs", "clouds", "debug"] as const;
 export type TabId = (typeof TAB_IDS)[number];
 
 /** Visibility when `tabs:` says nothing: Home only. Every other tab is OPT-IN — a deployment lists
  *  the ones it uses and never has to know about the rest to keep them off. `rig_agent: true` (the
  *  same YAML) implies `rig` (the tab is that agent's UI); an explicit `tabs.rig` always wins.
  *  Resolved into `tabs` by parseDashboardConfig; visibleTabs applies it (no-config included). */
-export const TAB_DEFAULT_VISIBLE: Record<TabId, boolean> = { home: true, health: false, cameras: false, ros: false, ros3d: false, rig: false, clouds: false, debug: false };
+export const TAB_DEFAULT_VISIBLE: Record<TabId, boolean> = { home: true, health: false, cameras: false, ros: false, ros3d: false, rig: false, logs: false, clouds: false, debug: false };
 
 /** `tabs:` block — per-tab visibility. Two spellings: a LIST of the tabs to show (`[cameras, ros]`;
  *  the common case) or a MAP of booleans (`{ cameras: true, home: false }`; the only way to say

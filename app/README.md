@@ -1,6 +1,6 @@
 # app — dashboard frontend (Vite + React + TS)
 
-Tabbed operator frontend (Home / Cameras / ROS / Rig / Clouds / Bus debug). Talks Zenoh from the browser via
+Tabbed operator frontend (Home / Cameras / ROS / Rig / Logs / Clouds / Bus debug). Talks Zenoh from the browser via
 `zenoh-ts` → the `dashboard-zenoh` remote-api sidecar. Builds to `app/dist`;
 `deploy/Dockerfile.web` bakes it into the `dashboard-web` image. The Home tab is laid out from the
 instance config YAML served at `/config/dashboard.yaml` (see `config/infra/dashboard.example.yaml`);
@@ -112,6 +112,8 @@ src/
   App.tsx                   # provider stack: Config > Transport > Streams > RosGraph > Shell
   shell/                    # tab shell: useHashRoute (#/cameras deep links), TabBar, Shell
                             #   (all tab panels stay MOUNTED; inactive ones hidden with CSS only)
+  logs/                     # opt-in Docker log viewer: vehicle/container selection, bounded tail
+                            #   snapshots over the rig agent, pause + auto-scroll; polls only when visible
   config/                   # runtime instance config: schema.ts (parse/validate the home: block),
                             #   load.ts (GET /config/dashboard.yaml), ConfigContext
   widgets/                  # the widget REGISTRY: registry.ts (spec + component per type — the one

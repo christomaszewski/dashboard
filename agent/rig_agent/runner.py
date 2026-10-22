@@ -11,6 +11,7 @@ only reads it (log tail, progress) and merges at finalize. That is what keeps tw
 racing on one file."""
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -39,6 +40,13 @@ RECORD_SAVE_INTERVAL_S = 2.0
 
 class RunnerError(RuntimeError):
     pass
+
+
+class RunnerStartUncertain(RunnerError):
+    """Docker may have created the named container even though its CLI failed/timed out."""
+    def __init__(self, message: str, info: dict):
+        super().__init__(message)
+        self.info = info
 
 
 def container_name(job_id: str) -> str:
@@ -91,47 +99,70 @@ class DockerRunner:
         self._run = run
 
     def _docker(self, args: list, timeout_s: float = DOCKER_TIMEOUT_S):
-        return self._run(["docker", *args], capture_output=True, text=True, timeout=timeout_s)
+        try:
+            proc = self._run(["docker", *args], capture_output=True, text=True, timeout=timeout_s)
+        except subprocess.TimeoutExpired as e:
+            raise RunnerError(f"docker {args[0]} timed out after {timeout_s:g} s") from e
+        except OSError as e:
+            raise RunnerError(f"docker {args[0]} unavailable: {str(e)[:300]}") from e
+        if proc.returncode != 0:
+            raise RunnerError(f"docker {args[0]} failed: {(proc.stderr or '').strip()[:300]}")
+        return proc
 
     def spawn(self, job: Job) -> dict:
-        proc = self._run(docker_run_argv(self.cfg, job, self.vehicle_id), capture_output=True, text=True,
-                         timeout=DOCKER_TIMEOUT_S)
-        if proc.returncode != 0:
-            raise RunnerError(f"docker run failed (exit {proc.returncode}): {(proc.stderr or '').strip()[:300]}")
-        return {"kind": self.kind, "container": container_name(job.job_id), "id": (proc.stdout or "").strip()[:12]}
+        info = {"kind": self.kind, "container": container_name(job.job_id)}
+        try:
+            proc = self._docker(docker_run_argv(self.cfg, job, self.vehicle_id)[1:])
+        except RunnerError as e:
+            raise RunnerStartUncertain(str(e), info) from e
+        return {**info, "id": (proc.stdout or "").strip()[:12]}
 
     def poll(self, info: dict):
-        """(running, exit_code). A vanished container reads as exited with no code."""
-        proc = self._docker(["inspect", "-f", "{{.State.Running}} {{.State.ExitCode}}", info["container"]])
-        if proc.returncode != 0:
-            return False, None
-        parts = (proc.stdout or "").split()
-        running = bool(parts) and parts[0].lower() == "true"
+        """(active, exit_code); unknown raises. Only a successful inventory proves absence."""
         try:
-            code = int(parts[1]) if len(parts) > 1 else None
-        except ValueError:
-            code = None
-        return running, (None if running else code)
+            proc = self._docker(["inspect", "--type", "container", "-f", "{{json .State}}", info["container"]])
+        except RunnerError:
+            # Do not classify Docker's human error prose (daemon failures and missing containers
+            # both exit nonzero). An exact-name list can positively confirm a vanished runner.
+            names = self._docker(["ps", "-a", "--filter", f"name=^/{info['container']}$", "--format", "{{.Names}}"])
+            if not (names.stdout or "").strip():
+                return False, None
+            raise
+        try:
+            state = json.loads(proc.stdout)
+            status, code = state["Status"], state["ExitCode"]
+            if type(code) is not int:
+                raise ValueError("invalid exit code")
+        except (ValueError, TypeError, KeyError) as e:
+            raise RunnerError("docker inspect returned invalid container state") from e
+        if status in ("running", "created", "restarting", "paused"):
+            return True, None
+        if status in ("exited", "dead"):
+            return False, code
+        raise RunnerError(f"docker inspect returned unsettled container state: {status!r}")
 
     def stop(self, info: dict) -> None:
         self._docker(["stop", "-t", str(STOP_GRACE_S), info["container"]], timeout_s=STOP_GRACE_S + DOCKER_TIMEOUT_S)
 
     def cleanup(self, info: dict) -> None:
-        self._docker(["rm", "-f", info["container"]])
+        # Even if it restarted since our last observation, cleanup must never kill a live job.
+        self._docker(["rm", info["container"]])
 
     def sweep(self) -> list:
         """Every job container of this vehicle still known to docker: [{job_id, info, running}]."""
         proc = self._docker(["ps", "-a", "--filter", f"label={LABEL_VEHICLE}={self.vehicle_id}",
+                             "--filter", f"label={LABEL_JOB}",
                              "--format", "{{.Names}}\t{{.Label \"" + LABEL_JOB + "\"}}\t{{.State}}"])
-        if proc.returncode != 0:
-            return []
         out = []
         for line in (proc.stdout or "").splitlines():
             parts = line.split("\t")
-            if len(parts) < 3 or not parts[1]:
-                continue
+            if len(parts) != 3 or not parts[1] or parts[0] != container_name(parts[1]):
+                raise RunnerError("docker ps returned invalid runner inventory")
+            state = parts[2].strip().lower()
+            if state not in ("running", "created", "restarting", "paused", "exited", "dead"):
+                raise RunnerError(f"docker ps returned unsettled runner state: {state!r}")
             out.append({"job_id": parts[1], "info": {"kind": self.kind, "container": parts[0]},
-                        "running": parts[2].strip().lower() == "running"})
+                        "running": state not in ("exited", "dead")})
         return out
 
 

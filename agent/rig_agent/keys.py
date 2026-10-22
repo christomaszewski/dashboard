@@ -49,6 +49,14 @@ def events_key(base: str) -> str:
     return base + "/jobs/events"
 
 
+def containers_key(base: str) -> str:
+    return base + "/docker/containers"
+
+
+def logs_key(base: str) -> str:
+    return base + "/docker/logs"
+
+
 def parse_run_key(base: str, key: str) -> Optional[str]:
     """`<base>/run/<run_id>` → run_id (one segment), else None."""
     prefix = base + "/run/"

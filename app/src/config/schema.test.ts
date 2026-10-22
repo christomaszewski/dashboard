@@ -226,12 +226,19 @@ describe("visibleTabs", () => {
   it("is Home only when the config says nothing — every other tab is opt-in", () => {
     expect(visibleTabs(undefined)).toEqual(["home"]);
     expect(visibleTabs({})).toEqual(["home"]);
-    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, health: false, cameras: false, ros: false, ros3d: false, rig: false, clouds: false, debug: false });
+    expect(TAB_DEFAULT_VISIBLE).toEqual({ home: true, health: false, cameras: false, ros: false, ros3d: false, rig: false, logs: false, clouds: false, debug: false });
   });
 
   it("adds the opted-in tabs in display order, whatever order the config lists them", () => {
     expect(visibleTabs(parseTabs(["debug", "cameras"]))).toEqual(["home", "cameras", "debug"]);
     expect(visibleTabs({ ros: true, rig: true })).toEqual(["home", "ros", "rig"]);
+  });
+
+  it("opts into Logs independently of the Rig tab", () => {
+    const config = parseDashboardConfig("rig_agent: true\nrig_actuate: false\ntabs: { logs: true, rig: false }");
+    expect(visibleTabs(config.tabs)).toEqual(["home", "logs"]);
+    expect(visibleTabs(parseDashboardConfig("rig_agent: true").tabs)).not.toContain("logs");
+    expect(visibleTabs(parseTabs(["logs"]))).toEqual(["home", "logs"]);
   });
 
   it("lets the map form switch Home off, but never renders an empty shell", () => {

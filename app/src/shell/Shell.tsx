@@ -9,6 +9,7 @@ import { RosExplorer } from "../ros/RosExplorer";
 import { KeyspaceDebug } from "../debug/KeyspaceDebug";
 import { HomeTab } from "../home/HomeTab";
 import { RigTab } from "../rig/RigTab";
+import { LogsTab } from "../logs/LogsTab";
 import { visibleTabs, type TabVisibility } from "../config/schema";
 import { TabBar } from "./TabBar";
 import { useHashRoute, type TabId } from "./useHashRoute";
@@ -84,6 +85,11 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
       {visible.includes("ros3d") && visited.current.has("ros3d") && (
         <main className={panelClass("ros3d")}>
           <Suspense fallback={<p className="empty">Loading 3D view…</p>}><Ros3DTab active={tab === "ros3d"} /></Suspense>
+        </main>
+      )}
+      {visible.includes("logs") && (
+        <main className={panelClass("logs")}>
+          <LogsTab active={tab === "logs"} />
         </main>
       )}
       {visible.includes("clouds") && visited.current.has("clouds") && (

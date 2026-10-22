@@ -32,6 +32,8 @@ fleet/<vid>/rig/jobs          queryable → recent job records, the running one 
 fleet/<vid>/rig/jobs/submit   queryable, JSON payload → {ok, job_id, job} | {ok:false, error}
 fleet/<vid>/rig/jobs/cancel   queryable, JSON payload {job_id} → {ok, job} | {ok:false, error}
 fleet/<vid>/rig/jobs/events   publisher: a job record on every transition and progress tick
+fleet/<vid>/rig/docker/containers  queryable → Docker host inventory (including stopped containers)
+fleet/<vid>/rig/docker/logs        queryable, JSON {container_id, tail?} → bounded log tail
 ```
 
 `run/<run_id>` and `jobs/…` are distinct prefixes on purpose: no wildcard queryable overlaps a fixed
@@ -48,8 +50,9 @@ one, so every `get` has exactly one answering queryable. A consumer watches `fle
 | **Publisher** | `…/rig/jobs/events` | job records as they change |
 
 Every reply is UTF-8 JSON (`application/json`). Refusals are `{"ok": false, "error": "…"}` — never a
-Zenoh-level error, never a missing reply. Every queryable answers within ~2 s from a cached snapshot
-or the filesystem; **no queryable ever blocks on docker or rig**.
+Zenoh-level error, never a missing reply. State, registry and job queryables answer within ~2 s
+from a cached snapshot or the filesystem. Docker inventory/log queries use separate bounded workers
+with a 3 s command deadline; **no Zenoh callback thread blocks on docker or rig**.
 
 ## Descriptor (`…/rig` reply)
 
@@ -66,7 +69,8 @@ or the filesystem; **no queryable ever blocks on docker or rig**.
   "capabilities": {
     "actuate": true,                  // false = read-only agent: submit refuses every verb
     "verbs": ["standby", "activate", "up", "down", "new-run", "end-run"],
-    "jobs": true },
+    "jobs": true,
+    "docker_logs": true },           // optional; supports the Docker inventory/log queries below
   "self_instance": "dashboard",       // the vehicle.yaml row whose compose project hosts the agent, or null
   "poll_s": 10,                       // status poll cadence; consumers treat a snapshot older than 3× as stale
   "since_unix_s": 1756700000.0,
@@ -136,6 +140,50 @@ inert (no data_dir)"` respectively.
 `graph/`, `.rig/…`) is rig's filesystem convention; a host that wants downloads serves `data_dir`
 over HTTP (the dashboard does, at `/rig-data/`).
 
+## Docker logs
+
+Agents advertising `capabilities.docker_logs: true` support two read-only queries, independent
+of `capabilities.actuate`. Older agents omit the capability; consumers must not query them.
+
+`…/rig/docker/containers` has no payload and returns the Docker host's containers, including
+stopped containers, sorted with running containers first. Compose replicas remain separate entries:
+
+```json
+{"schema_version":1,"ok":true,"containers":[
+  {"id":"<full 64-character Docker ID>","name":"cam_front-camera-1","image":"camera-service:local",
+   "state":"running","status":"Up 10 minutes","project":"cam_front-vehicle-1","service":"camera"}
+]}
+```
+
+`project` and `service` come from `com.docker.compose.project` and `com.docker.compose.service`;
+both are empty strings for containers without those labels. No environment variables, mounts,
+or arbitrary labels are exposed. Inventory exceeding 512 KiB fails explicitly rather than
+returning a partial list.
+
+`…/rig/docker/logs` requires a JSON payload `{"container_id":"<full ID>","tail":200}`.
+Only a full hexadecimal ID is accepted; `tail` defaults to 200 and must be an integer in [1, 500].
+Unknown fields are refused. The agent invokes `docker logs --timestamps --tail <tail> <id>` with
+an argv list and no shell, merging stdout/stderr:
+
+```json
+{"schema_version":1,"ok":true,"container_id":"<full ID>","tail":200,
+ "text":"2026-10-21T12:00:00.000000000Z ready\n","truncated":false,"at_unix_s":1792584000}
+```
+
+The returned text retains at most the last 64 KiB of UTF-8 bytes (invalid/incomplete sequences
+are replaced); `truncated` indicates the byte cap, independently of the requested line count.
+These are rolling snapshots, not a lossless stream or archive. Each Docker command has a 3 s
+deadline and a 4 MiB total read budget. At most two Docker read workers run concurrently, with
+excess requests refused as busy, and no pending queue. Workers always kill/reap unfinished CLI
+processes. Missing Docker, daemon permission errors, removed containers, unsupported log drivers,
+timeouts and excessive output return `{"ok":false,"error":"…"}`. Reads never submit rig jobs.
+
+Consumers use a 5 s query timeout and poll only while visible and connected. The dashboard polls
+inventory every 10 s and the selected tail every 2 s after completion; pause stops tail polling.
+It discards late replies after selection changes, labels cached logs on failure/disconnect,
+and renders logs as plain text. This extension uses the agent's existing Docker-socket access
+and trusted-mesh boundary; it lists all containers on that host, not only this rig's stacks.
+
 ## Jobs — asynchronous verbs
 
 rig verbs are slow (`activate` is O(minute) per device; `down --end-run` captures container logs
@@ -163,7 +211,8 @@ A JSON object payload on the `get` (or, for a payload-less get, selector paramet
 
 Reply (≤ 2 s): `{"ok": true, "job_id": "j-20260902T143000Z-a1f2", "job": {…}}`, or `ok: false` with
 one of: `busy: <job_id> (<verb>) is running` (with `job_id`), `unknown row '<name>' (rows: …)`,
-`standby/activate: '<name>' declares no state verbs`, `'label' must match …`, `actuation disabled`.
+`standby/activate: '<name>' declares no state verbs`, `'label' must match …`, `actuation disabled`,
+or `job recovery pending: …` while existing runners cannot be reconciled safely.
 
 ### Job record (persisted; published on `…/jobs/events`; listed by `…/jobs`)
 
@@ -190,8 +239,24 @@ one of: `busy: <job_id> (<verb>) is running` (with `job_id`), `unknown row '<nam
 step (`--force`, "stop the stacks first", "retry"); unknown wording degrades to `other` with the
 verbatim `error`. Default deadlines (seconds): standby 300, activate 600, new-run 60, end-run 180,
 up 600, down 300, down + `end_run` 900. Progress events fire while `log_tail` changes (≥ 2 s apart);
-`cancel` stops the runner (`killed` → `cancelled`); the deadline stops it with `error_kind: timeout`.
+`cancel` acknowledges the stop request promptly; supervision stops the runner (`killed` →
+`cancelled`) and retries failed stop calls at least 5 s apart. The job remains busy until exit is
+confirmed. Cancellation during startup waits for the spawn result before stopping the runner;
+only a job whose spawn has not begun can be cancelled immediately. The deadline stops the runner
+with `error_kind: timeout`.
 Records survive agent restarts; a runner still finishing when the agent restarts is re-attached.
+
+Docker observation failures (daemon outage, permissions, timeout, malformed/unsettled state) do
+not prove a runner exited. The agent preserves the job and retries, blocking another submission.
+After an inspect failure, only a successful exact-name container inventory can confirm absence.
+Created, paused and restarting containers continue to occupy the job slot. A lost launch reply
+is reconciled by the runner's deterministic container name; the verb is never automatically retried.
+Cleanup uses plain `docker rm`, so a container that is still running cannot be killed by cleanup.
+
+At startup, failed inventory reads leave records untouched and are retried on status polls before
+new jobs are accepted. Multiple active runners or an active runner with a missing/terminal record
+also block new jobs and are left intact until their state can be reconciled. Automatic cleanup
+applies only to runners observed exited; Docker itself refuses removal if they became active again.
 
 ### The seal guard
 
@@ -221,7 +286,7 @@ vehicle**, and its verbs stop the whole stack. The mesh is the trust boundary to
 - accept a **fixed verb whitelist with validated arguments** — row names must exist in the manifest,
   labels are regex-checked, no free-form argv ever reaches rig;
 - offer a **read-only mode** (`capabilities.actuate: false`; the dashboard: `rig_actuate: false`)
-  in which every `submit` is refused with `actuation disabled`;
+  in which every `submit` and `cancel` is refused with `actuation disabled`;
 - record `client` on every job. A key-scoped sidecar ACL (`deny` queries on `fleet/*/rig/jobs/**`)
   is a further option that does not break discovery.
 

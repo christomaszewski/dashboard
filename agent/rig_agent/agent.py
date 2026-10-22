@@ -5,8 +5,8 @@ zenoh interaction wrapped, best-effort advertising retried on a timer, the bindi
 
 Threads: poller (`rig status` every poll_s), watcher (registry signature every 2 s), worker (the
 one thread that starts jobs), one supervisor per running job, and zenoh's own callback threads.
-Cached documents are replaced whole under a lock; query handlers reply from them directly and never
-touch docker or rig."""
+Cached documents are replaced whole under a lock; state/job handlers reply from them directly.
+Docker inventory/log reads use separate concurrency-limited workers with short deadlines."""
 from __future__ import annotations
 
 import json
@@ -18,10 +18,11 @@ from typing import Callable, Optional
 
 from . import keys, registry as registry_mod, rigcmd, snapshot as snap, vehicle as vehicle_mod
 from .config import AgentConfig
+from .docker_logs import DockerLogs
 from .guard import error_message
 from .jobs import Job, JobStore, new_job_id, tail_lines
 from .requests import parse_submit, self_terminating, verb_argv
-from .runner import RunnerError, make_runner
+from .runner import RunnerStartUncertain, make_runner
 from .status import StatusError, parse_status_json
 
 log = logging.getLogger("rig_agent")
@@ -74,6 +75,8 @@ class RigAgent:
         self._closed = False
         self._threads: list = []
         self._poll_now = threading.Event()
+        self._docker_logs = DockerLogs()
+        self._docker_slots = threading.BoundedSemaphore(2)
 
         self._zenoh = None
         self._session = None
@@ -107,9 +110,13 @@ class RigAgent:
 
         self._runner = None
         self._recovered = False
+        self._recovery_error: Optional[str] = None
+        self._starting_job_id: Optional[str] = None
         self.current_job: Optional[Job] = None
         self._job_info: Optional[dict] = None
         self._stop_reasons: dict = {}
+        self._stop_attempts: dict = {}
+        self._supervision_error: Optional[str] = None
         self._last_tail: Optional[list] = None
         self._last_event_at = 0.0
 
@@ -182,6 +189,8 @@ class RigAgent:
             else:
                 self._status_error = error_message(res.stderr, res.stdout) or \
                     f"rig status failed (exit {res.returncode})"
+        if self._runner is not None and not self._recovered:
+            self._recover_jobs()
         self._read_tree()
         self._refresh_registry(force=True)
         self._rebuild(now)
@@ -196,9 +205,6 @@ class RigAgent:
             self.base = keys.key_base(doc.vehicle_id)
             self._runner = self._runner_factory(self.cfg, doc.vehicle_id)
             log.info("deployment %s (vehicle_id %s) → %s", doc.vehicle, doc.vehicle_id, self.base)
-            if not self._recovered:
-                self._recovered = True
-                self._recover_jobs()
         elif doc.vehicle_id != self.vehicle_id:
             log.warning("vehicle_id changed %s → %s; keeping %s (restart the agent to re-key)",
                         self.vehicle_id, doc.vehicle_id, self.base)
@@ -340,6 +346,8 @@ class RigAgent:
                 s.declare_queryable(keys.jobs_key(b), self._on_query_jobs),
                 s.declare_queryable(keys.submit_key(b), self._on_query_submit),
                 s.declare_queryable(keys.cancel_key(b), self._on_query_cancel),
+                s.declare_queryable(keys.containers_key(b), self._on_query_containers),
+                s.declare_queryable(keys.logs_key(b), self._on_query_logs),
             ]
             self._pub_state = s.declare_publisher(keys.state_key(b))
             self._pub_events = s.declare_publisher(keys.events_key(b))
@@ -420,6 +428,37 @@ class RigAgent:
     def _on_query_jobs(self, query) -> None:
         self._reply(query, self.jobs_doc())
 
+    def _docker_query(self, query, fn, *args) -> None:
+        # No unbounded queue: logs must neither occupy Zenoh callbacks nor delay rig jobs/status.
+        if self._closed or not self._docker_slots.acquire(blocking=False):
+            self._reply(query, {"ok": False, "error": "Docker log reader busy; retry shortly"})
+            return
+
+        def work():
+            try:
+                self._reply(query, fn(*args))
+            except Exception as e:  # noqa: BLE001 — every Docker failure answers the query
+                self._reply(query, {"ok": False, "error": str(e)})
+            finally:
+                self._docker_slots.release()
+
+        try:
+            threading.Thread(target=work, name="rig-agent-docker-read", daemon=True).start()
+        except Exception:
+            self._docker_slots.release()
+            self._reply(query, {"ok": False, "error": "Could not start Docker log reader"})
+
+    def _on_query_containers(self, query) -> None:
+        self._docker_query(query, self._docker_logs.containers)
+
+    def _on_query_logs(self, query) -> None:
+        try:
+            container, tail = self._docker_logs.parse_request(_query_bytes(query))
+        except (ValueError, TypeError) as e:
+            self._reply(query, {"ok": False, "error": str(e)})
+            return
+        self._docker_query(query, self._docker_logs.logs, container, tail)
+
     def _on_query_submit(self, query) -> None:
         try:
             self._reply(query, self.submit(_query_bytes(query), _query_parameters(query)))
@@ -491,6 +530,8 @@ class RigAgent:
         if err:
             return {"ok": False, "error": err}
         with self._lock:
+            if not self._recovered:
+                return {"ok": False, "error": f"job recovery pending: {self._recovery_error or 'checking runners'}"}
             running = self.current_job if self.current_job is not None and not self.current_job.terminal else None
             if running is not None:
                 return {"ok": False, "error": f"busy: {running.job_id} ({' '.join(running.argv)}) is running",
@@ -503,6 +544,7 @@ class RigAgent:
             self.store.save(job)
             self.current_job = job
             self._job_info = None
+            self._supervision_error = None
             self._last_tail = None
         log.info("job %s queued: %s (client %s)", job.job_id, " ".join(job.argv), job.client or "-")
         self._publish_event(job, force=True)
@@ -512,20 +554,30 @@ class RigAgent:
     def _start_job(self, job_id: str) -> None:
         with self._lock:
             job = self.current_job
-        if job is None or job.job_id != job_id or job.terminal:
-            return
+            if job is None or job.job_id != job_id or job.terminal:
+                return
+            self._starting_job_id = job_id
         try:
             info = self._runner.spawn(job)
-        except (RunnerError, Exception) as e:   # noqa: BLE001
-            job.state, job.error, job.error_kind = "failed", f"could not start the runner: {e}", "other"
-            job.ended_unix_s = self._clock()
-            self.store.save(job)
+        except RunnerStartUncertain as e:
+            # The detached container may already be executing the verb. Keep the slot reserved
+            # and reconcile its deterministic name; never rerun the verb on a lost response.
+            info = e.info
+            job.error = f"runner start unconfirmed: {e}"
+            log.warning("job %s: %s", job_id, job.error)
+        except Exception as e:   # noqa: BLE001
+            with self._lock:
+                job.state, job.error, job.error_kind = "failed", f"could not start the runner: {e}", "other"
+                job.ended_unix_s = self._clock()
+                self.store.save(job)
+                self._starting_job_id = None
             log.error("job %s: %s", job_id, job.error)
             self._publish_event(job, force=True)
-            self._finish_job()
+            self._finish_job(job_id)
             return
         with self._lock:
             self._job_info = info
+            self._starting_job_id = None
         log.info("job %s started (%s)", job_id, info)
         if self._threaded:
             t = threading.Thread(target=self._supervise_loop, name=f"rig-agent-job-{job_id}", daemon=True)
@@ -554,34 +606,50 @@ class RigAgent:
         record = self.store.load(job.job_id)
         if record is not None and not record.terminal:
             job.state, job.started_unix_s, job.deadline_unix_s = record.state, record.started_unix_s, record.deadline_unix_s
+            if record.started_unix_s is not None:
+                job.error = record.error
         tail = tail_lines(self.store.log_path(job.job_id))
         if tail and tail != self._last_tail:
             job.log_tail = tail
             if self._publish_event(job):
                 self._last_tail = tail
-        running, rc = self._runner.poll(info)
+        try:
+            running, rc = self._runner.poll(info)
+        except Exception as e:   # noqa: BLE001 — unknown state keeps the job and its slot intact
+            if self._supervision_error != str(e):
+                log.warning("job %s: cannot observe runner; will retry: %s", job.job_id, e)
+            self._supervision_error = str(e)
+            return False
+        self._supervision_error = None
         if running:
             deadline = job.deadline_unix_s or (job.submitted_unix_s + job.timeout_s)
-            if now > deadline + DEADLINE_SLACK_S and job.job_id not in self._stop_reasons:
-                log.warning("job %s past its deadline; stopping the runner", job.job_id)
-                self._request_stop(job, "timeout")
+            with self._lock:
+                if now > deadline + DEADLINE_SLACK_S:
+                    self._stop_reasons.setdefault(job.job_id, "timeout")
+                reason = self._stop_reasons.get(job.job_id)
+            if reason:
+                self._request_stop(job, reason)
             return False
         # The runner exited: its record is authoritative; fill in what it could not know.
         final = self.store.load(job.job_id)
-        if final is not None and final.terminal:
-            job = final
-        else:
-            job.state, job.error, job.error_kind = "failed", f"runner exited (rc {rc}) without a terminal record", "other"
-            job.exit_code, job.ended_unix_s = rc, now
-        reason = self._stop_reasons.pop(job.job_id, None)
-        if reason == "cancelled":
-            job.state, job.error, job.error_kind = "cancelled", "cancelled", None
-        elif reason == "timeout":
-            job.state, job.error, job.error_kind = "killed", f"deadline exceeded ({job.timeout_s} s)", "timeout"
-        job.log_tail = tail_lines(self.store.log_path(job.job_id)) or job.log_tail
-        job.runner = {**job.runner, **info}
-        self.store.save(job)
+        tail = tail_lines(self.store.log_path(job.job_id))
         with self._lock:
+            # Publishing the terminal state releases the slot to submit(). Keep the entire
+            # transition atomic so finalization cannot overwrite a newly reserved job.
+            if final is not None and final.terminal:
+                job = final
+            else:
+                job.state, job.error, job.error_kind = "failed", job.error or f"runner exited (rc {rc}) without a terminal record", "other"
+                job.exit_code, job.ended_unix_s = rc, now
+            reason = self._stop_reasons.pop(job.job_id, None)
+            self._stop_attempts.pop(job.job_id, None)
+            if reason == "cancelled":
+                job.state, job.error, job.error_kind = "cancelled", "cancelled", None
+            elif reason == "timeout":
+                job.state, job.error, job.error_kind = "killed", f"deadline exceeded ({job.timeout_s} s)", "timeout"
+            job.log_tail = tail or job.log_tail
+            job.runner = {**job.runner, **info}
+            self.store.save(job)
             self.current_job = job
         try:
             self._runner.cleanup(info)
@@ -589,13 +657,15 @@ class RigAgent:
             log.debug("runner cleanup failed: %s", e)
         log.info("job %s %s: %s", job.job_id, job.state, job.error or "ok")
         self._publish_event(job, force=True)
-        self._finish_job()
+        self._finish_job(job.job_id)
         return True
 
-    def _finish_job(self) -> None:
+    def _finish_job(self, job_id: str) -> None:
         with self._lock:
-            self._job_info = None
-            self._last_tail = None
+            # A new submit may have reserved the next job after the previous one became terminal.
+            if self.current_job is not None and self.current_job.job_id == job_id:
+                self._job_info = None
+                self._last_tail = None
         try:
             self.store.sweep()
         except Exception as e:   # noqa: BLE001
@@ -604,32 +674,39 @@ class RigAgent:
             self._poll_now.set()
 
     def _request_stop(self, job: Job, reason: str) -> None:
-        self._stop_reasons[job.job_id] = reason
+        # Called by supervision only: docker stop can take tens of seconds. Retry failures and
+        # keep the job busy until a subsequent poll confirms it has actually stopped.
+        now = self._clock()
         with self._lock:
             info = self._job_info
-        if info is None:
-            return
+            if info is None or now - self._stop_attempts.get(job.job_id, float("-inf")) < RETRY_S:
+                return
+            self._stop_reasons.setdefault(job.job_id, reason)
+            self._stop_attempts[job.job_id] = now
         try:
             self._runner.stop(info)
         except Exception as e:   # noqa: BLE001
             log.warning("could not stop job %s: %s", job.job_id, e)
 
     def cancel(self, job_id: str) -> dict:
+        if not self.cfg.actuate:
+            return {"ok": False, "error": "actuation disabled"}
         with self._lock:
             job = self.current_job
-            spawned = self._job_info is not None
-        if job is None or job.job_id != job_id or job.terminal:
-            known = self.store.load(job_id)
-            if known is None:
-                return {"ok": False, "error": "no such job"}
-            return {"ok": False, "error": f"job {job_id} is {known.state}", "job": known.to_json()}
-        if not spawned:
-            job.state, job.error, job.ended_unix_s = "cancelled", "cancelled before it started", self._clock()
-            self.store.save(job)
+            if job is None or job.job_id != job_id or job.terminal:
+                known = self.store.load(job_id)
+                if known is None:
+                    return {"ok": False, "error": "no such job"}
+                return {"ok": False, "error": f"job {job_id} is {known.state}", "job": known.to_json()}
+            queued = self._job_info is None and self._starting_job_id != job_id
+            if queued:
+                job.state, job.error, job.ended_unix_s = "cancelled", "cancelled before it started", self._clock()
+                self.store.save(job)
+            else:
+                self._stop_reasons.setdefault(job_id, "cancelled")
+        if queued:
             self._publish_event(job, force=True)
-            self._finish_job()
-            return {"ok": True, "job": job.to_json()}
-        self._request_stop(job, "cancelled")
+            self._finish_job(job_id)
         return {"ok": True, "job": job.to_json()}
 
     def _publish_event(self, job: Job, force: bool = False) -> bool:
@@ -645,26 +722,25 @@ class RigAgent:
             log.warning("job event publish failed: %s", e)
         return True
 
-    def _recover_jobs(self) -> None:
+    def _recover_jobs(self) -> bool:
         """After a restart: re-attach to a runner still finishing, reap exited ones, and fail records
         that claim to run but have no runner."""
         try:
             leftovers = self._runner.sweep()
         except Exception as e:   # noqa: BLE001
-            log.warning("runner sweep failed: %s", e)
-            leftovers = []
-        attached = None
+            self._recovery_error = f"cannot inspect existing runners: {e}"
+            log.warning("%s; preserving records and retrying", self._recovery_error)
+            return False
+        active = [entry for entry in leftovers if entry["running"]]
+        records = {entry["job_id"]: self.store.load(entry["job_id"]) for entry in leftovers}
+        if len(active) > 1 or any(records[e["job_id"]] is None or records[e["job_id"]].terminal for e in active):
+            self._recovery_error = "multiple or untracked active runners; waiting for them to exit"
+            log.warning("%s; leaving all runners intact", self._recovery_error)
+            return False
+        attached = active[0]["job_id"] if active else None
         for entry in leftovers:
-            record = self.store.load(entry["job_id"])
-            if entry["running"] and record is not None and not record.terminal and attached is None:
-                log.info("re-attaching to running job %s", record.job_id)
-                with self._lock:
-                    self.current_job, self._job_info = record, entry["info"]
-                attached = record.job_id
-                if self._threaded:
-                    t = threading.Thread(target=self._supervise_loop, name=f"rig-agent-job-{record.job_id}", daemon=True)
-                    t.start()
-                    self._threads.append(t)
+            record = records[entry["job_id"]]
+            if entry["running"]:
                 continue
             if record is not None and not record.terminal:
                 record.state, record.error, record.error_kind = "failed", "runner exited while the agent was down", "other"
@@ -679,3 +755,14 @@ class RigAgent:
                 job.state, job.error, job.error_kind = "failed", "agent restarted; no runner found", "other"
                 job.ended_unix_s = self._clock()
                 self.store.save(job)
+        with self._lock:
+            if active:
+                self.current_job, self._job_info = records[attached], active[0]["info"]
+            self._recovered, self._recovery_error = True, None
+        if active:
+            log.info("re-attaching to running job %s", attached)
+            if self._threaded:
+                t = threading.Thread(target=self._supervise_loop, name=f"rig-agent-job-{attached}", daemon=True)
+                t.start()
+                self._threads.append(t)
+        return True

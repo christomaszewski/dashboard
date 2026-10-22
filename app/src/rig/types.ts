@@ -35,7 +35,7 @@ export interface RigDescriptor {
   rig_version?: string | null;
   root?: string;
   data_dir?: string | null;
-  capabilities?: { actuate?: boolean; verbs?: string[]; jobs?: boolean };
+  capabilities?: { actuate?: boolean; verbs?: string[]; jobs?: boolean; docker_logs?: boolean };
   self_instance?: string | null; // the vehicle.yaml row hosting the agent
   poll_s?: number;
   since_unix_s?: number;

@@ -68,18 +68,20 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 # ── Tabs (optional) ────────────────────────────────────────────────────────────────────────────
 # Tabs beyond Home are OPT-IN: list the ones this deployment uses and the rest never appear (nor do
 # you need to know they exist). With no `tabs:` at all the app is Home alone, tab bar hidden.
-# Available: health, cameras, ros, ros3d, rig, clouds, debug (+ home, on unless switched off). `rig_agent: true`
+# Available: health, cameras, ros, ros3d, rig, logs, clouds, debug (+ home, on unless switched off). `rig_agent: true`
 # implies `rig` (that tab is the agent's UI); an explicit `tabs.rig` always wins. The Clouds tab is
 # lazy-loaded (its three.js chunk only downloads when opened). A deep link to a tab that is not
 # listed falls back to the first visible tab.
 #
-# tabs: [health, cameras, ros, ros3d, rig, clouds, debug] # list form: these, plus Home
+# tabs: [health, cameras, ros, ros3d, rig, logs, clouds, debug] # list form: these, plus Home
 #
 # tabs:                           # the map form: the only way to say `false`
 #   health: true      # dedicated sensor/service overview, component details and recent events
 #   cameras: true
 #   ros: true
 #   ros3d: true
+#   logs: true        # Docker container/Compose-service log tail; requires rig_agent: true
+#                     #   works with rig_actuate: false; rebuild web + agent images to add support
 #   clouds: true
 #   debug: true
 #   rig: false        # hide the Rig tab despite rig_agent (its home widgets still work)
