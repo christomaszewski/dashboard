@@ -71,7 +71,7 @@ identically".
 | `sparkline` | the field | text quantum |
 | `indicator` | the field | none: rules compare exact values |
 | `map` position | lat / lon fields | 1e-7° (≈ 1 cm) |
-| `map` heading | orientation field, `orientation_covariance.0` | 1e-4 per quaternion component |
+| `map` heading | orientation field, `orientation_covariance.0` | 1e-3 per quaternion component (≈ 0.1°) |
 | `status` (topic rate) | none (rate only, never decoded) | Hz to 0.1 |
 
 Rounding a thresholded value to its display precision can move the threshold comparison by at most
@@ -195,11 +195,39 @@ The earlier idea of pausing direct subscriptions while Home is hidden is dropped
 trails and sparkline history, and with vehicle state a hidden Home costs at most a heartbeat poll
 per couple of seconds.
 
+## Measured
+
+Real 1.9.0 remote-api bridges on one machine, a publisher shaped like rmw_zenoh (200 Hz
+`sensor_msgs/Imu`, 10 Hz `NavSatFix`), bytes counted on the operator's WebSocket in steady state.
+
+| Operator view | Path | Received | Sent | Messages/s |
+|---|---|---|---|---|
+| Map position + heading, vehicle turning and driving | direct | 77.1 KB/s | 0 | 204 |
+| | vehicle state | 1.25 KB/s | 0.56 KB/s | 10 |
+| Same, vehicle parked (sensor noise only) | direct | 77.0 KB/s | 0 | 203 |
+| | vehicle state | 0.79 KB/s | 0.52 KB/s | 9 |
+| Seven-widget Home in Chromium, vehicle moving | direct | 76.8 KB/s | 0 | 203 |
+| | vehicle state | 2.3 KB/s | 0.56 KB/s | 10 |
+
+The operator receives 33–98× fewer bytes, or 27–59× counting the poll requests it sends (the sent
+column, at most five a second), in 20× fewer messages, and nothing queues. A real vehicle publishes far more
+topics; on the vehicle-state path the cost depends on how many widgets are shown, not on how much
+the vehicle publishes.
+
 ## Verification
 
-- Unit tests: protocol encoding, quantization, server deltas, held polls and GC, client
-  reconciliation, and a client ↔ server loopback through a fake transport; widget tests in both
-  modes.
-- End to end: `tools/test_vehicle_state.mjs` starts two real remote-api bridges and a publisher that
-  emulates rmw_zenoh, runs the bundled service, and compares WebSocket bytes on the operator link
-  for the direct and vehicle paths.
+- Unit tests (`app/src/vstate/*.test.ts*`): protocol encoding and quantization, server deltas,
+  held polls, expiry and staleness, client reconciliation and recovery through an in-process
+  loopback to a real server, and the Home widgets on the vehicle path.
+- Deployment (`tools/test_runtime_image_contract.py`): the overlay, the service key, runtime.json,
+  registry images and the pinned replay model, including a real `docker compose config` round trip.
+- End to end (`tools/test_vehicle_state.mjs`): real bridges, the bundled service, the publisher
+  above, and the browser's own client and TopicStore in Node. It checks heading and position against
+  the published truth, that only the requested fields arrive, staleness of a silenced topic, and
+  recovery from a service restart, and prints the table above (`MOTION=parked` for the parked rows).
+
+  ```sh
+  cd app && npm ci && cd ..
+  BRIDGE_BIN=/path/to/zenoh-bridge-remote-api node tools/test_vehicle_state.mjs   # or Docker:
+  node tools/test_vehicle_state.mjs                     # BRIDGE_IMAGE=dashboard-zenoh:local, host network
+  ```

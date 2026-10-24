@@ -48,6 +48,12 @@ handshakes, and reconnection without command replay. For the real two-bridge tes
 reachable, then checks vehicle fallback and restored subscriptions. See
 [local bridge setup and browser checks](docs/LOCAL_BRIDGE.md).
 
+Vehicle state has unit tests in `app/src/vstate/` (including a client ↔ server loopback and the
+Home widgets on that path) and a real-bridge test, `node tools/test_vehicle_state.mjs` (Node 22,
+`npm ci` in `app/`, and `BRIDGE_BIN=` a 1.9.0 `zenoh-bridge-remote-api` or Docker with
+`dashboard-zenoh:local`). It reports operator-socket bytes for the direct and vehicle paths; see
+[docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md#verification).
+
 ## Verify (browser on the mesh)
 
 For disconnect investigations, see [connection diagnostics](docs/CONNECTION_DIAGNOSTICS.md)
@@ -130,6 +136,24 @@ switching never drops video or subscriptions:
   `rig_agent: true` + `rig_root/rig_data_dir/rig_actuate: false/rig_poll_s` set, both runs must also
   emit `DASH_RIG_AGENT=1`, `DASH_RIG_ROOT`, `DASH_RIG_DATA`, `DASH_RIG_ACTUATE=0`, `DASH_RIG_POLL_S`
   (verified identical on the bench 2026-09-02).
+
+## Vehicle state (on-vehicle acceptance)
+
+With `vehicle_state: true` in the instance YAML ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)):
+
+- `dash-up <config> up -d` prints `vehicle-state=fleet/<vehicle>/dash/<name>/state`, and
+  `docker compose ps` lists `dashboard-state` and `dashboard-state-zenoh`.
+- `ss -ltn | grep <state_ws_port>` shows the private bridge on `127.0.0.1` only.
+- `curl http://<vehicle-ip>:8080/config/runtime.json` returns that key.
+- `docker logs dashboard-state` shows `serving …/view and …/poll`, then a `views= items= topics=`
+  line every minute once a page is open.
+- Home widgets show values. In the downloaded connection trace (header pill), the `ws-snapshot`
+  byte counters grow by a few KB/s, against tens of KB/s or more with `vehicle_state: false` on the
+  same Home.
+- Stop one publisher: its widgets dim and say `stale` within about 5 s; others stay live.
+- `docker restart dashboard-state`: widgets recover within a few seconds without a page reload.
+- With two vehicles on one mesh, give each a distinct `vehicle_id`. If two answer the same key,
+  every widget says so instead of mixing their data.
 
 ## Service calls / shared sessions (on-vehicle acceptance)
 

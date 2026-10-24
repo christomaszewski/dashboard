@@ -1,14 +1,16 @@
 // Bundles the vehicle-side state service (src/vstate/node/main.ts) into one Node ESM file with its
-// dependencies, including the patched zenoh-ts from node_modules. Used by deploy/Dockerfile.state.
+// dependencies, including the patched zenoh-ts from node_modules. Used by deploy/Dockerfile.state;
+// tools/test_vehicle_state.mjs reuses bundleForNode for its harness.
 //   node scripts/build-state.mjs [outfile]      (default: dist-state/dashboard-state.mjs)
 import { readFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
 // zenoh-ts ships wasm-bindgen "bundler" output (`import * as wasm from "./x_bg.wasm"`), which Node 22
 // cannot import. Inline each module and instantiate it synchronously with its JS imports, exporting
 // the instance's exports under their own names — what a wasm-aware bundler does for the browser.
-const wasmEsm = {
+export const wasmEsm = {
   name: "wasm-esm",
   setup(b) {
     b.onLoad({ filter: /\.wasm$/ }, async ({ path }) => {
@@ -27,17 +29,25 @@ const wasmEsm = {
   },
 };
 
-const outfile = process.argv[2] ?? "dist-state/dashboard-state.mjs";
-await build({
-  entryPoints: [new URL("../src/vstate/node/main.ts", import.meta.url).pathname],
-  outfile,
-  bundle: true,
-  platform: "node",
-  format: "esm",
-  target: "node22",
-  // Bundled CommonJS dependencies may require() Node built-ins, which plain ESM output cannot do.
-  banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
-  plugins: [wasmEsm],
-  logLevel: "warning",
-});
-console.log(`build-state: wrote ${outfile}`);
+/** One self-contained Node 22 ESM file; bare imports resolve from app/node_modules. */
+export async function bundleForNode(entry, outfile) {
+  await build({
+    entryPoints: [entry],
+    outfile,
+    bundle: true,
+    platform: "node",
+    format: "esm",
+    target: "node22",
+    nodePaths: [fileURLToPath(new URL("../node_modules", import.meta.url))],
+    // Bundled CommonJS dependencies may require() Node built-ins, which plain ESM output cannot do.
+    banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
+    plugins: [wasmEsm],
+    logLevel: "warning",
+  });
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+  const outfile = process.argv[2] ?? "dist-state/dashboard-state.mjs";
+  await bundleForNode(fileURLToPath(new URL("../src/vstate/node/main.ts", import.meta.url)), outfile);
+  console.log(`build-state: wrote ${outfile}`);
+}
