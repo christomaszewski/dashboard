@@ -20,4 +20,7 @@ rig_build "$REGISTRY/dashboard-web:$TAG" -f "$REPO/deploy/Dockerfile.web" "$REPO
 # dashboard-rig-agent: the optional rig agent (python + docker cli; agent/ from the repo root).
 rig_build "$REGISTRY/dashboard-rig-agent:$TAG" -f "$REPO/deploy/Dockerfile.rig-agent" "$REPO"
 
-echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG, $REGISTRY/dashboard-web:$TAG and $REGISTRY/dashboard-rig-agent:$TAG" >&2
+# dashboard-state: the optional vehicle-state service (Node bundle of app/src/vstate; repo root).
+rig_build "$REGISTRY/dashboard-state:$TAG" -f "$REPO/deploy/Dockerfile.state" "$REPO"
+
+echo "build-images: pushed $REGISTRY/dashboard-zenoh:$TAG, $REGISTRY/dashboard-web:$TAG, $REGISTRY/dashboard-rig-agent:$TAG and $REGISTRY/dashboard-state:$TAG" >&2

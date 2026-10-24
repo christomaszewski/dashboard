@@ -1,0 +1,40 @@
+# Overlay applied by dash-up ONLY when the instance YAML sets `vehicle_state: true`
+# (docs/VEHICLE_STATE.md): Home widgets get projected, change-only values from the vehicle instead
+# of raw ROS topics.
+#
+#   dashboard-state-zenoh : the dashboard-zenoh image again, as a client of the rmw_zenoh router with
+#                           its WebSocket on 127.0.0.1 only. Private to dashboard-state, and always
+#                           the STOCK config: the public sidecar's topic rate limits never apply here.
+#   dashboard-state       : subscribes at full rate on the vehicle and answers the browser's view/poll
+#                           queries on fleet/<vehicle>/dash/<name>/state (DASH_STATE_KEY).
+#   dashboard-web         : also serves /config/runtime.json, which tells the page that key.
+services:
+  dashboard-state-zenoh:
+    image: ${DASH_ZENOH_IMAGE:-dashboard-zenoh:local}
+    build:                                     # same image as dashboard-zenoh (built once, cached)
+      context: .
+      dockerfile: Dockerfile.zenoh-remote-api
+      args:
+        ZENOH_TS_REF: ${ZENOH_TS_REF:-1.9.0}
+    network_mode: host                         # reach localhost:7447 (router); WebSocket on loopback only
+    command: ["-c", "/config/zenohd-dashboard.json5", "--ws-port", "127.0.0.1:${DASH_STATE_WS_PORT:-10001}"]
+    volumes:
+      - ./zenohd-dashboard.json5:/config/zenohd-dashboard.json5:ro
+    restart: unless-stopped
+
+  dashboard-state:
+    image: ${DASH_STATE_IMAGE:-dashboard-state:local}
+    build:
+      context: ..                              # repo root: Dockerfile.state needs app/
+      dockerfile: deploy/Dockerfile.state
+    network_mode: host
+    environment:
+      DASH_STATE_KEY: ${DASH_STATE_KEY:?vehicle_state needs DASH_STATE_KEY — start through dash-up}
+      DASH_STATE_LOCATOR: ws/127.0.0.1:${DASH_STATE_WS_PORT:-10001}
+    depends_on:
+      - dashboard-state-zenoh
+    restart: unless-stopped                    # crash-only: it exits when its bridge stops answering
+
+  dashboard-web:
+    volumes:
+      - ${DASH_RUNTIME_JSON:?vehicle_state needs DASH_RUNTIME_JSON — start through dash-up}:/config/runtime.json:ro

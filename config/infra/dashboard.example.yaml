@@ -44,6 +44,20 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #   /ouster/points: 1     #   per-topic ones
 # ros_domain_id: 1        # scopes the rules (default: rig's ROS_DOMAIN_ID, exported to every launcher)
 
+# ── Vehicle state (optional) — keep ROS traffic on the vehicle ─────────────────────────────────
+# `vehicle_state: true` makes dash-up start dashboard-state and a private bridge for it (loopback
+# only). Home widgets then receive only the fields they show, rounded to their display precision,
+# and only when they change; a slow link skips intermediate values instead of queueing them
+# (docs/VEHICLE_STATE.md). Readouts, panels, gauges, sparklines, indicators, topic-rate status and
+# the map use it; a widget or panel item with `vehicle_state: false` keeps the raw path. The ROS,
+# 3D and Bus debug tabs and image/point-cloud widgets stay raw, so topic_rates above still matter
+# for them. Values that stop updating are marked stale.
+#
+# vehicle_state: true
+# vehicle_id: rover-3      # the vehicle segment of the service key (default: this host's short
+#                          #   hostname); unique per vehicle on the mesh, so each page finds its own
+# state_ws_port: 10001     # the private bridge's WebSocket, bound to 127.0.0.1 (host networking)
+
 # ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
 # `rig_agent: true` makes dash-up start a third service, dashboard-rig-agent (docs/RIG_AGENT.md):
 # the deployment's rows with live compose/health/operational state, the open run with new-run /

@@ -1,0 +1,17 @@
+# dashboard-state (docs/VEHICLE_STATE.md): the vehicle side of vehicle state, bundled from the same
+# TypeScript as the browser app (app/src/vstate) into one Node file. Node 22 provides the WebSocket
+# client zenoh-ts needs; app/scripts/build-state.mjs inlines zenoh-ts's WebAssembly.
+#
+# Build context = the REPO ROOT (needs app/). build-images.sh / compose set that.
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY app/package.json app/package-lock.json ./
+COPY app/patches/ ./patches/
+RUN npm ci
+COPY app/ ./
+RUN npm run typecheck && npm run build:state
+
+FROM node:22-alpine
+COPY --from=build /app/dist-state/dashboard-state.mjs /srv/dashboard-state.mjs
+USER node
+ENTRYPOINT ["node", "/srv/dashboard-state.mjs"]

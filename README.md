@@ -60,6 +60,9 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   ([agent/](agent/README.md)) — rig is a one-shot CLI, this is its daemon half, speaking the
   generic contract in [docs/RIG_AGENT.md](docs/RIG_AGENT.md) (`fleet/<vid>/rig/…`). Opt-in: it
   holds the vehicle's docker socket.
+- Vehicle state: `vehicle_state: true` keeps ROS traffic on the vehicle. A small `dashboard-state`
+  service projects each Home widget's fields there and sends only changes, one held poll at a time,
+  so a slow link skips stale values instead of queueing them ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
 - Deploy/architecture details + security rationale: [deploy/README.md](deploy/README.md).
 
 ## Run standalone (on the vehicle)
@@ -83,7 +86,8 @@ Volume is the other half: cap what reaches the air with `topic_rate_hz` / `topic
 instance YAML — dash-up renders them into the sidecar's zenoh config as downsampling rules, scoped
 to the ROS domain so lifecycle/playback state and service calls stay untouched. These sidecar rules
 apply to the direct WebSocket path; a laptop bridge connected to the router needs rate limits on
-the vehicle before its native wireless link.
+the vehicle before its native wireless link. Better still, `vehicle_state: true` keeps the raw
+topics on the vehicle for Home widgets on either path ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
 
 ## Orchestrate with `rig`
 

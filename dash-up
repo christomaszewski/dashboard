@@ -15,8 +15,9 @@
 #
 # Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY); run `pull` then `up -d`.
 # Images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, plus dashboard-rig-agent
-# when `rig_agent: true` — all built by tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE /
-# DASH_WEB_IMAGE / DASH_AGENT_IMAGE) override individually.
+# when `rig_agent: true` and dashboard-state when `vehicle_state: true` — all built by
+# tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE / DASH_WEB_IMAGE / DASH_AGENT_IMAGE /
+# DASH_STATE_IMAGE) override individually.
 # Stdout stays clean (status line -> stderr) so `ps --format json` parses.
 set -euo pipefail
 REPO="$(cd "$(dirname "$0")" && pwd)"
@@ -145,8 +146,25 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
   fi
 fi
 
+# Optional vehicle state (docs/VEHICLE_STATE.md): `vehicle_state: true` adds dashboard-state and its
+# private, loopback-only bridge. dash_env.py derived the service key (vehicle_id, else this host's
+# short hostname); the page learns it from runtime.json, served next to the instance YAML.
+VSTATE_STATUS=""
+if [ "${DASH_VEHICLE_STATE:-0}" = 1 ]; then
+  export DASH_RUNTIME_JSON="$REPO/var/run/${DASH_NAME:-dashboard}/runtime.json"
+  if [ "$READ_ONLY" != 1 ]; then
+    mkdir -p "$(dirname "$DASH_RUNTIME_JSON")"
+    printf '{"vehicle_state_key":"%s"}\n' "$DASH_STATE_KEY" > "$DASH_RUNTIME_JSON"
+  fi
+  if [ -n "${DASH_REGISTRY:-}" ]; then
+    export DASH_STATE_IMAGE="${DASH_STATE_IMAGE:-$DASH_REGISTRY/dashboard-state:$TAG}"
+  fi
+  OVERLAYS+=(-f "$REPO/deploy/docker-compose.vehicle-state.yml")
+  VSTATE_STATUS=" vehicle-state=$DASH_STATE_KEY"
+fi
+
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)
-echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}${DASH_ZENOH_CONFIG:+ topic-rate-limit=on}$RIG_STATUS config=$CONFIG_ABS" >&2
+echo "dash-up: project=$COMPOSE_PROJECT_NAME web=:${DASH_WEB_PORT:-8080} ws=:${DASH_WS_PORT:-10000}${DASH_REGISTRY:+ registry=$DASH_REGISTRY}${DASH_RIG_DATA:+ data=$DASH_RIG_DATA}${DASH_ZENOH_CONFIG:+ topic-rate-limit=on}$RIG_STATUS$VSTATE_STATUS config=$CONFIG_ABS" >&2
 case "${ARGS[0]}" in
   runtime-images|images)
     exec "$PYTHON" "$REPO/tools/runtime_images.py" "${ARGS[0]}" -f "$COMPOSE" "${OVERLAYS[@]}"

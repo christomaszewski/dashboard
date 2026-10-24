@@ -9,6 +9,7 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 |---|---|---|
 | `dashboard-zenoh` | `zenoh-bridge-remote-api` — a Zenoh **client** of the rmw_zenoh router that exposes a WebSocket for the browser's `zenoh-ts` | `:10000` (ws) |
 | `dashboard-web` | Caddy with the React bundle baked in (a built image — `deploy/Dockerfile.web`) | `:8080` (http) |
+| `dashboard-state` + `dashboard-state-zenoh` (opt-in) | vehicle state (`docs/VEHICLE_STATE.md`, `deploy/Dockerfile.state`): Home widgets' fields projected on the vehicle and sent as changes. Its own `dashboard-zenoh` bridge with the stock config, WebSocket on 127.0.0.1 only. Only with `vehicle_state: true` (`docker-compose.vehicle-state.yml`). | `127.0.0.1:10001` (ws, `state_ws_port`) |
 | `dashboard-rig-agent` (opt-in) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, the run registry, rig verbs as detached jobs. Only with `rig_agent: true` in the instance YAML (`docker-compose.rig-agent.yml` + `docker-compose.rig-data.yml` overlays). | — (peer on `:7447`) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over

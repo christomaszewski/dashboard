@@ -193,7 +193,14 @@ src/
     useRosGraph.ts          # live graph hook (liveliness sub with history)
     RosGraphContext.tsx     # ONE graph + decoder cache + TopicStore app-wide
     topicStore.ts           # refcounted shared topic subs: N watchers = 1 zenoh sub + 1 decode/flush
-    useTopic.ts             # React glue over the store (used by readouts, hz statuses, inspector)
+    useTopic.ts             # React glue over the store (used by readouts, hz statuses, inspector); with
+                            #   `fields` and vehicle_state on, routes Home widgets to vstate/ instead
+  vstate/                   # vehicle state (docs/VEHICLE_STATE.md): widgets' fields projected on the vehicle
+    protocol.ts             # view/poll specs, signatures, projection + quantization, JSON tags
+    server.ts               # vehicle side over TopicStore: views, change numbers, held polls, expiry
+    client.ts               # browser side: one view of the mounted items, one poll in flight
+    VehicleStateContext.tsx # client from /config/runtime.json; per-widget path (vehicle_state: false)
+    node/main.ts            # the dashboard-state process (bundled by scripts/build-state.mjs)
     RosExplorer.tsx         # topic table + drill-down; nodes/services lists
     TopicInspector.tsx      # subscribe→decode→render one topic (Hz/bytes, latched get)
     MessageTree.tsx         # decoded-message tree (bigint/TypedArray-safe)

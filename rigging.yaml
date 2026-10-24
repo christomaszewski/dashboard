@@ -22,17 +22,18 @@ tier: infra           # rig bring-up tier: a vehicle-wide sidecar on the zenoh r
 host_ports:           # config keys rig reads to validate cross-service port clashes
   - web_port          #   http: serves the bundle
   - ws_port           #   remote-api websocket (zenoh-ts)
+  - state_ws_port     #   vehicle_state's private bridge (127.0.0.1 only; default 10001)
 
 external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar is a stateless client
 
 # dash-up's registry contract; images.override_env below lets rig inject catalog digests:
 #   DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY, which dash-up honors) -> <registry>/<name>:<tag>
 #   DASH_IMAGE_TAG default = arm64 (platform-agnostic: no NVENC/JetPack split)
-#   per-image overrides: DASH_ZENOH_IMAGE, DASH_WEB_IMAGE
+#   per-image overrides: DASH_ZENOH_IMAGE, DASH_WEB_IMAGE, DASH_AGENT_IMAGE, DASH_STATE_IMAGE
 
 build:                # `rig build [--registry <host>] [--tag]` runs this as: tools/build-images.sh <registry> [tag]
   command: tools/build-images.sh
-  images: [dashboard-zenoh, dashboard-web, dashboard-rig-agent]   # all built + pushed by build-images.sh
+  images: [dashboard-zenoh, dashboard-web, dashboard-rig-agent, dashboard-state]   # all built + pushed by build-images.sh
   architectures: [arm64, amd64]
   capabilities: {no_cache: true, platforms: true}
 
@@ -49,10 +50,11 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - deploy/docker-compose.rig-agent.yml         # optional rig agent (only when rig_agent: true)
   - deploy/docker-compose.rig-data-web.yml      # the run registry served read-only at /rig-data/ (when data_dir is known)
   - deploy/docker-compose.rig-data.yml          #   + the agent's read-write mount of it
+  - deploy/docker-compose.vehicle-state.yml     # optional vehicle state service + its bridge (vehicle_state: true)
   - deploy/zenohd-dashboard.json5
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)
   - config/infra/dashboard.example.yaml
 
 images:
-  override_env: {dashboard-zenoh: DASH_ZENOH_IMAGE, dashboard-web: DASH_WEB_IMAGE, dashboard-rig-agent: DASH_AGENT_IMAGE}
+  override_env: {dashboard-zenoh: DASH_ZENOH_IMAGE, dashboard-web: DASH_WEB_IMAGE, dashboard-rig-agent: DASH_AGENT_IMAGE, dashboard-state: DASH_STATE_IMAGE}
