@@ -155,6 +155,11 @@ With `vehicle_state: true` in the instance YAML ([docs/VEHICLE_STATE.md](docs/VE
 - With two vehicles on one mesh, give each a distinct `vehicle_id`. If two answer the same key,
   every widget says so instead of mixing their data.
 
+Rehearse a bad radio on the bench first: `tools/radio_link.sh` puts latency, loss, a bandwidth cap or
+outages between a page and the sidecar, and `tools/test_vehicle_state_link.mjs` measures both paths
+through it (docs/VEHICLE_STATE.md, "On an impaired link"). On the vehicle, the same symptoms on a real
+link should look the same: values that freeze but never error, and a `reconnecting` pill.
+
 ## Service calls / shared sessions (on-vehicle acceptance)
 
 1. **Attachment wire format** (do this FIRST on a new fleet — a mismatch KILLS the server node):

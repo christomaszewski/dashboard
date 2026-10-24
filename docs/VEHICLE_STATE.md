@@ -214,6 +214,36 @@ column, at most five a second), in 20× fewer messages, and nothing queues. A re
 topics; on the vehicle-state path the cost depends on how many widgets are shown, not on how much
 the vehicle publishes.
 
+### On an impaired link
+
+The same publisher behind the bench stack (Docker images, 2026-10-24). Two simulated radios
+(`tools/radio_link.sh`: netem on a relay between the operator and the public sidecar, both
+directions) carry one operator each, vehicle state and direct, with the same profile. The figure is
+the age of the IMU value the operator would display, in seconds, sampled every 100 ms for 20 s;
+"drain" is how long the direct path needed, once the link was clean again, to show a value under a
+second old.
+
+| Radio hop | Vehicle state p50 / p95 / max | Direct p50 / p95 / max | Direct drain |
+|---|---|---|---|
+| Clean | 0.11 / 0.21 / 0.31 | 0.10 / 0.20 / 0.20 | – |
+| 150 ms ± 20 ms each way | 0.42 / 0.58 / 0.65 | 0.32 / 0.43 / 0.48 | – |
+| 50 ms, 5% loss | 0.22 / 0.61 / 0.93 | 0.20 / 0.39 / 0.58 | – |
+| 50 ms, 15% loss | 0.29 / 0.94 / 1.52 | 0.25 / 1.26 / 2.07 | – |
+| 400 kbit/s, 50 ms, 1% loss | 0.24 / 0.34 / 0.55 | 4.36 / 8.32 / 9.22 | 6.5 s |
+| 128 kbit/s, 100 ms | 0.36 / 0.49 / 0.56 | 10.2 / 17.2 / 17.9 | 14.6 s |
+| 6 s up / 3 s down, twice | 0.25 / 4.00 / 4.41 | 0.28 / 3.73 / 4.13 | – |
+| 12 s outage | 6.91 / 15.9 / 16.9 | 7.02 / 15.8 / 16.3 | – |
+
+- **Bandwidth is where vehicle state matters.** Once the link carries less than the raw stream
+  (about 520 kbit/s here), the direct path falls behind without bound and keeps showing old data for
+  seconds after the link recovers. Vehicle state stays under 0.6 s at 128 kbit/s.
+- **Pulling costs about one round trip.** On a 300 ms link the vehicle-state median is 0.1 s older,
+  and under moderate loss its tail is slightly longer (a lost poll waits for a retransmission). At
+  15% loss its tail is shorter.
+- **Outages freeze both paths equally,** and neither shows errors. In a browser through a radio, a
+  20 s outage kept the last values on screen, the connection pill said `reconnecting` from 5 s in,
+  and values resumed 1.7 s after the link returned.
+
 ## Verification
 
 - Unit tests (`app/src/vstate/*.test.ts*`): protocol encoding and quantization, server deltas,
@@ -231,27 +261,51 @@ the vehicle publishes.
   BRIDGE_BIN=/path/to/zenoh-bridge-remote-api node tools/test_vehicle_state.mjs   # or Docker:
   node tools/test_vehicle_state.mjs                     # BRIDGE_IMAGE=dashboard-zenoh:local, host network
   ```
+- Bad links (`tools/test_vehicle_state_link.mjs`, bench only): against a running stack with
+  `vehicle_state: true`, it starts two radios and the synthetic publisher, runs each link profile and
+  prints the table above. `tools/radio_link.sh` alone shapes the hop for a browser: serve a copy of
+  the page whose `ws_port` is a radio's port.
+
+  ```sh
+  STATE_KEY=fleet/<vehicle>/dash/<name>/state SIDECAR_PORT=<ws_port> node tools/test_vehicle_state_link.mjs
+  ```
 
 ## Open items
 
-Phase 1 was built in a cloud session without a Docker daemon or a vehicle. Not yet verified:
+Phase 1 was built in a cloud session without a Docker daemon or a vehicle. A bench pass on
+2026-10-24 (Docker Desktop on an arm64 Mac, host networking enabled, a stand-in Zenoh router)
+covered items 1–3:
 
-1. **Image builds.** Neither `dashboard-state` nor the overlay has been built by Docker; the
-   `Dockerfile.state` steps were replayed by hand on a clean copy of `app/`. With
-   `vehicle_state: true` in a copy of the example config, run `./dash-up <config> build`, or
-   `tools/build-images.sh <registry>`.
-2. **The Docker mode of `tools/test_vehicle_state.mjs`** (`BRIDGE_IMAGE`, host networking). Only
-   `BRIDGE_BIN` mode has run.
-3. **CI's `rig certify --require-build-check`** against the new image, overlay and `state_ws_port`.
-4. **On a vehicle:** the checklist in TESTING.md, "Vehicle state (on-vehicle acceptance)". That
-   includes the laptop-bridge route and a real ROS graph. Decoding uses the bundled message
+1. **Image builds — done.** `./dash-up <config> build` with `vehicle_state: true` builds all three
+   images; `dashboard-state` typechecks during its build. The stack came up with the private bridge
+   on 127.0.0.1 only, `/config/runtime.json` served, and the service logging its keys and per-minute
+   summary. A seven-widget Home showed live values in Chromium at about 2.6 KB/s; stopping the IMU
+   marked its widgets stale within 8 s.
+2. **Docker mode of `tools/test_vehicle_state.mjs` — done.** All checks pass: 54× fewer bytes
+   moving, 111× parked. On a Mac, Docker Desktop's host networking must be enabled.
+3. **`rig certify --require-build-check` — done.** CI passed on this branch (example config, so
+   vehicle state off). Locally, the rig checkout also passed with `vehicle_state: true`, covering
+   both state services, the state image's registry rewrite and the loopback port.
+4. **On a vehicle — open:** the checklist in TESTING.md, "Vehicle state (on-vehicle acceptance)".
+   That includes the laptop-bridge route and a real ROS graph. Decoding uses the bundled message
    definitions, as in the browser, so vendor types still need their own decoder.
+
+Found and fixed on the bench: after `docker restart dashboard-state`, 1 restart in 12 left some
+pages showing `vehicle state: Timeout` for about 9 s. zenoh-ts registers a queryable's handler only
+after the bridge acknowledges the declaration and drops, unanswered, a query that arrives first; the
+querier then waits out its whole deadline. `app/patches/zenoh-ts.mjs` now registers the handler
+first. With it, 25 restarts under 40 polling clients all recovered within 1.2 s.
+
+Observed, not changed: after a service restart, a topic that is silent at that moment loses its last
+value and sparkline history in the browser (the new service has never seen it), and the map keeps
+showing a heading arrow while the IMU behind it is stale.
 
 A 1.9.0 bridge binary for `BRIDGE_BIN`: crates.io has `zenoh-plugin-remote-api` 1.9.0 but no
 `zenoh-bridge-remote-api` 1.9.0. Build the 1.10.1 bridge crate with every `zenoh*` dependency pinned
 to `=1.9.0`, or use the `dashboard-zenoh:local` image built from `deploy/Dockerfile.zenoh-remote-api`.
 
-`src/transport/useTransport.test.tsx` fails on `main` as well (a leftover-timer assertion); this
-branch does not touch it.
+`src/transport/useTransport.test.tsx` failed on `main` in the cloud session (a leftover-timer
+assertion); it passes on the bench with Node 26, so it may be timing-sensitive. This branch does not
+touch it.
 
-Suggested order: items 1–4, then phase 2, starting with the vehicle-kept map trail.
+Next: item 4 on a vehicle, then phase 2, starting with the vehicle-kept map trail.
