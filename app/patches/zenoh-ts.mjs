@@ -199,3 +199,16 @@ patch('session_inner.js', source => {
 patch('session.js', source => replace(source,
   'SessionInner.open(config.locator, config.messageResponseTimeoutMs, config.openTimeoutMs, config.signal)',
   'SessionInner.open(config.locator, config.messageResponseTimeoutMs, config.openTimeoutMs, config.signal, config.onDiagnostic)'), diagnosticsMarker);
+
+// The bridge routes queries to a queryable as soon as it declares it, so a query can reach the
+// socket before the declaration's acknowledgement. Upstream registers the handler only after that
+// acknowledgement and drops such a query without replying, so its querier waits out its whole
+// deadline: browsers polling dashboard-state across a restart could show "Timeout" for ~9 s instead
+// of recovering in ~1 s. Register first; undo if the declaration fails.
+const queryableMarker = '// dashboard: queryable handlers registered before their declaration v1';
+patch('session_inner.js', source => replace(source,
+  `        await this.sendRequest(new DeclareQueryable(queryableId, info), InRemoteMessageId.ResponseOk, ResponseOk.deserialize);
+        this.queryables.set(queryableId, closure);`,
+  `        this.queryables.set(queryableId, closure);
+        try { await this.sendRequest(new DeclareQueryable(queryableId, info), InRemoteMessageId.ResponseOk, ResponseOk.deserialize); }
+        catch (error) { this.queryables.delete(queryableId); throw error; }`), queryableMarker);
