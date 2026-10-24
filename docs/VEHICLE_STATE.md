@@ -231,3 +231,27 @@ the vehicle publishes.
   BRIDGE_BIN=/path/to/zenoh-bridge-remote-api node tools/test_vehicle_state.mjs   # or Docker:
   node tools/test_vehicle_state.mjs                     # BRIDGE_IMAGE=dashboard-zenoh:local, host network
   ```
+
+## Open items
+
+Phase 1 was built in a cloud session without a Docker daemon or a vehicle. Not yet verified:
+
+1. **Image builds.** Neither `dashboard-state` nor the overlay has been built by Docker; the
+   `Dockerfile.state` steps were replayed by hand on a clean copy of `app/`. With
+   `vehicle_state: true` in a copy of the example config, run `./dash-up <config> build`, or
+   `tools/build-images.sh <registry>`.
+2. **The Docker mode of `tools/test_vehicle_state.mjs`** (`BRIDGE_IMAGE`, host networking). Only
+   `BRIDGE_BIN` mode has run.
+3. **CI's `rig certify --require-build-check`** against the new image, overlay and `state_ws_port`.
+4. **On a vehicle:** the checklist in TESTING.md, "Vehicle state (on-vehicle acceptance)". That
+   includes the laptop-bridge route and a real ROS graph. Decoding uses the bundled message
+   definitions, as in the browser, so vendor types still need their own decoder.
+
+A 1.9.0 bridge binary for `BRIDGE_BIN`: crates.io has `zenoh-plugin-remote-api` 1.9.0 but no
+`zenoh-bridge-remote-api` 1.9.0. Build the 1.10.1 bridge crate with every `zenoh*` dependency pinned
+to `=1.9.0`, or use the `dashboard-zenoh:local` image built from `deploy/Dockerfile.zenoh-remote-api`.
+
+`src/transport/useTransport.test.tsx` fails on `main` as well (a leftover-timer assertion); this
+branch does not touch it.
+
+Suggested order: items 1–4, then phase 2, starting with the vehicle-kept map trail.
