@@ -187,7 +187,8 @@ export class VehicleStateClient {
         const gen = this.generation;
         const sigs = this.wanted;
         try {
-          if (this.view?.sigs !== sigs) {
+          const fresh = this.view?.sigs !== sigs;
+          if (fresh) {
             const reg = await this.orWake(this.register(sigs));
             if (reg === SUPERSEDED || gen !== this.generation) continue;
             this.view = { id: reg.view, sigs };
@@ -195,10 +196,13 @@ export class VehicleStateClient {
             this.since = 0;
           }
           const started = performance.now();
-          const reply = await this.orWake(this.poll(this.view.id));
+          const reply = await this.orWake(this.poll(this.view!.id));
           if (reply === SUPERSEDED || gen !== this.generation) continue;
           if ("error" in reply) {
-            this.view = null; // the vehicle restarted or expired the view: register again now
+            // The vehicle restarted or expired the view: register again now — but if it forgets a
+            // view it just accepted (evicted at its view limit), back off instead of spinning.
+            this.view = null;
+            if (fresh) await this.orWake(sleep(backoff));
             continue;
           }
           this.apply(reply, sigs);

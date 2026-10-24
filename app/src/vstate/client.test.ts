@@ -162,3 +162,22 @@ describe("VehicleStateClient item validation", () => {
     vi.useRealTimers();
   });
 });
+
+describe("VehicleStateClient against a forgetful vehicle", () => {
+  it("backs off when a view it just registered is unknown at once", async () => {
+    vi.useFakeTimers();
+    const calls: string[] = [];
+    const transport = new LoopbackTransport(null as unknown as VehicleStateServer);
+    transport.get = async (key: string) => {
+      calls.push(key.endsWith("/view") ? "view" : "poll");
+      const body = key.endsWith("/view") ? { v: 1, view: "vgone", epoch: "e" } : { v: 1, error: "unknown-view" };
+      return [{ keyexpr: key, payload: new TextEncoder().encode(JSON.stringify(body)) }];
+    };
+    const client = new VehicleStateClient({ transport, base: "fleet/r1/dash/d/state" });
+    client.acquire(heading);
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(calls.length).toBeLessThanOrEqual(6); // ~one register + poll per second, not hundreds
+    client.close();
+    vi.useRealTimers();
+  });
+});
