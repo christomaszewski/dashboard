@@ -1,7 +1,7 @@
 import type { GaugeWidgetConfig } from "./specs";
 import { useTopic } from "../../../ros/useTopic";
 import { pluckField } from "../../pluck";
-import { formatValue, valueLevel } from "../../value";
+import { displayQuantum, formatValue, valueLevel } from "../../value";
 
 // 270° arc from -135° (bottom-left) to +135° (bottom-right) in a 100×72 box.
 const CX = 50;
@@ -24,14 +24,17 @@ function arc(fromDeg: number, toDeg: number): string {
 
 /** Arc gauge: fraction of [min, max] drawn as a threshold-colored arc over a track. */
 export function GaugeWidget({ widget, compact = false }: { widget: GaugeWidgetConfig; compact?: boolean }) {
-  const { topic, snapshot } = useTopic(widget.topic);
+  // Fine enough for both the text and a visible step of the arc.
+  const q = Math.min(displayQuantum(widget.precision), (widget.max - widget.min) / 1000);
+  const { topic, snapshot } = useTopic(widget.topic, { fields: [{ p: widget.field, q }] });
   const value = snapshot?.message !== undefined ? pluckField(snapshot.message, widget.field) : undefined;
   const num = typeof value === "number" ? value : typeof value === "bigint" ? Number(value) : undefined;
   const error = snapshot?.error ?? "";
   const level = valueLevel(widget, num, error);
   const fraction = num === undefined ? 0 : Math.min(1, Math.max(0, (num - widget.min) / (widget.max - widget.min)));
   const text = error ? "!" : num === undefined ? "—" : formatValue(num, widget.precision);
-  const detail = error || (topic ? `${widget.topic} · ${widget.field}` : `${widget.topic} — waiting for topic`);
+  const stale = snapshot?.stale && !error ? " stale" : "";
+  const detail = error || (topic ? `${widget.topic} · ${widget.field}${stale ? " · stale" : ""}` : `${widget.topic} — waiting for topic`);
 
   if (compact) {
     return (
@@ -40,7 +43,7 @@ export function GaugeWidget({ widget, compact = false }: { widget: GaugeWidgetCo
         <span className="gauge-bar" aria-hidden>
           <span className={`gauge-bar-fill ${level}`} style={{ width: `${(fraction * 100).toFixed(1)}%` }} />
         </span>
-        <span className={`row-value ${level}`}>
+        <span className={`row-value ${level}${stale}`}>
           {text}
           {widget.unit && num !== undefined ? <small> {widget.unit}</small> : null}
         </span>
@@ -54,7 +57,7 @@ export function GaugeWidget({ widget, compact = false }: { widget: GaugeWidgetCo
       <svg className="gauge-svg" viewBox="0 0 100 72" role="img" aria-label={`${widget.label}: ${text}`}>
         <path className="gauge-track" d={arc(START, START + SWEEP)} />
         {fraction > 0 && <path className={`gauge-value ${level}`} d={arc(START, START + SWEEP * fraction)} />}
-        <text className={`gauge-text ${level}`} x="50" y="52" textAnchor="middle">
+        <text className={`gauge-text ${level}${stale}`} x="50" y="52" textAnchor="middle">
           {text}
         </text>
         {widget.unit && num !== undefined && (

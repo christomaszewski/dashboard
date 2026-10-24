@@ -66,6 +66,7 @@ registerWidget<MyConfig>({
 |---|---|
 | A decoded ROS topic (one field or the whole message) | `useTopic(name)` → `{ topic, snapshot }`; `pluckField(snapshot.message, "a.b.0")`; `snapshot.hz`, `.error`, `.latched` |
 | Only a rate, no decode | `useTopic(name, { decode: false })` |
+| The same, light on the radio | `useTopic(name, { fields: [{ p: "a.b", q: displayQuantum(precision) }] })` — with `vehicle_state: true` the vehicle sends only these fields, rounded, when they change ([VEHICLE_STATE.md](../../../docs/VEHICLE_STATE.md)); `snapshot.message` holds just those paths, `snapshot.stale` flags silence |
 | The ROS graph (nodes/topics/services) | `useRosGraphContext().graph` |
 | A camera stream | `useStreamsContext().streams` + `resolveStreamRef`, then `useStreamSession(key)` → `{ snapshot, videoRef }` on a `<video>` |
 | Recording standby/active | `useLifecycleContext()`, `changeState(transport, key, "activate")` |

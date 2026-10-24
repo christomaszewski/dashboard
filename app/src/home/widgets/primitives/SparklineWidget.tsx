@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { SparklineWidgetConfig } from "./specs";
 import { useTopic } from "../../../ros/useTopic";
 import { pluckField } from "../../pluck";
-import { formatValue, valueLevel } from "../../value";
+import { displayQuantum, formatValue, valueLevel } from "../../value";
 import { SeriesBuffer, seriesPath } from "./series";
 
 const CARD_W = 240;
@@ -15,7 +15,7 @@ const ROW_H = 20;
  * topic, shared with every other consumer); each new decoded message appends one point.
  */
 export function SparklineWidget({ widget, compact = false }: { widget: SparklineWidgetConfig; compact?: boolean }) {
-  const { topic, snapshot } = useTopic(widget.topic);
+  const { topic, snapshot } = useTopic(widget.topic, { fields: [{ p: widget.field, q: displayQuantum(widget.precision) }] });
   const series = useRef(new SeriesBuffer((widget.window_s ?? 60) * 1000));
   const [, bump] = useState(0);
 
@@ -43,7 +43,8 @@ export function SparklineWidget({ widget, compact = false }: { widget: Sparkline
   const error = snapshot?.error ?? "";
   const level = valueLevel(widget, last?.v, error);
   const text = error ? "!" : last === undefined ? "—" : formatValue(last.v, widget.precision);
-  const detail = error || (topic ? `${widget.topic} · ${widget.field}` : `${widget.topic} — waiting for topic`);
+  const stale = snapshot?.stale && !error ? " stale" : "";
+  const detail = error || (topic ? `${widget.topic} · ${widget.field}${stale ? " · stale" : ""}` : `${widget.topic} — waiting for topic`);
   const w = compact ? ROW_W : CARD_W;
   const h = compact ? ROW_H : CARD_H;
   const path = seriesPath(series.current.points, w, h, widget.min, widget.max);
@@ -59,7 +60,7 @@ export function SparklineWidget({ widget, compact = false }: { widget: Sparkline
       <div className="panel-row" title={detail}>
         <span className="row-label">{widget.label}</span>
         <span className="sparkline-row">{chart}</span>
-        <span className={`row-value ${level}`}>
+        <span className={`row-value ${level}${stale}`}>
           {text}
           {widget.unit && last ? <small> {widget.unit}</small> : null}
         </span>
@@ -71,7 +72,7 @@ export function SparklineWidget({ widget, compact = false }: { widget: Sparkline
     <div className="widget-card widget-sparkline">
       <span className="widget-label">{widget.label}</span>
       <div className="sparkline-head">
-        <span className={`widget-value ${level}`}>
+        <span className={`widget-value ${level}${stale}`}>
           {text}
           {widget.unit && last ? <small> {widget.unit}</small> : null}
         </span>

@@ -7,6 +7,7 @@ import { LifecycleProvider } from "./lifecycle/LifecycleContext";
 import { HealthProvider } from "./health/HealthContext";
 import { PlaybackProvider } from "./playback/PlaybackContext";
 import { RigProvider } from "./rig/RigContext";
+import { VehicleStateProvider } from "./vstate/VehicleStateContext";
 import { Shell } from "./shell/Shell";
 
 function ConnectedApp() {
@@ -19,21 +20,24 @@ function ConnectedApp() {
   const { vehicleLocator, localLocator } = bridgeLocators(wsPort, localBridge);
   const title = config.phase === "ready" ? config.config.home?.title : undefined;
   const tabs = config.phase === "ready" ? config.config.tabs : undefined;
+  const vehicleState = config.phase === "ready" && config.config.vehicle_state === true;
   return (
     <TransportProvider locator={vehicleLocator} localLocator={localLocator}>
-      <StreamsProvider>
-        <RosGraphProvider>
-          <LifecycleProvider>
-            <HealthProvider>
-              <PlaybackProvider>
-                <RigProvider>
-                  <Shell title={title} tabs={tabs} />
-                </RigProvider>
-              </PlaybackProvider>
-            </HealthProvider>
-          </LifecycleProvider>
-        </RosGraphProvider>
-      </StreamsProvider>
+      <VehicleStateProvider enabled={vehicleState}>
+        <StreamsProvider>
+          <RosGraphProvider>
+            <LifecycleProvider>
+              <HealthProvider>
+                <PlaybackProvider>
+                  <RigProvider>
+                    <Shell title={title} tabs={tabs} />
+                  </RigProvider>
+                </PlaybackProvider>
+              </HealthProvider>
+            </LifecycleProvider>
+          </RosGraphProvider>
+        </StreamsProvider>
+      </VehicleStateProvider>
     </TransportProvider>
   );
 }

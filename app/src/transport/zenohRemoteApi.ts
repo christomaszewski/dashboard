@@ -3,6 +3,7 @@ import {
   ConsolidationMode,
   Duration,
   KeyExpr,
+  Query,
   QueryTarget,
   ReplyError,
   ReplyKeyExpr,
@@ -11,7 +12,7 @@ import {
   Sample as ZSample,
 } from "@eclipse-zenoh/zenoh-ts";
 import type { Reply } from "@eclipse-zenoh/zenoh-ts";
-import type { GetReply, LivelinessEvent, Sample, Subscription, Transport, TransportGetOptions } from "./types";
+import type { GetReply, IncomingQuery, LivelinessEvent, Sample, Subscription, Transport, TransportGetOptions } from "./types";
 
 const TARGET: Record<NonNullable<TransportGetOptions["target"]>, QueryTarget> = {
   "best-matching": QueryTarget.BEST_MATCHING,
@@ -84,6 +85,24 @@ export class ZenohRemoteApiTransport implements Transport {
     const qos = `2:${topic.transientLocal ? "1" : "2"}:1,100:,:,:,,`;
     const token = await this.session.liveliness().declareToken(`${prefix}/${mangle(topic.name)}/${mangle(topic.typeDds)}/${mangle(topic.typeHash)}/${qos}${topic.bufferAware ? "/backends:cpu:" : ""}`);
     return { close: () => token.undeclare() };
+  }
+
+  /** Serve queries on `keyexpr` (vehicle services such as dashboard-state; not on Transport). */
+  async declareQueryable(keyexpr: string, onQuery: (q: IncomingQuery) => void): Promise<Subscription> {
+    const queryable = await this.session.declareQueryable(new KeyExpr(keyexpr), {
+      handler: (q: Query) => {
+        const finish = async (send: () => Promise<void>) => {
+          try { await send(); } finally { await q.finalize(); }
+        };
+        onQuery({
+          keyexpr: q.keyExpr().toString(),
+          payload: q.payload()?.toBytes(),
+          reply: (payload) => finish(() => q.reply(q.keyExpr(), payload)),
+          replyErr: (message) => finish(() => q.replyErr(message)),
+        });
+      },
+    });
+    return { close: () => queryable.undeclare() };
   }
 
   async get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]> {

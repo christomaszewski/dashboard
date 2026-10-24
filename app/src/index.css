@@ -2312,3 +2312,11 @@ ul.plain {
   .health-event { flex-wrap: wrap; }
   .health-event > div { flex-basis: 100%; }
 }
+
+/* Vehicle state: the vehicle saw no new sample for longer than usual (docs/VEHICLE_STATE.md). */
+.widget-value.stale,
+.panel-row .row-value.stale,
+.pill.stale,
+.gauge-text.stale {
+  opacity: 0.55;
+}

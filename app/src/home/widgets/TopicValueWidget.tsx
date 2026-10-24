@@ -1,8 +1,9 @@
 import type { TopicValueWidgetConfig } from "../../config/schema";
 import { useTopic } from "../../ros/useTopic";
+import type { FieldSpec } from "../../vstate/protocol";
 import { pluckField } from "../pluck";
 import { renderTemplate } from "../template";
-import { formatValue, valueLevel, type ValueLevel } from "../value";
+import { displayQuantum, formatValue, valueLevel, type ValueLevel } from "../value";
 
 interface Readout {
   text: string;
@@ -41,14 +42,28 @@ function readout(widget: TopicValueWidgetConfig, message: unknown, error: string
   };
 }
 
+/** What the readout renders: its field at its precision, or each format placeholder at its own
+ *  (a path used twice keeps the finer quantum). */
+export function readoutFields(widget: TopicValueWidgetConfig): FieldSpec[] {
+  if (!widget.template) return [{ p: widget.field ?? "", q: displayQuantum(widget.precision) }];
+  const quanta = new Map<string, number>();
+  for (const part of widget.template.parts) {
+    if (!("path" in part)) continue;
+    const q = displayQuantum(part.precision);
+    quanta.set(part.path, Math.min(quanta.get(part.path) ?? q, q));
+  }
+  return [...quanta].map(([p, q]) => ({ p, q }));
+}
+
 /**
  * Live readout off the shared TopicStore (one sub + one decode per topic app-wide, however many
  * readouts watch it). `compact` renders the panel-row form instead of a card.
  */
 export function TopicValueWidget({ widget, compact = false }: { widget: TopicValueWidgetConfig; compact?: boolean }) {
-  const { topic, snapshot } = useTopic(widget.topic);
+  const { topic, snapshot } = useTopic(widget.topic, { fields: readoutFields(widget) });
   const r = readout(widget, snapshot?.message, snapshot?.error ?? "", topic !== null && topic !== undefined);
-  const cls = `${r.level}${r.formatted ? " formatted" : ""}`;
+  if (snapshot?.stale && !snapshot.error) r.detail += " · stale";
+  const cls = `${r.level}${r.formatted ? " formatted" : ""}${snapshot?.stale ? " stale" : ""}`;
 
   if (compact) {
     return (

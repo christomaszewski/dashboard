@@ -15,6 +15,12 @@ export function thresholdLevel(t: Thresholds, v: number): ValueLevel {
   return "ok";
 }
 
+/** The smallest change formatValue can show: 10^-precision, else its default 3-decimal rounding.
+ *  Vehicle state rounds numbers to this, so "unchanged" means "renders identically". */
+export function displayQuantum(precision?: number): number {
+  return precision !== undefined ? 10 ** -Math.max(0, Math.trunc(precision)) : 0.001;
+}
+
 export function formatValue(v: unknown, precision?: number): string {
   if (typeof v === "number") return precision !== undefined ? v.toFixed(precision) : String(Math.round(v * 1000) / 1000);
   if (typeof v === "bigint" || typeof v === "boolean" || typeof v === "string") return String(v);

@@ -2,6 +2,7 @@ import type { PanelItemWidgetConfig, PanelWidgetConfig } from "../../config/sche
 import { getWidget } from "../../widgets/registry";
 import { WidgetErrorCard } from "./WidgetErrorCard";
 import { WidgetErrorBoundary } from "./WidgetErrorBoundary";
+import { WidgetTopicSource } from "../../vstate/VehicleStateContext";
 
 function PanelItem({ item }: { item: PanelItemWidgetConfig }) {
   const def = getWidget(item.type);
@@ -9,7 +10,12 @@ function PanelItem({ item }: { item: PanelItemWidgetConfig }) {
     return <WidgetErrorCard compact title={item.label ?? item.type} message={`no renderer registered for '${item.type}'`} />;
   }
   const Component = def.component;
-  return <Component widget={item} compact />;
+  // An item's own vehicle_state wins; otherwise it follows its panel.
+  return (
+    <WidgetTopicSource setting={item.vehicle_state}>
+      <Component widget={item} compact />
+    </WidgetTopicSource>
+  );
 }
 
 function itemLabel(item: PanelItemWidgetConfig): string | undefined {

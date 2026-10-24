@@ -42,6 +42,15 @@ export interface TransportGetOptions {
   onReplyError?: (message: string) => void;
 }
 
+/** A query received by a queryable. Only vehicle-side services answer queries; the browser never does. */
+export interface IncomingQuery {
+  keyexpr: string;
+  payload?: Uint8Array;
+  /** Reply on the query's own key, then finalize it. */
+  reply(payload: Uint8Array): Promise<void>;
+  replyErr(message: string): Promise<void>;
+}
+
 export interface Transport {
   /** Optional end-to-end health check (a local bridge must also reach the selected vehicle). */
   checkConnection?(): Promise<void>;

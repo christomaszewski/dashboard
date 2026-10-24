@@ -18,8 +18,16 @@ interface Props {
  * Hidden feeds continue tracking so showing one restores its current position and full trail.
  */
 export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, onStatus }: Props) {
-  const position = useTopic(feed.topic);
-  const orientation = useTopic(feed.orientation_topic);
+  // ≈1 cm of latitude; a quaternion component to 1e-3 (≈0.1° of heading).
+  const latField = feed.lat_field ?? "latitude";
+  const lonField = feed.lon_field ?? "longitude";
+  const position = useTopic(feed.topic, { fields: [{ p: latField, q: 1e-7 }, { p: lonField, q: 1e-7 }] });
+  const orientationField = feed.orientation_field ?? "orientation";
+  const orientation = useTopic(feed.orientation_topic, {
+    fields: orientationField === "orientation"
+      ? [{ p: orientationField, q: 1e-3 }, { p: "orientation_covariance.0" }] // -1 = no orientation
+      : [{ p: orientationField, q: 1e-3 }],
+  });
   const label = feed.label ?? feed.topic;
   const [layer, setLayer] = useState<{
     group: L.LayerGroup; marker: L.Marker; trail: L.Polyline; symbol: HTMLElement; arrow: HTMLElement;
@@ -57,7 +65,7 @@ export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, 
   const message = position.snapshot?.message;
   useEffect(() => {
     if (!layer || message === undefined) return;
-    const pos = extractLatLon(message, feed.lat_field ?? "latitude", feed.lon_field ?? "longitude");
+    const pos = extractLatLon(message, latField, lonField);
     if (!pos) return;
     const ll = L.latLng(pos.lat, pos.lon);
     layer.marker.setLatLng(ll);
@@ -69,7 +77,7 @@ export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, 
       layer.trail.setLatLngs(points);
     }
     onPosition(feed.id, pos);
-  }, [layer, message, feed.id, feed.lat_field, feed.lon_field, trailMax, onPosition]);
+  }, [layer, message, feed.id, latField, lonField, trailMax, onPosition]);
 
   // IMU updates only rotate the inner symbol; Leaflet owns the outer marker's map transform.
   // They never append trail points or move the map.

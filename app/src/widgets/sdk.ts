@@ -13,9 +13,11 @@ export type { BaseWidgetConfig, WidgetSpec, WidgetComponent, RegisteredWidget } 
 export { isObj, optStr, optNum, optBool, optSpan, reqStr, reqNum, optThresholds } from "./parse";
 export type { Obj, WidgetSpan, Thresholds } from "./parse";
 
-// Live data — shared, refcounted, decoded once per topic app-wide
+// Live data — shared, refcounted, decoded once per topic app-wide. Pass `fields` (what the widget
+// renders, with displayQuantum(precision)) so the widget can use vehicle state (docs/VEHICLE_STATE.md).
 export { useTopic } from "../ros/useTopic";
-export type { UseTopicResult } from "../ros/useTopic";
+export type { UseTopicResult, UseTopicOptions } from "../ros/useTopic";
+export type { FieldSpec } from "../vstate/protocol";
 export type { TopicSnapshot } from "../ros/topicStore";
 export { useRosGraphContext } from "../ros/RosGraphContext";
 export type { RosGraph, TopicEntry, ServiceEntry, LivelinessEntity } from "../ros/graph";
@@ -58,7 +60,7 @@ export type { Transport, Sample, Subscription, GetReply } from "../transport/typ
 
 // Value helpers
 export { pluckField } from "../home/pluck";
-export { formatValue, thresholdLevel, valueLevel } from "../home/value";
+export { displayQuantum, formatValue, thresholdLevel, valueLevel } from "../home/value";
 export type { ValueLevel } from "../home/value";
 export { extractLatLon } from "../home/geo";
 export { RateMonitor } from "../home/rate";

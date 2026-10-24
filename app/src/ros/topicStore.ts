@@ -28,6 +28,10 @@ export interface TopicSnapshot {
   lastBytes?: number;
   latched?: boolean; // message came from the transient-local get, not a live sample
   traffic?: TopicTrafficSnapshot;
+  /** Store-clock time (ms) of the most recent live sample; latched seeds don't count. */
+  lastAt?: number;
+  /** Vehicle-state snapshots only: the vehicle saw no new sample for longer than usual. */
+  stale?: boolean;
 }
 
 export interface TopicAcquireOptions {
@@ -85,6 +89,7 @@ interface Entry {
   hz?: number;
   lastBytes?: number;
   latched?: boolean;
+  lastAt?: number;
   snapshot: TopicSnapshot | null;
 }
 
@@ -168,6 +173,7 @@ export class TopicStore {
         lastBytes: entry.lastBytes,
         latched: entry.latched,
         traffic: entry.traffic.snapshot(this.now()),
+        lastAt: entry.lastAt,
       };
     }
     return entry.snapshot;
@@ -199,7 +205,8 @@ export class TopicStore {
       .subscribe(entry.key, (s) => {
         if (s.kind !== "put") return;
         entry.latest = { payload: s.payload, latched: false };
-        entry.monitor.record(this.now());
+        entry.lastAt = this.now();
+        entry.monitor.record(entry.lastAt);
         entry.sampleCount += 1;
         entry.traffic.record(s, this.now());
         // No React work here — samples can arrive at hundreds of Hz; flush() notifies at 5 Hz.

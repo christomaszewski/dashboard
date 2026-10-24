@@ -14,6 +14,8 @@ export interface BaseWidgetConfig {
   label?: string;
   span?: WidgetSpan;
   area?: string;
+  /** `false` keeps this widget on the direct ROS path when the instance enables vehicle_state. */
+  vehicle_state?: boolean;
 }
 
 /** Components receive their parsed config; `compact` = rendered as a panel row (if panelCapable). */

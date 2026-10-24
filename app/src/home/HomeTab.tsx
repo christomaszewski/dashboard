@@ -6,16 +6,22 @@ import type { TabId } from "../shell/useHashRoute";
 import { DefaultHome } from "./DefaultHome";
 import { WidgetErrorCard } from "./widgets/WidgetErrorCard";
 import { WidgetErrorBoundary } from "./widgets/WidgetErrorBoundary";
+import { WidgetTopicSource } from "../vstate/VehicleStateContext";
 
 /** Render through the registry — a spec without a component (or an unregistered type that somehow
- *  parsed) degrades to an inline error card like any other widget failure. */
+ *  parsed) degrades to an inline error card like any other widget failure. Home widgets read
+ *  vehicle state when the instance enables it, unless they set `vehicle_state: false`. */
 function renderWidget(widget: WidgetConfig) {
   const def = getWidget(widget.type);
   if (!def?.component) {
     return <WidgetErrorCard title={widget.label ?? widget.type} message={`no renderer registered for widget type '${widget.type}'`} />;
   }
   const Component = def.component;
-  return <Component widget={widget} />;
+  return (
+    <WidgetTopicSource setting={widget.vehicle_state ?? true}>
+      <Component widget={widget} />
+    </WidgetTopicSource>
+  );
 }
 
 function spanClass(widget: WidgetConfig): string {

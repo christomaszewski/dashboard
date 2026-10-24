@@ -10,7 +10,7 @@ import { parse as parseYaml } from "yaml";
 import { parseReadout } from "../home/widgets/specs";
 import { ATTACHMENT_LAYOUTS, type AttachmentLayout } from "../services/attachment";
 import { defineWidget, getWidget, panelItemTypes, widgetTypes, type BaseWidgetConfig } from "../widgets/registry";
-import { isObj, optNum, optSpan, optStr, type Obj, type WidgetSpan } from "../widgets/parse";
+import { isObj, optBool, optNum, optSpan, optStr, type Obj, type WidgetSpan } from "../widgets/parse";
 import "../home/widgets/specs"; // registers the built-in widget specs (pure)
 import { parseSceneOverrides, type SceneOverrides } from "../ros3d/config";
 import { parseHealthOptions, type HealthOptions } from "../health/config";
@@ -124,6 +124,9 @@ export interface DashboardConfig {
   local_bridge?: string | false;
   /** dash-up starts the vehicle-side rig agent (docs/RIG_AGENT.md); shows the Rig tab by default. */
   rig_agent?: boolean;
+  /** dash-up starts dashboard-state; Home widgets get projected, change-only values from it
+   *  instead of raw topics (docs/VEHICLE_STATE.md). */
+  vehicle_state?: boolean;
   tabs?: TabVisibility;
   home?: ParsedHome;
   health?: HealthOptions;
@@ -236,7 +239,13 @@ export function parseWidget(raw: unknown): WidgetConfig {
   const def = getWidget(type);
   if (!def) throw new Error(`unknown widget type '${type}' (${typeList()})`);
   const cfg = def.parse(raw) as Partial<WidgetConfig>;
-  return { ...cfg, type, span: cfg.span ?? optSpan(raw), area: cfg.area ?? optStr(raw, "area") } as WidgetConfig;
+  return {
+    ...cfg,
+    type,
+    span: cfg.span ?? optSpan(raw),
+    area: cfg.area ?? optStr(raw, "area"),
+    vehicle_state: cfg.vehicle_state ?? optBool(raw, "vehicle_state"),
+  } as WidgetConfig;
 }
 
 function panelItemHint(): string {
@@ -271,6 +280,7 @@ function parsePanelItem(raw: unknown, index: number, panelTopic: string | undefi
         type: "topic_value",
         label: optStr(raw, "name") ?? optStr(raw, "label") ?? body.field ?? topic,
         topic,
+        vehicle_state: optBool(raw, "vehicle_state"),
         ...body,
       } as PanelItemWidgetConfig,
     };
@@ -354,6 +364,7 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     throw new Error(`rmw_attachment must be ${ATTACHMENT_LAYOUTS.join(" | ")}, got '${String(layout)}'`);
   }
   const rigAgent = doc["rig_agent"] === true || doc["rig_agent"] === "true";
+  const vehicleState = doc["vehicle_state"] === true || doc["vehicle_state"] === "true";
   const tabs = doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined;
   const resolvedTabs: TabVisibility | undefined =
     tabs?.rig !== undefined ? tabs : rigAgent ? { ...(tabs ?? {}), rig: true } : tabs;
@@ -368,6 +379,7 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     ws_port: optNum(doc, "ws_port"),
     local_bridge: doc.local_bridge === false ? false : optStr(doc, "local_bridge"),
     rig_agent: rigAgent || undefined,
+    vehicle_state: vehicleState || undefined,
     tabs: resolvedTabs,
     ros3d,
     ros3d_error,
