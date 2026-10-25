@@ -16,7 +16,7 @@ const NO_POINTS: readonly SeriesPoint[] = [];
 export function useHealth(transport: Transport | null): { services: HealthService[]; series: HealthSeries; events: readonly HealthEvent[]; errors: string[] } {
   const [services, setServices] = useState<HealthService[]>([]);
   const [errors, setErrors] = useState<Record<string, string>>({});
-  const { graph, resolver } = useRosGraphContext();
+  const { graph, resolver } = useRosGraphContext(transport !== null);
   const config = useConfig();
   const options = config.phase === "ready" ? config.config.health : undefined;
   const topics = useRef(graph.topics);

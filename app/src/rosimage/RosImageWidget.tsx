@@ -6,6 +6,7 @@ import { useTabActive } from "../shell/TabActivity";
 import { useNow } from "../health/useHealth";
 import { TopicSourceCtx, useVehicleState } from "../vstate/VehicleStateContext";
 import { useVehicleFrame } from "../vstate/useVehicleFrame";
+import { publisherTypeQuery, useLivelinessGraph } from "../ros/useLivelinessGraph";
 import { imagePixels } from "./pixels";
 import type { RosImageWidgetConfig } from "./spec";
 
@@ -24,7 +25,8 @@ export function selectImageTopic(topics: TopicEntry[], name: string, domain?: nu
 function ImageView({ topic, name, normalize, staleAfterS, active }: {
   topic?: TopicEntry; name: string; normalize: boolean; staleAfterS: number; active: boolean;
 }) {
-  const { store } = useRosGraphContext();
+  // Only the store: the parent widget holds the graph subscription when it picks a raw topic.
+  const { store } = useRosGraphContext(false);
   const { status } = useTransportContext();
   const key = active ? topic?.dataKeyexpr : undefined;
   const typeName = topic?.typeName, typeHash = topic?.typeHash, transientLocal = topic?.transientLocal ?? false;
@@ -141,12 +143,17 @@ export default function RosImageWidget({ widget }: { widget: RosImageWidgetConfi
   return <ImageWidget key={JSON.stringify([widget.topic, widget.topics, widget.domain_id, widget.normalize])} widget={widget} />;
 }
 
+// With vehicle state the picker lists image publishers found by type, not from the whole graph.
+const IMAGE_QUERIES = [publisherTypeQuery("sensor_msgs::msg::dds_::Image_"), publisherTypeQuery("sensor_msgs::msg::dds_::CompressedImage_")];
+
 function ImageWidget({ widget }: { widget: RosImageWidgetConfig }) {
-  const { graph } = useRosGraphContext();
   const active = useTabActive();
   const source = useContext(TopicSourceCtx);
   const { enabled } = useVehicleState();
   const onVehicle = source === "vehicle" && enabled;
+  const { graph: full } = useRosGraphContext(!onVehicle);
+  const images_ = useLivelinessGraph(onVehicle ? IMAGE_QUERIES : null);
+  const graph = onVehicle ? images_ : full;
   const [name, setName] = useState(widget.topic);
   const [domain, setDomain] = useState(widget.domain_id);
   const [normalize, setNormalize] = useState(widget.normalize);

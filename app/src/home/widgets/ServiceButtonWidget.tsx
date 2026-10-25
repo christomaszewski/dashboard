@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ServiceButtonWidgetConfig } from "../../config/schema";
 import { useTransportContext } from "../../transport/TransportContext";
-import { useRosGraphContext } from "../../ros/RosGraphContext";
+import { serviceQuery, useScopedGraph } from "../../ros/useLivelinessGraph";
 import { callService, describeCallError } from "../../services/callService";
 
 type Phase =
@@ -34,7 +34,7 @@ function summarize(response: Record<string, unknown>): string {
 export function ServiceButtonWidget({ widget, compact = false }: { widget: ServiceButtonWidgetConfig; compact?: boolean }) {
   const { transport, status } = useTransportContext();
   const online = !!transport && status === "connected"; // an outage disables the button, no call is queued
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph(widget.service ? [serviceQuery(widget.service)] : [], { withServerNodes: true });
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const flashTimer = useRef<number | null>(null);
 

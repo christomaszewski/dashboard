@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ServiceCallSpec, ServicesWidgetConfig } from "../../config/schema";
-import { useRosGraphContext } from "../../ros/RosGraphContext";
+import { serviceQuery, useScopedGraph } from "../../ros/useLivelinessGraph";
 import { callService, describeCallError, describeService, ServiceCallError } from "../../services/callService";
 import { EMPTY_STRUCT_PLACEHOLDER, fieldSpecs, initialTexts, parseFieldText, stringify, type FieldSpec } from "../../services/fields";
 import { useTransportContext } from "../../transport/TransportContext";
@@ -30,7 +30,7 @@ export function responseLines(response: Record<string, unknown>): string[] {
 function ServiceRow({ spec }: { spec: ServiceCallSpec }) {
   const { transport, status } = useTransportContext();
   const online = !!transport && status === "connected";
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph(spec.service ? [serviceQuery(spec.service)] : [], { withServerNodes: true });
   const entry = graph.services.find((s) => s.name === spec.service && s.servers.length > 0);
   const typeKey = entry ? `${entry.typeName}@${entry.servers[0]?.topic?.typeHash ?? ""}` : "";
   const [shape, setShape] = useState<Shape | null>(null);

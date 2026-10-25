@@ -25,6 +25,13 @@ export function useVehicleState(): VehicleStateValue {
 export type TopicSource = "vehicle" | "direct";
 export const TopicSourceCtx = createContext<TopicSource>("direct");
 
+/** Home with vehicle state on: this widget's ROS data comes from the vehicle. */
+export function useViaVehicle(): boolean {
+  const source = useContext(TopicSourceCtx);
+  const vehicle = useContext(VehicleStateCtx);
+  return source === "vehicle" && vehicle.enabled;
+}
+
 /** A widget's own `vehicle_state` setting over the surrounding one (a panel's, or the default). */
 export function WidgetTopicSource({ setting, children }: { setting: boolean | undefined; children: ReactNode }) {
   const inherited = useContext(TopicSourceCtx);

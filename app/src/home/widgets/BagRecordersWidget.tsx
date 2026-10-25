@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { BagRecordersWidgetConfig } from "../../config/schema";
 import type { BagRecorderAction } from "./specs";
 import type { RosGraph } from "../../ros/graph";
-import { useRosGraphContext } from "../../ros/RosGraphContext";
+import { serviceLeafQuery, servicePrefixQuery, useScopedGraph } from "../../ros/useLivelinessGraph";
 import { callService, describeCallError } from "../../services/callService";
 import { useTransportContext } from "../../transport/TransportContext";
 
@@ -63,7 +63,7 @@ function explain(action: BagRecorderAction, response: Record<string, unknown>): 
 function RecorderRow({ rec, widget }: { rec: Recorder; widget: BagRecordersWidgetConfig }) {
   const { transport, status } = useTransportContext();
   const online = !!transport && status === "connected";
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph([servicePrefixQuery(rec.base)], { withServerNodes: true });
   const [state, setState] = useState<RecState>("unknown");
   const [phase, setPhase] = useState<Phase>({ kind: "idle" });
   const flashTimer = useRef<number | null>(null);
@@ -165,8 +165,11 @@ function RecorderRow({ rec, widget }: { rec: Recorder; widget: BagRecordersWidge
  * one stays rig's call from the vehicle; this widget only decides whether the open session is
  * being written to.
  */
+// With vehicle state, recorders are found by their services' names, not from the whole graph.
+const RECORDER_QUERIES = [...RECORDER_SERVICES, ...PLAYER_ONLY_SERVICES].map(serviceLeafQuery);
+
 export function BagRecordersWidget({ widget }: { widget: BagRecordersWidgetConfig }) {
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph(RECORDER_QUERIES);
   const recorders = discoverRecorders(graph, widget.recorders);
   return (
     <div className="widget-card bag-recorders">

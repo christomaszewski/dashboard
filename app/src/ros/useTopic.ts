@@ -39,12 +39,13 @@ const noSubscription = () => () => undefined;
  * watches, when the instance enables it): the vehicle projects, rounds and sends changes only.
  */
 export function useTopic(topicName: string | TopicEntry | null | undefined, opts?: UseTopicOptions): UseTopicResult {
-  const { graph, store } = useRosGraphContext();
   const vehicle = useContext(VehicleStateCtx);
   const source = useContext(TopicSourceCtx);
   const rateOnly = opts?.decode === false;
   const viaVehicle = vehicle.enabled && source === "vehicle" && typeof topicName === "string" &&
     isRosTopicName(topicName) && (rateOnly || opts?.fields !== undefined);
+  // The vehicle path needs no graph here: the vehicle finds the topic in its own. No topic, no graph.
+  const { graph, store } = useRosGraphContext(!viaVehicle && !!topicName);
 
   // ---- vehicle path: keyed by the item's canonical signature --------------------------------
   const itemKey = viaVehicle

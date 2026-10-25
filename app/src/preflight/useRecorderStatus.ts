@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { useRosGraphContext } from "../ros/RosGraphContext";
+import { servicePrefixQuery, useScopedGraph } from "../ros/useLivelinessGraph";
 import { useTransportContext } from "../transport/TransportContext";
 import { callService } from "../services/callService";
 import { disconnected, problem, recorderTarget, type CheckStatus } from "./status";
@@ -9,7 +9,7 @@ const checking: CheckStatus = { level: "warn", summary: "Checking recorder", det
 
 /** Sequential read-only queries. Graph churn never restarts a poll; endpoint changes do. */
 export function useRecorderStatus(recorder: string, domain: number | undefined, pollS: number, active: boolean, now: number): CheckStatus {
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph([servicePrefixQuery(recorder)], { withServerNodes: true });
   const { transport, status } = useTransportContext();
   const target = recorderTarget(graph, recorder, domain);
   const currentGraph = useRef(target.graph); currentGraph.current = target.graph;

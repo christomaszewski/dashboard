@@ -55,11 +55,11 @@ function StreamStatus({ widget, compact }: { widget: StatusWidgetConfig; compact
 }
 
 function NodeStatus({ widget, compact }: { widget: StatusWidgetConfig; compact?: boolean }) {
-  const { graph } = useRosGraphContext();
   // With vehicle state the vehicle answers from its own graph (docs/VEHICLE_STATE.md).
   const source = useContext(TopicSourceCtx);
   const vehicle = useVehicleState();
   const viaVehicle = source === "vehicle" && vehicle.enabled;
+  const { graph } = useRosGraphContext(!viaVehicle);
   const fromVehicle = useVehicleItem(viaVehicle && widget.node ? { node: widget.node } : null);
   if (viaVehicle && fromVehicle?.error)
     return <StatusCard label={widget.label} level="err" detail="!" mono={fromVehicle.error} compact={compact} />;

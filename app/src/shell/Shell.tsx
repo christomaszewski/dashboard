@@ -1,4 +1,4 @@
-import { Suspense, lazy, useRef } from "react";
+import { Suspense, lazy, useRef, type ReactNode } from "react";
 import { useTransportContext } from "../transport/TransportContext";
 import { CameraConsole } from "../streams/CameraConsole";
 import { LifecycleServicesCard } from "../lifecycle/LifecycleServicesCard";
@@ -39,6 +39,11 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
 
   const pillClass = status === "connected" ? "ok" : status === "error" ? "err" : "warn";
   const panelClass = (id: TabId) => `page tab-panel${id === tab ? "" : " hidden-tab"}`;
+  // Each panel says whether it is the visible one: a hidden tab's views pause their work and do not
+  // hold shared subscriptions (the whole ROS graph, say) open.
+  const panel = (id: TabId, children: ReactNode) => (
+    <main className={panelClass(id)}><TabActivity.Provider value={id === tab}>{children}</TabActivity.Provider></main>
+  );
 
   return (
     <>
@@ -61,52 +66,22 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
           </div>
         </main>
       )}
-      {visible.includes("home") && (
-        <main className={panelClass("home")}>
-          <TabActivity.Provider value={tab === "home"}><HomeTab navigate={navigate} tabs={visible} /></TabActivity.Provider>
-        </main>
-      )}
-      {visible.includes("health") && <main className={panelClass("health")}><HealthTab /></main>}
-      {visible.includes("cameras") && (
-        <main className={panelClass("cameras")}>
-          <LifecycleServicesCard />
-          <PlaybackServicesCard />
-          <CameraConsole />
-          <HealthServicesCard />
-        </main>
-      )}
-      {visible.includes("ros") && (
-        <main className={panelClass("ros")}>
-          <RosExplorer active={tab === "ros"} />
-        </main>
-      )}
-      {visible.includes("rig") && (
-        <main className={panelClass("rig")}>
-          <RigTab />
-        </main>
-      )}
-      {visible.includes("ros3d") && visited.current.has("ros3d") && (
-        <main className={panelClass("ros3d")}>
-          <Suspense fallback={<p className="empty">Loading 3D view…</p>}><Ros3DTab active={tab === "ros3d"} /></Suspense>
-        </main>
-      )}
-      {visible.includes("logs") && (
-        <main className={panelClass("logs")}>
-          <LogsTab active={tab === "logs"} />
-        </main>
-      )}
-      {visible.includes("clouds") && visited.current.has("clouds") && (
-        <main className={panelClass("clouds")}>
-          <Suspense fallback={<p className="empty">loading viewer…</p>}>
-            <CloudsTab />
-          </Suspense>
-        </main>
-      )}
-      {visible.includes("debug") && (
-        <main className={panelClass("debug")}>
-          <KeyspaceDebug />
-        </main>
-      )}
+      {visible.includes("home") && panel("home", <HomeTab navigate={navigate} tabs={visible} />)}
+      {visible.includes("health") && panel("health", <HealthTab />)}
+      {visible.includes("cameras") && panel("cameras", <>
+        <LifecycleServicesCard />
+        <PlaybackServicesCard />
+        <CameraConsole />
+        <HealthServicesCard />
+      </>)}
+      {visible.includes("ros") && panel("ros", <RosExplorer active={tab === "ros"} />)}
+      {visible.includes("rig") && panel("rig", <RigTab />)}
+      {visible.includes("ros3d") && visited.current.has("ros3d") && panel("ros3d",
+        <Suspense fallback={<p className="empty">Loading 3D view…</p>}><Ros3DTab active={tab === "ros3d"} /></Suspense>)}
+      {visible.includes("logs") && panel("logs", <LogsTab active={tab === "logs"} />)}
+      {visible.includes("clouds") && visited.current.has("clouds") && panel("clouds",
+        <Suspense fallback={<p className="empty">loading viewer…</p>}><CloudsTab /></Suspense>)}
+      {visible.includes("debug") && panel("debug", <KeyspaceDebug />)}
     </>
   );
 }

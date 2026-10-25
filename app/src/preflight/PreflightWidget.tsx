@@ -1,7 +1,7 @@
 import { HealthTooltip } from "../health/HealthTooltip";
 import { useHealthContext } from "../health/HealthContext";
 import { useNow } from "../health/useHealth";
-import { useRosGraphContext } from "../ros/RosGraphContext";
+import { serviceQuery, useScopedGraph } from "../ros/useLivelinessGraph";
 import { useTransportContext } from "../transport/TransportContext";
 import { useTabActive } from "../shell/TabActivity";
 import type { HealthService } from "../health/types";
@@ -50,7 +50,7 @@ function HealthCheck({ check, services, now, connected }: {
 /** Opt-in, full-width by default. Group order and check order are exactly the YAML order. */
 export function PreflightWidget({ widget }: { widget: PreflightWidgetConfig }) {
   const { services } = useHealthContext();
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph(widget.groups.flatMap((g) => g.checks).flatMap((c) => (c.type === "ros_service" ? [serviceQuery(c.service)] : [])));
   const { status } = useTransportContext();
   const connected = status === "connected";
   const now = useNow();

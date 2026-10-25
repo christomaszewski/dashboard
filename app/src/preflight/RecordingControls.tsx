@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useHealthContext } from "../health/HealthContext";
 import { useLifecycleContext } from "../lifecycle/LifecycleContext";
-import { useRosGraphContext } from "../ros/RosGraphContext";
+import { servicePrefixQuery, useScopedGraph } from "../ros/useLivelinessGraph";
 import { useTransportContext } from "../transport/TransportContext";
 import { RecordingIssues } from "./RecordingIssues";
 import {
@@ -17,7 +17,7 @@ const DEADLINE_MS = 25_000;
 export function RecordingControls({ checks }: { checks: RecordingCheck[] }) {
   const { services: health } = useHealthContext();
   const { services: cameras } = useLifecycleContext();
-  const { graph } = useRosGraphContext();
+  const graph = useScopedGraph(checks.flatMap((c) => (c.type === "bag_recording" ? [servicePrefixQuery(c.recorder)] : [])), { withServerNodes: true });
   const { transport, status } = useTransportContext();
   const online = !!transport && status === "connected";
   const connection = useRef({ transport, online }); connection.current = { transport, online };
