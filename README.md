@@ -89,6 +89,8 @@ to the ROS domain so lifecycle/playback state and service calls stay untouched. 
 apply to the direct WebSocket path; a laptop bridge connected to the router needs rate limits on
 the vehicle before its native wireless link. Better still, `vehicle_state: true` keeps the raw
 topics on the vehicle for Home widgets on either path ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
+What the dashboard does about each part of a bad link (reloading offline, a bounded bridge queue,
+unknown call outcomes) and how to rehearse one on the bench: [docs/SPOTTY_LINK.md](docs/SPOTTY_LINK.md).
 
 ## Orchestrate with `rig`
 

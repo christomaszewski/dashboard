@@ -163,6 +163,13 @@ With `vehicle_state: true` in the instance YAML ([docs/VEHICLE_STATE.md](docs/VE
   `<w> × <h> of <source size> · <encoding> · <n> KB`, and the camera costs tens of KB/s in the
   connection trace, not megabytes. On a weak link it says `reduced for the link` and frames get
   smaller instead of older. Check a `CompressedImage` topic and, if present, an Ouster `mono16` one.
+- Map trail and sparkline history: let the vehicle move for a minute, then reload the page. The
+  trail and the sparkline lines are back in full within a couple of seconds instead of starting
+  empty. Health widgets and the Health tab list the vehicle's reporters with live levels, and a
+  `status` widget with `source: node` says `up`; stop that node and it says `down`.
+- Home does not pull the whole ROS graph: devtools → Network → WS → the sidecar socket → Messages.
+  With only Home open, no sent frame contains `@ros2_lv/**` (narrow ones such as
+  `@ros2_lv/*/*/*/*/SS/…` are expected); open the ROS tab and one appears.
 - Laptop bridge (docs/LOCAL_BRIDGE.md, started with `--mode client`): the header shows the laptop
   locator, Home and image widgets work through it, and pulling the radio freezes values with a
   `reconnecting` pill rather than errors.
@@ -172,7 +179,15 @@ With `vehicle_state: true` in the instance YAML ([docs/VEHICLE_STATE.md](docs/VE
 Rehearse a bad radio on the bench first: `tools/radio_link.sh` puts latency, loss, a bandwidth cap or
 outages between a page and the sidecar, and `tools/test_vehicle_state_link.mjs` measures both paths
 through it (docs/VEHICLE_STATE.md, "On an impaired link"). On the vehicle, the same symptoms on a real
-link should look the same: values that freeze but never error, and a `reconnecting` pill.
+link should look the same: values that freeze but never error, and a `reconnecting` pill. Everything
+the dashboard does about a bad link, and what to expect, is in docs/SPOTTY_LINK.md.
+
+- Offline shell (only when the page is served over HTTPS or opened on `localhost`): load the page
+  once, stop `dashboard-web`, reload → the dashboard opens with its Home layout and live values.
+  Over plain `http://<vehicle-ip>` the browser's error page is expected.
+- A raw view of a heavy topic over a weak link (a `ros_image` with `vehicle_state: false`, the ROS
+  tab inspecting a camera): `docker stats` shows the public bridge's memory level off in the tens of
+  MB rather than climbing to `bridge_mem_limit`.
 
 ## Service calls / shared sessions (on-vehicle acceptance)
 
@@ -186,7 +201,10 @@ link should look the same: values that freeze but never error, and a `reconnecti
    query callback and the exception is uncaught). A layout neither decodes as → fix
    `app/src/services/attachment.ts` against the vehicle's `rmw_zenoh` before trusting calls.
 2. **Bundled-type call**: a `service_button` for any `std_srvs/srv/Trigger` service → click → the
-   button flashes the response (`success — ...`). `timeout: ...` against a stopped server.
+   button flashes the response (`success — ...`). Freeze the server (SIGSTOP) and click → after the
+   deadline the button says `outcome unknown — it may have run; check before retrying (timeout: …)`
+   in amber, and the next press asks `retry? may repeat` before calling. Stop the server instead →
+   the button disables (`no server advertised`; within ~15 s on a vehicle-state Home).
 3. **Dynamic typing**: `ros2 service list | grep get_type_description` (Jazzy nodes serve it per
    node); a `service_button` for a vendor-typed service must resolve + call with no bundled schema.
 4. **Services widget**: a `services` widget listing a rosbag2 recorder's `…/pause` and

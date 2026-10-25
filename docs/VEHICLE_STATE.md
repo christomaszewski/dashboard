@@ -84,16 +84,27 @@ payloads, so they ride the existing reconnecting transport, query deadlines, lap
 and diagnostics.
 
 1. **Register** — `get B/view`, payload `{ v: 1, items: ItemSpec[] }`. Reply
-   `{ v: 1, view, epoch }`. The view id is a hash of the canonical spec: identical layouts from
-   several operators share one view, and re-registering is idempotent.
-2. **Poll** — `get B/poll`, payload `{ v: 1, view, epoch, since }`. The reply carries the current
-   state of every item that changed after update number `since`. `since: 0` (or a different epoch)
-   returns every item: the snapshot path and the delta path are the same code. When nothing has
-   changed the vehicle holds the query until something does, or for 2 s as a heartbeat. The browser
-   sends its next poll when the reply lands, at most every 200 ms.
+   `{ v: 1, view, epoch, fresh: 1 }`. The view id is a hash of the canonical spec: identical layouts
+   from several operators share one view, and re-registering is idempotent.
+2. **Poll** — `get B/poll`, payload `{ v: 1, view, epoch, since, fresh? }`. The reply carries the
+   current state of every item that changed after update number `since`. `since: 0` (or a different
+   epoch) returns every item: the snapshot path and the delta path are the same code. When nothing
+   has changed the vehicle holds the query until something does, or for 2 s as a heartbeat. The
+   browser sends its next poll when the reply lands, at most every 200 ms.
+3. **View changes** — when a widget appears or goes away the browser registers the new set but keeps
+   its `since`, and lists in `fresh` the view indices of the items it has no state for. Those come
+   whole and at once; the rest stay changes. The previous view still holds the shared items on the
+   vehicle, so their trails and histories continue. A vehicle without `fresh: 1` in its register
+   reply, a new epoch, or an `unknown-view` reply makes the browser start over with `since: 0`.
 
 ```ts
-ItemSpec  = { topic: string; fields?: { p: string; q?: number }[]; hz?: boolean; window_ms?: number }
+ItemSpec  = {                                   // exactly one of topic, node, health
+  topic?: string; fields?: { p: string; q?: number }[]; hz?: boolean; window_ms?: number;
+  trail?: number;                               // keep this many positions (lat, lon = fields 0, 1)
+  series?: { window_ms: number; bucket_ms: number };  // keep a history of field 0
+  node?: string;                                // is this node in the vehicle's ROS graph
+  health?: string;                              // "*" = the health service keys; else one service
+}
 PollReply = { v: 1; epoch: string; seq: number; items: [index: number, state: ItemState][] }
           | { v: 1; error: "unknown-view" }        // vehicle restarted: register again
 ItemState = {
@@ -104,6 +115,12 @@ ItemState = {
   e?: string; w?: string;  // decode/subscribe error, decoder warning
   l?: 1;                   // value came from a latched (transient-local) publisher
   s?: 1;                   // stale: no new sample for 5 s, or 3 × its usual interval if longer
+  // Computed per reply for what this caller lacks (its `since`):
+  tr?: { i: number; p: [lat, lon][] };       // trail points from absolute index i
+  hs?: [index, ageMs, min, max, last][];     // changed history buckets
+  a?: 0 | 1;               // node items: present in the vehicle's graph
+  hk?: string[];           // health "*": the service keys
+  hd?: HealthWire;         // one health service, with ages instead of timestamps
 }
 ```
 
@@ -122,7 +139,8 @@ Why this shape:
   the publisher cannot see that a browser is behind.
 
 Limits: 256 items per view, 16 fields per item, 64 KiB per registration, 8 KiB per encoded item
-state (larger values become an item error naming the limit), 64 live views. A view nobody has
+state (larger values become an item error naming the limit), 64 live views, 5000 points per trail,
+600 buckets per history. A view nobody has
 polled for 60 s is dropped; its raw subscriptions close when no other view uses them.
 
 ### Staleness is state
@@ -202,6 +220,50 @@ is more like 30–50 KB, so expect deeper size steps and roughly one frame a sec
 There is no ingest cap on the private bridge: zenoh's downsampling keeps one budget per rule, so a
 cap on all image topics would be shared between cameras and starve the slower ones.
 
+### Trails and histories
+
+A map trail and a sparkline's line used to be built in the browser from the values it received, so
+every reload or reconnect started them empty. The vehicle now keeps them:
+
+- **Map trails.** A map position item asks for `trail: N` (the map's `trail`, default 500, at most
+  5000). The vehicle appends a point whenever the rounded position changes and numbers the points
+  with the update that added them. A poll carries only the points after the caller's `since`; a
+  reload gets the whole trail in its first reply.
+- **Sparkline history.** A sparkline item asks for `series` over its window (`window_s`, default
+  60 s) in buckets of window/240, at least 100 ms. Each bucket holds the min, max and last value of
+  the first field; only changed buckets travel, with their age at reply time so the browser places
+  them on its own clock. The line draws each bucket's spread.
+
+Bench, 30 s after a reload in Chromium: the map trail came back whole in the first reply (150
+points), then one point a reply; a heave sparkline showed the same 290-segment line before and
+after the reload.
+
+### Health and node status
+
+- **Node status** (`status` with `source: node`) asks the vehicle whether the node is in its own ROS
+  graph: one `a: 0|1` item instead of the browser's graph subscription.
+- **Health.** The vehicle runs the health discovery (camera-service health keys and every
+  `/diagnostics` subscription) while some page watches it. A `health: "*"` item lists the service
+  keys; one item per service carries it as the vehicle assembled it, sent again only when it
+  changes, with ages instead of timestamps. The browser mirrors these into its own health discovery,
+  so the Health tab, Home health widgets, preflight health checks, events and staleness work
+  unchanged, and the instance's `health:` filters apply.
+
+### The browser's ROS graph
+
+The browser subscribes to the whole ROS graph (`@ros2_lv/**`) only while a visible view needs it,
+and keeps it 30 s after the last one goes. With vehicle state, Home never does: widgets that need
+a few graph entities ask for just those with one-shot liveliness queries, refreshed every 15 s while
+visible.
+
+| Widget | Query |
+|---|---|
+| `service_button`, `services`, preflight `ros_service` | the service's servers, plus their node's services (vendor type descriptions) |
+| `bag_recorders`, preflight `bag_recording`, recording controls | the recorder's services |
+| `ros_image` topic picker | image and compressed-image publishers, by type |
+
+The ROS tab and the 3D view open the full graph when shown.
+
 ## Configuration
 
 ```yaml
@@ -214,22 +276,21 @@ Per widget: `vehicle_state: false` keeps that widget (or panel item) on the dire
 
 ## What stays direct
 
-- ROS explorer, topic inspector and bus debug: debugging tools that need raw messages.
-- Service calls and lifecycle/playback/rig control: already small request/response traffic.
+- ROS explorer, topic inspector, 3D view and bus debug: debugging tools that need raw messages (and,
+  for the first three, the whole graph).
+- Service calls and lifecycle/playback/rig control: already small request/response traffic. On a
+  bad link they report an unknown outcome instead of guessing ([SPOTTY_LINK.md](SPOTTY_LINK.md)).
 - `pointcloud`: better served by vehicle-side decimation (later). `ros_image` uses vehicle frames
   (see [Images](#images)); a widget with `vehicle_state: false` stays direct.
-- Health and preflight: they read the camera-service health keys and `/diagnostics` (phase 2).
-- The browser's ROS graph subscription (`@ros2_lv/**`) still runs for the ROS tab, node status and
-  services widgets (phase 2 makes it lazy).
 
 ## Phases
 
-1. **This branch.** The service and protocol; `topic_value`, panel readouts, `gauge`,
-   `sparkline`, `indicator`, `status` (topic rate) and `map` position/heading on vehicle state;
-   deployment, rig integration and tests.
-2. **Richer projections.** A vehicle-kept map trail (sent once, then appended), min/max-decimated
-   sparkline history, health and preflight summaries, a graph summary for `status: node`, and a lazy
-   browser graph so Home alone never pulls `@ros2_lv/**`.
+1. **Done.** The service and protocol; `topic_value`, panel readouts, `gauge`, `sparkline`,
+   `indicator`, `status` (topic rate) and `map` position/heading on vehicle state; vehicle frames
+   for `ros_image`; deployment, rig integration and tests.
+2. **Done.** A vehicle-kept map trail (sent once, then appended), min/max sparkline history, health
+   and node status from the vehicle, a lazy browser graph so Home never pulls `@ros2_lv/**`, and
+   view changes that resend only the new items.
 3. **Raw ROS is opt-in.** An optional "operator mode" that denies `<domain>/**` on the public sidecar
    (the state service has its own bridge, so it is unaffected).
 
@@ -290,7 +351,9 @@ second old.
 
 - Unit tests (`app/src/vstate/*.test.ts*`): protocol encoding and quantization, server deltas,
   held polls, expiry and staleness, client reconciliation and recovery through an in-process
-  loopback to a real server, and the Home widgets on the vehicle path.
+  loopback to a real server, trails, histories, node and health items, view changes, and the Home
+  widgets on the vehicle path. `app/src/shell/Shell.test.tsx` and
+  `app/src/ros/RosGraphContext.test.tsx` cover when the browser's graph is open.
 - Deployment (`tools/test_runtime_image_contract.py`): the overlay, the service key, runtime.json,
   registry images and the pinned replay model, including a real `docker compose config` round trip.
 - End to end (`tools/test_vehicle_state.mjs`): real bridges, the bundled service, the publisher
@@ -342,6 +405,11 @@ ROS domain 1) from the fleet message image:
 - **Soak:** 20 min over 1 Mbit/s with 3% loss and a 5 s outage every minute, four state clients and
   two image streams, three service restarts: no widget or frame errors, values under 2 s old in 88% of
   samples, `dashboard-state` at 46–80 MB without a trend.
+- **Phase 2** (2026-10-25, Chromium against the same bench): the map trail and a sparkline history
+  came back whole after a reload; a health widget showed a `/diagnostics` reporter's level and
+  temperature through the vehicle; node status and a service button (`list_parameters`) worked; Home
+  sent only the narrow liveliness queries above, each matching exactly the tokens the full graph has
+  for that entity, and the ROS tab opened the full graph on first view.
 
 Found and fixed on the way: a zenoh-ts race that left some pages on `vehicle state: Timeout` for ~9 s
 after a service restart (handlers now registered before their declaration); every widget flashing
@@ -351,9 +419,11 @@ restart; silent topics going blank after a service restart (now held, stale); er
 
 Known limits, not changed here:
 
-- The remote-api plugin queues without bound for a slow client. `bridge_mem_limit` (default 512m)
-  bounds the damage — the bridge restarts instead of the vehicle paging — but a direct view of a
-  heavy topic over a weak link still fails; use vehicle frames, or `topic_rates` for that topic.
+- A direct view of a heavy topic over a weak link still shows little: the bridge's bounded sample
+  lane drops the oldest samples instead of queueing them ([SPOTTY_LINK.md](SPOTTY_LINK.md)), and
+  `bridge_mem_limit` (default 512m) stays as a backstop. Use vehicle frames, or `topic_rates`.
+- Health trend lines (temperatures) are kept in the browser, so they restart on a reload; the
+  current values and levels come back at once.
 - `topic_rate_hz` was removed: zenoh keeps one budget per rule, so a domain-wide cap starved slow
   topics. dash-up refuses it and points to per-topic `topic_rates`.
 - The private bridge grew ~3–4 MB per `dashboard-state` restart in the soak (per-client state in the
@@ -365,4 +435,4 @@ A 1.9.0 bridge binary for `BRIDGE_BIN`: crates.io has `zenoh-plugin-remote-api` 
 `zenoh-bridge-remote-api` 1.9.0. Build the 1.10.1 bridge crate with every `zenoh*` dependency pinned
 to `=1.9.0`, or use the `dashboard-zenoh:local` image built from `deploy/Dockerfile.zenoh-remote-api`.
 
-Next: item 4 on a vehicle, then phase 2, starting with the vehicle-kept map trail.
+Next: item 4 on a vehicle, including the phase 2 checks in TESTING.md.
