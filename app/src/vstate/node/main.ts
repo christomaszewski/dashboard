@@ -9,6 +9,8 @@ import { FlavorResolver } from "../../schema/resolver";
 import { TopicStore } from "../../ros/topicStore";
 import { STATE_KEY_RE, stateKeys } from "../protocol";
 import { LiveGraph, VehicleStateServer, serveQuery } from "../server";
+import { FrameServer, serveFrameQuery, type FrameEncoder } from "../frames";
+import { loadSharpEncoder, unavailableEncoder } from "./sharpEncoder";
 import { EMPTY_GRAPH, type RosGraph } from "../../ros/graph";
 
 // The few Node globals used here, declared locally so the app's DOM-only tsconfig stays as is.
@@ -60,28 +62,50 @@ async function main(): Promise<void> {
   const transport = await connect();
   // Types outside the bundle resolve through a node that uses them (its ~/get_type_description).
   let latest: RosGraph = EMPTY_GRAPH;
-  const store = new TopicStore({ transport, resolver: new FlavorResolver(transport, { graph: () => latest }) });
+  const resolver = new FlavorResolver(transport, { graph: () => latest });
+  const store = new TopicStore({ transport, resolver });
   const server = new VehicleStateServer({ store });
+  let encoder: FrameEncoder;
+  try {
+    encoder = await loadSharpEncoder();
+  } catch (e) {
+    log(`image frames disabled: sharp did not load (${errorText(e)})`);
+    encoder = unavailableEncoder("sharp is not installed");
+  }
+  const frames = new FrameServer({ store, resolver, encoder, epoch: server.epoch });
   const graph = new LiveGraph(transport, (g) => {
     latest = g;
     server.setGraph(g);
+    frames.setGraph(g);
   });
   await graph.start();
 
   let sent = 0;
+  let frameBytes = 0;
   const keys = stateKeys(base);
-  const queryables = await Promise.all((["view", "poll"] as const).map((op) =>
-    transport.declareQueryable(keys[op], (q) => void serveQuery(server, op, q).then(
-      (n) => void (sent += n),
-      (e) => log(`could not answer a ${op} query (${errorText(e)})`),
-    ))));
+  const queryables = await Promise.all([
+    ...(["view", "poll"] as const).map((op) =>
+      transport.declareQueryable(keys[op], (q) => void serveQuery(server, op, q).then(
+        (n) => void (sent += n),
+        (e) => log(`could not answer a ${op} query (${errorText(e)})`),
+      ))),
+    transport.declareQueryable(keys.frame, (q) => void serveFrameQuery(frames, q).then(
+      (n) => void (frameBytes += n),
+      (e) => log(`could not answer a frame query (${errorText(e)})`),
+    )),
+  ]);
   serving = true;
-  log(`connected to ${locator}; serving ${keys.view} and ${keys.poll} (epoch ${server.epoch})`);
+  log(`connected to ${locator}; serving ${keys.view}, ${keys.poll} and ${keys.frame} (epoch ${server.epoch})`);
 
-  const housekeeping = setInterval(() => server.tick(), 1000);
+  const housekeeping = setInterval(() => {
+    server.tick();
+    frames.tick();
+  }, 1000);
   const report = setInterval(() => {
     const s = server.stats();
-    log(`views=${s.views} items=${s.items} topics=${s.topics} registers=${s.registers} polls=${s.polls} sent=${sent}B`);
+    const f = frames.stats();
+    log(`views=${s.views} items=${s.items} topics=${s.topics} registers=${s.registers} polls=${s.polls} sent=${sent}B` +
+      ` frame-topics=${f.topics} frame-requests=${f.requests} frames=${f.frames} encodes=${f.encodes} frame-sent=${frameBytes}B`);
   }, 60_000);
   // Crash-only: a session that stops answering ends the process. Docker restarts it with a new
   // epoch, and every browser re-registers on its next poll.
@@ -105,6 +129,7 @@ async function main(): Promise<void> {
     clearInterval(report);
     clearInterval(probe);
     server.close();
+    frames.close();
     store.closeAll();
     await Promise.allSettled([graph.close(), ...queryables.map((q) => q.close())]);
     await transport.close().catch(() => undefined);

@@ -76,8 +76,8 @@ export function isRosTopicName(name: string): boolean {
 }
 
 /** Keys under one vehicle's state service. */
-export function stateKeys(base: string): { view: string; poll: string } {
-  return { view: `${base}/view`, poll: `${base}/poll` };
+export function stateKeys(base: string): { view: string; poll: string; frame: string } {
+  return { view: `${base}/view`, poll: `${base}/poll`, frame: `${base}/frame` };
 }
 
 // ---- validation ------------------------------------------------------------------------------

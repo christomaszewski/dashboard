@@ -32,12 +32,17 @@ export interface TopicSnapshot {
   lastAt?: number;
   /** Vehicle-state snapshots only: the vehicle saw no new sample for longer than usual. */
   stale?: boolean;
+  /** The latest sample's serialized bytes, for `raw` consumers that decode on demand (frames). */
+  raw?: Uint8Array;
 }
 
 export interface TopicAcquireOptions {
   windowMs?: number;
   /** false = rate-only: no resolver.resolve, no decoding. Default true. */
   decode?: boolean;
+  /** Keep the latest sample's bytes in the snapshot (with decode: false, decoding stays the
+   *  consumer's, on demand — a 1080p image decoded 5×/s for nobody is wasted work). */
+  raw?: boolean;
 }
 
 export interface TopicHandle {
@@ -67,6 +72,7 @@ const DECODER_RETRY_MAX_MS = 60_000; // ... backing off to once a minute
 interface HandleRecord {
   windowMs: number;
   decode: boolean;
+  raw: boolean;
 }
 
 interface Entry {
@@ -84,6 +90,7 @@ interface Entry {
   decoderRetryAt?: number;
   decoderBackoffMs: number;
   latest: { payload: Uint8Array; latched: boolean } | null;
+  raw?: Uint8Array;
   monitor: RateMonitor;
   sampleCount: number;
   traffic: TopicTraffic;
@@ -152,6 +159,7 @@ export class TopicStore {
     const record: HandleRecord = {
       windowMs: opts.windowMs ?? this.defaultWindowMs,
       decode: opts.decode ?? true,
+      raw: opts.raw ?? false,
     };
     entry.handles.add(record);
     this.refreshWindow(entry);
@@ -181,6 +189,7 @@ export class TopicStore {
         latched: entry.latched,
         traffic: entry.traffic.snapshot(this.now()),
         lastAt: entry.lastAt,
+        raw: entry.raw,
       };
     }
     return entry.snapshot;
@@ -310,6 +319,7 @@ export class TopicStore {
   private consume(entry: Entry, pending: { payload: Uint8Array; latched: boolean }): void {
     entry.lastBytes = pending.payload.length;
     entry.latched = pending.latched;
+    entry.raw = [...entry.handles].some((h) => h.raw) ? pending.payload : undefined;
     entry.latest = null;
   }
 

@@ -161,6 +161,47 @@ the service and renders `var/run/<name>/runtime.json`, which `dashboard-web` ser
 | Topic not advertised on the vehicle | "waiting for topic", as before |
 | Topic stopped publishing | Last value with a stale marker |
 
+### Images
+
+`ros_image` widgets on the vehicle path get **frames** instead of raw image messages. The vehicle
+keeps only the newest sample of the topic (`sensor_msgs/Image` or `CompressedImage`), decodes it
+only when a widget asks, downscales it to the widget's `max_width`, and encodes JPEG or WebP at its
+`quality` with sharp (libvips) — once per frame and size, however many operators watch.
+
+- **Pull, one request in flight per widget**, at most `max_hz` frames a second (default 2). The
+  vehicle holds a request until it has a frame newer than the one shown, so an idle camera costs a
+  heartbeat every 2 s.
+- **Sized to the link.** The browser times each frame's crossing (round trip minus the vehicle's
+  hold). Frames slower than 1.5 × their interval step down in size and quality (75%, 50%, 35%,
+  25% of `max_width`; quality −10 to −30); five quick ones in a row step back up.
+- **Own key**, `B/frame`: a large frame never delays the small state polls on the vehicle side. The
+  reply is binary — a u32 header length, a JSON header (frame number, source and encoded size,
+  encoding, age on the vehicle, hold, stamp, vehicle-measured rate, stale, error) and the image.
+- **Cost on the vehicle.** The frame service subscribes to a topic only while some widget asks for
+  it (dropped 10 s after the last request) and keeps raw bytes, never decoding unwatched samples.
+  Bench: a 640×480 `rgb8` camera at 15 Hz plus a 1024×64 `mono16` range image and a 1280×720
+  JPEG stream, all at full rate, took 8–14% of one Apple-silicon core and ~60 MB.
+
+Measured on the bench (real `rmw_zenohd`, Lyrical): the 640×480 camera reached the operator at
+5 frames a second in 31 KB/s (6–7 KB per frame, ~10 ms old on leaving the vehicle) where the raw
+stream is 13.8 MB/s; the 1280×720 JPEG stream as 480×270 WebP in 1.5–1.8 KB per frame.
+
+Over a simulated radio (`tools/radio_link.sh`), the same 640×480 camera as vehicle frames (`max_hz:
+5`) against the raw `sensor_msgs/Image` path, age = display time − header stamp:
+
+| Radio hop | Vehicle frames | Raw images |
+|---|---|---|
+| Clean | 5 fps, 35 KB/s, 0.04 s old | 5 fps shown, 13.5 MB/s |
+| 2 Mbit/s, 1% loss | 4.9 fps, 0.2 s old (p50) | 0.3 fps, 11–15 s old |
+| 400 kbit/s, 1% loss | 4.1 fps at 75% size, 0.3 s old | 0.1 fps, 34 s old |
+| 128 kbit/s | 2.5 fps at 50% size, 0.5 s old | none |
+
+The synthetic test pattern compresses unusually well (~7 KB per frame); a real 640-wide camera frame
+is more like 30–50 KB, so expect deeper size steps and roughly one frame a second at 128 kbit/s.
+
+There is no ingest cap on the private bridge: zenoh's downsampling keeps one budget per rule, so a
+cap on all image topics would be shared between cameras and starve the slower ones.
+
 ## Configuration
 
 ```yaml
@@ -175,7 +216,8 @@ Per widget: `vehicle_state: false` keeps that widget (or panel item) on the dire
 
 - ROS explorer, topic inspector and bus debug: debugging tools that need raw messages.
 - Service calls and lifecycle/playback/rig control: already small request/response traffic.
-- `pointcloud`, `ros_image`: better served by vehicle-side decimation and the video path (later).
+- `pointcloud`: better served by vehicle-side decimation (later). `ros_image` uses vehicle frames
+  (see [Images](#images)); a widget with `vehicle_state: false` stays direct.
 - Health and preflight: they read the camera-service health keys and `/diagnostics` (phase 2).
 - The browser's ROS graph subscription (`@ros2_lv/**`) still runs for the ROS tab, node status and
   services widgets (phase 2 makes it lazy).

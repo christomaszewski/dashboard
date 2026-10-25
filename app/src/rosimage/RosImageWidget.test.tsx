@@ -5,17 +5,21 @@ import { buildGraph, type TopicEntry } from "../ros/graph";
 import { TopicStore } from "../ros/topicStore";
 import type { Sample, Transport } from "../transport/types";
 import RosImageWidget from "./RosImageWidget";
+import { TopicSourceCtx, VehicleStateCtx } from "../vstate/VehicleStateContext";
 import type { RosImageWidgetConfig } from "./spec";
 
-const world = vi.hoisted(() => ({ topics: [] as TopicEntry[], store: null as TopicStore | null, status: "connected", active: true }));
+const world = vi.hoisted(() => ({ topics: [] as TopicEntry[], store: null as TopicStore | null, status: "connected", active: true,
+  frame: { level: 0 } as Record<string, unknown>, frameCalls: [] as unknown[][] }));
 vi.mock("../ros/RosGraphContext", () => ({ useRosGraphContext: () => ({ graph: { topics: world.topics }, store: world.store }) }));
 vi.mock("../transport/TransportContext", () => ({ useTransportContext: () => ({ status: world.status }) }));
 vi.mock("../shell/TabActivity", () => ({ useTabActive: () => world.active }));
+vi.mock("../vstate/useVehicleFrame", () => ({ useVehicleFrame: (...args: unknown[]) => { world.frameCalls.push(args); return world.frame; } }));
 
 const topic = (name = "/ouster/nearir_image", domain = 1) => buildGraph([
   `@ros2_lv/${domain}/z/1/1/MP/_/%ouster/driver/${name.replaceAll("/", "%")}/sensor_msgs::msg::dds_::Image_/RIHS01_image/2:2:1,10`,
 ]).topics[0];
-const settings: RosImageWidgetConfig = { type: "ros_image", label: "Lidar", topic: "/ouster/nearir_image", normalize: true, stale_after_s: 3 };
+const settings: RosImageWidgetConfig = { type: "ros_image", label: "Lidar", topic: "/ouster/nearir_image", normalize: true, stale_after_s: 3,
+  max_hz: 2, max_width: 640, quality: 60, format: "jpeg" };
 const frame = { width: 2, height: 1, step: 4, encoding: "mono16", is_bigendian: 0, data: [0, 0, 255, 255] };
 let callbacks: Map<string, (sample: Sample) => void>;
 let put: ReturnType<typeof vi.fn>;
@@ -143,9 +147,9 @@ it("does not resubscribe when graph objects are refreshed, and enforces the conf
 });
 
 it("reports a configured topic with the wrong ROS type without subscribing", async () => {
-  world.topics = [{ ...topic(), typeName: "sensor_msgs/msg/CompressedImage" }];
+  world.topics = [{ ...topic(), typeName: "sensor_msgs/msg/PointCloud2" }];
   render(<RosImageWidget widget={settings} />); await tick();
-  expect(screen.getByRole("alert").textContent).toContain("sensor_msgs/msg/CompressedImage");
+  expect(screen.getByRole("alert").textContent).toContain("sensor_msgs/msg/PointCloud2");
   expect(callbacks.size).toBe(0);
 });
 
@@ -154,4 +158,37 @@ it("does not guess between conflicting image schemas within one domain", async (
   render(<RosImageWidget widget={settings} />); await tick();
   expect(screen.getByText("Multiple image schemas are advertised for this topic in the same domain.")).toBeTruthy();
   expect(callbacks.size).toBe(0);
+});
+
+it("draws a sensor_msgs/CompressedImage with the browser's own decoder", async () => {
+  world.topics = [{ ...topic("/camera/image_raw/compressed"), typeName: "sensor_msgs/msg/CompressedImage" }];
+  const transport = { subscribe, declareRosSubscriber, get: async () => [], close: async () => {}, liveliness: { get: async () => [], subscribe: async () => ({ close: async () => {} }) } } as Transport;
+  world.store = new TopicStore({ transport, lingerMs: 0, resolver: { resolve: async () => ({ decode: () => ({ format: "jpeg", data: new Uint8Array([0xff, 0xd8]) }) }) } });
+  const drawImage = vi.fn();
+  vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({ drawImage } as unknown as CanvasRenderingContext2D);
+  vi.stubGlobal("createImageBitmap", vi.fn(async () => ({ width: 320, height: 240, close: () => {} })));
+  render(<RosImageWidget widget={{ ...settings, topic: "/camera/image_raw/compressed" }} />); await tick();
+  await publish();
+  await act(async () => { await Promise.resolve(); });
+  expect(drawImage).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("320 × 240 · jpeg")).toBeTruthy();
+  expect(screen.getByText("live")).toBeTruthy();
+  vi.unstubAllGlobals();
+});
+
+it("shows vehicle frames on Home with vehicle state, never subscribing to the raw image", async () => {
+  world.frame = { level: 1, url: "blob:frame-1", receivedAt: Date.now(), bytes: 20480,
+    header: { v: 1, epoch: "e", seq: 4, t: "sensor_msgs/msg/Image", w: 320, h: 16, sw: 1024, sh: 64, enc: "mono16", age: 120 } };
+  world.frameCalls = [];
+  render(<VehicleStateCtx.Provider value={{ enabled: true, client: null, frames: null }}>
+    <TopicSourceCtx.Provider value="vehicle"><RosImageWidget widget={{ ...settings, max_width: 320, quality: 50 }} /></TopicSourceCtx.Provider>
+  </VehicleStateCtx.Provider>);
+  await tick();
+  expect(callbacks.size).toBe(0);
+  expect(screen.getByRole("img").getAttribute("src")).toBe("blob:frame-1");
+  expect(screen.getByText("320 × 16 of 1024 × 64 · mono16 · 20 KB")).toBeTruthy();
+  expect(screen.getByText("reduced for the link")).toBeTruthy();
+  expect(screen.getByText("live")).toBeTruthy();
+  expect(world.frameCalls.at(-1)).toEqual(["/ouster/nearir_image", { maxHz: 2, maxWidth: 320, quality: 50, format: "jpeg", normalize: true }, true]);
+  world.frame = { level: 0 };
 });

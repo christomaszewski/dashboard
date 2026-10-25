@@ -954,6 +954,7 @@ ul.plain {
 .ros-image-frame { width: 100%; min-height: 100px; background: #080b10; border-radius: var(--radius-sm); overflow: hidden; display: grid; place-items: center; }
 .ros-image-frame canvas { display: block; max-width: 100%; width: 100%; height: auto; max-height: 480px; object-fit: contain; }
 .ros-image-frame canvas[hidden] { display: none; }
+.ros-image-frame img { display: block; max-width: 100%; width: 100%; height: auto; max-height: 480px; object-fit: contain; }
 .ros-image-frame > span { padding: 1rem; font-size: 0.8rem; }
 
 .widget-panel {

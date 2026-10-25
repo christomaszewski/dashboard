@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { useTransportContext } from "../transport/TransportContext";
 import { VehicleStateClient } from "./client";
+import type { Transport } from "../transport/types";
 import { loadStateKey, type StateKeyResult } from "./runtime";
 
 export interface VehicleStateValue {
@@ -10,6 +11,8 @@ export interface VehicleStateValue {
   client: VehicleStateClient | null;
   /** Why there is no client although vehicle state is enabled. */
   error?: string;
+  /** Where image widgets fetch vehicle frames (same transport and service as the client). */
+  frames?: { transport: Transport; base: string } | null;
 }
 
 export const VehicleStateCtx = createContext<VehicleStateValue>({ enabled: false, client: null });
@@ -60,6 +63,7 @@ export function VehicleStateProvider({ enabled, children }: { enabled: boolean; 
   }, [enabled, transport, base]);
 
   const error = key && "error" in key ? key.error : undefined;
-  const value = useMemo(() => ({ enabled, client, error }), [enabled, client, error]);
+  const frames = useMemo(() => (enabled && transport && base ? { transport, base } : null), [enabled, transport, base]);
+  const value = useMemo(() => ({ enabled, client, error, frames }), [enabled, client, error, frames]);
   return <VehicleStateCtx.Provider value={value}>{children}</VehicleStateCtx.Provider>;
 }

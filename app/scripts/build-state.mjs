@@ -2,8 +2,8 @@
 // dependencies, including the patched zenoh-ts from node_modules. Used by deploy/Dockerfile.state;
 // tools/test_vehicle_state.mjs reuses bundleForNode for its harness.
 //   node scripts/build-state.mjs [outfile]      (default: dist-state/dashboard-state.mjs)
-import { readFile } from "node:fs/promises";
-import { dirname } from "node:path";
+import { readFile, writeFile } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build } from "esbuild";
 
@@ -29,6 +29,9 @@ export const wasmEsm = {
   },
 };
 
+/** Native modules the bundle loads at runtime instead of inlining (image frames: sharp/libvips). */
+export const RUNTIME_MODULES = ["sharp"];
+
 /** One self-contained Node 22 ESM file; bare imports resolve from app/node_modules. */
 export async function bundleForNode(entry, outfile) {
   await build({
@@ -42,12 +45,26 @@ export async function bundleForNode(entry, outfile) {
     // Bundled CommonJS dependencies may require() Node built-ins, which plain ESM output cannot do.
     banner: { js: "import { createRequire } from 'node:module'; const require = createRequire(import.meta.url);" },
     plugins: [wasmEsm],
+    external: RUNTIME_MODULES,
     logLevel: "warning",
   });
+}
+
+/** package.json pinning the runtime modules to the versions installed here (deploy/Dockerfile.state). */
+export async function runtimePackage(outDir) {
+  const dependencies = {};
+  for (const name of RUNTIME_MODULES) {
+    const pkg = JSON.parse(await readFile(new URL(`../node_modules/${name}/package.json`, import.meta.url), "utf8"));
+    dependencies[name] = pkg.version;
+  }
+  const file = join(outDir, "package.json");
+  await writeFile(file, JSON.stringify({ name: "dashboard-state-runtime", private: true, type: "module", dependencies }, null, 2) + "\n");
+  return file;
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   const outfile = process.argv[2] ?? "dist-state/dashboard-state.mjs";
   await bundleForNode(fileURLToPath(new URL("../src/vstate/node/main.ts", import.meta.url)), outfile);
-  console.log(`build-state: wrote ${outfile}`);
+  const pkg = await runtimePackage(dirname(outfile));
+  console.log(`build-state: wrote ${outfile} and ${pkg}`);
 }

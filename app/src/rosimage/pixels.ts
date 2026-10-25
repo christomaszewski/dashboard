@@ -15,25 +15,27 @@ export interface ImagePixels {
   rgba: Uint8ClampedArray;
 }
 
-export function imagePixels(message: Record<string, unknown>, normalize: boolean): ImagePixels {
+/** The browser's guard rails by default; the vehicle (frames) converts larger camera images. */
+export function imagePixels(message: Record<string, unknown>, normalize: boolean,
+  limits: { maxPixels: number; maxBytes: number } = { maxPixels: MAX_IMAGE_PIXELS, maxBytes: MAX_IMAGE_BYTES }): ImagePixels {
   const { width, height, step, encoding, is_bigendian: big } = message;
   const format = typeof encoding === "string" ? formats.get(encoding) : undefined;
   if (!format) throw new Error(`Unsupported image encoding: ${String(encoding)}`);
   if (typeof width !== "number" || typeof height !== "number" || !Number.isInteger(width) || !Number.isInteger(height) ||
-    width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > MAX_IMAGE_PIXELS) {
-    throw new Error("Invalid or oversized image dimensions (limit: 2 megapixels)");
+    width < 1 || height < 1 || width > 16384 || height > 16384 || width * height > limits.maxPixels) {
+    throw new Error(`Invalid or oversized image dimensions (limit: ${Math.round(limits.maxPixels / 1048576)} megapixels)`);
   }
   const pixelBytes = format.channels * format.bytes;
-  if (typeof step !== "number" || !Number.isInteger(step) || step < width * pixelBytes || step * height > MAX_IMAGE_BYTES) {
-    throw new Error("Invalid or oversized image row stride (limit: 16 MiB)");
+  if (typeof step !== "number" || !Number.isInteger(step) || step < width * pixelBytes || step * height > limits.maxBytes) {
+    throw new Error(`Invalid or oversized image row stride (limit: ${Math.round(limits.maxBytes / 1048576)} MiB)`);
   }
   if (big !== 0 && big !== 1 && big !== false && big !== true) throw new Error("Invalid image byte order");
   let data: Uint8Array | Uint8ClampedArray;
   const raw = message.data;
   if (raw instanceof Uint8Array || raw instanceof Uint8ClampedArray) data = raw;
-  else if (Array.isArray(raw) && raw.length <= MAX_IMAGE_BYTES && raw.every((v) => Number.isInteger(v) && v >= 0 && v <= 255)) data = Uint8Array.from(raw);
+  else if (Array.isArray(raw) && raw.length <= limits.maxBytes && raw.every((v) => Number.isInteger(v) && v >= 0 && v <= 255)) data = Uint8Array.from(raw);
   else throw new Error("Invalid image byte array");
-  if (data.byteLength < step * height || data.byteLength > MAX_IMAGE_BYTES) throw new Error("Truncated or oversized image data");
+  if (data.byteLength < step * height || data.byteLength > limits.maxBytes) throw new Error("Truncated or oversized image data");
   const view = new DataView(data.buffer, data.byteOffset, data.byteLength);
   const mono = (offset: number) => format.bytes === 2 ? view.getUint16(offset, !big) : data[offset];
   let low = 0, high = format.bytes === 2 ? 65535 : 255;
