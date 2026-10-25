@@ -88,7 +88,8 @@ instance YAML — dash-up renders them into the sidecar's zenoh config as downsa
 to the ROS domain so lifecycle/playback state and service calls stay untouched. These sidecar rules
 apply to the direct WebSocket path; a laptop bridge connected to the router needs rate limits on
 the vehicle before its native wireless link. Better still, `vehicle_state: true` keeps the raw
-topics on the vehicle for Home widgets on either path ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
+topics on the vehicle for Home widgets on either path ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)). Note that `topic_rate_hz` is one budget shared by every topic of the domain (zenoh limits per
+rule, not per key), so fast topics starve slow ones; prefer per-topic `topic_rates`, or `vehicle_state`.
 
 ## Orchestrate with `rig`
 

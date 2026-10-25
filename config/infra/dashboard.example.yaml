@@ -38,7 +38,8 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # can discard another service's status or a brief fault. Prefer topic_rates on high-volume data
 # instead of topic_rate_hz when health reporting is enabled. Native fleet health is not capped.
 #
-# topic_rate_hz: 5        # every topic of the domain at most 5 Hz to the browser
+# topic_rate_hz: 5        # CAUTION: one budget for ALL topics of the domain together (zenoh limits per
+#                          #   rule, not per topic), so fast topics starve slow ones -- prefer topic_rates
 # topic_rates:            # OR explicit per-topic caps (needs PyYAML on the host); never both — zenoh
 #   /imu/data: 10         #   applies the first matching rule, so a global cap can't be layered under
 #   /ouster/points: 1     #   per-topic ones
@@ -500,23 +501,31 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #           topic: /reference/fix
 #           visible: false       # operator can turn this on later
 #
-#     # -- ros_image: raw ROS image preview over Zenoh ------------------------------------------
+#     # -- ros_image: ROS image preview over Zenoh -----------------------------------------------
 #     # Separate from WebRTC camera feeds. Supports sensor_msgs/msg/Image mono8/mono16,
-#     # 8UC1/16UC1, rgb8/bgr8/rgba8/bgra8; row padding and pixel byte order are respected.
-#     # Selects one image topic at a time; pauses its subscription when Home is hidden.
-#     # Shared decoding is capped at 5 Hz, but network traffic remains at the publisher rate.
+#     # 8UC1/16UC1, rgb8/bgr8/rgba8/bgra8 (row padding and byte order respected) and
+#     # sensor_msgs/msg/CompressedImage (JPEG/PNG). Selects one image topic at a time; pauses when
+#     # Home is hidden.
+#     # With vehicle_state: true (and no `vehicle_state: false` on the widget), the VEHICLE keeps the
+#     # newest frame, downscales and compresses it, and sends at most max_hz frames, one request in
+#     # flight -- a slow link gets smaller, rarer frames instead of a backlog (docs/VEHICLE_STATE.md,
+#     # "Images"). Without it, every frame crosses the link at the publisher's rate as raw pixels.
 #     - type: ros_image
 #       label: Ouster panorama
 #       topic: /ouster/nearir_image # initial image; driver proc_mask must include IMG
 #       # topics: [/ouster/nearir_image, /ouster/reflec_image, /ouster/signal_image, /ouster/range_image]
-#       #                         # picker allowlist including topic; omit = all ROS Image topics
+#       #                         # picker allowlist including topic; omit = all ROS image topics
 #       # domain_id: 0            # omit = unique matching topic; choose if domains are ambiguous
 #       # normalize: true         # per-frame grayscale contrast; off = full 8/16-bit range
 #       # stale_after_s: 3         # positive finite seconds; silence labels the retained frame
+#       # max_hz: 2               # vehicle frames: at most this many per second (fewer on a slow link)
+#       # max_width: 640          # vehicle frames: downscaled on the vehicle to at most this width (px)
+#       # quality: 60             # vehicle frames: JPEG/WebP quality 10..95, lowered on a slow link
+#       # format: jpeg            # vehicle frames: jpeg | webp
 #       # span: full              # default full; keeps native aspect ratio; not panel-capable
 #     # Ouster panoramas are already destaggered by its driver. No calibration/remapping needed.
-#     # Rendering limits: 2 megapixels, 16 MiB input, 16384 per dimension. Unsupported encodings
-#     # produce a visible error; JPEG/PNG CompressedImage topics need a different decoder.
+#     # Direct rendering limits: 2 megapixels, 16 MiB input, 16384 per dimension; the vehicle converts
+#     # up to 8 megapixels. Unsupported encodings and compressedDepth produce a visible error.
 #
 #     # -- pointcloud: compact ROS 3D scene -----------------------------------------------------
 #     # Inherits the full ros3d: block above. Every scene key (limits, TF, time, frames,

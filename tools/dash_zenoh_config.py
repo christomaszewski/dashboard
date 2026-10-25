@@ -6,7 +6,7 @@ publisher's rate, and on a spotty wireless link that volume queues behind TCP re
 reaches the page late, in bursts. The instance config can cap it BEFORE the air, in the sidecar,
 with zenoh's downsampling interceptor on the sidecar's ingress from the router:
 
-  topic_rate_hz: 5                # every ROS topic of this domain at most 5 Hz to the browser
+  topic_rate_hz: 5                # ALL topics of this domain together at most 5 msg/s (see below)
   # -- or --
   topic_rates:                    # explicit per-topic caps (needs PyYAML on the host)
     /imu/data: 10
@@ -14,6 +14,10 @@ with zenoh's downsampling interceptor on the sidecar's ingress from the router:
 
   ros_domain_id: 1                # scopes the rules to `<domain>/**` (rmw_zenoh's topic keys);
                                   #   default: rig's ROS_DOMAIN_ID, exported to every launcher
+
+Zenoh keeps one rate budget per RULE, shared by every key the rule matches. topic_rate_hz is one
+rule for the whole domain, so its budget is shared by all topics and fast topics starve slow ones;
+dash-up warns about it. topic_rates gives each listed topic its own rule and budget.
 
 Global XOR per-topic, on purpose: zenoh applies the FIRST rule whose key expression intersects a
 key, not the most specific one, so a `<domain>/**` cap and a per-topic rule cannot be layered
@@ -63,6 +67,12 @@ def rules(cfg: dict, env: dict) -> list[dict]:
                          "set ros_domain_id (rig exports ROS_DOMAIN_ID to every launcher)")
     domain = str(domain).strip()
     if rate is not None:
+        # Zenoh keeps ONE rate budget per downsampling rule, not one per key it matches: this cap is
+        # shared by every topic of the domain, and a fast topic starves the slow ones (bench, 2026-10:
+        # behind topic_rate_hz 5, a 100 Hz IMU took 4 msg/s and a 1 Hz status topic got none).
+        sys.stderr.write("dash_zenoh_config: warning: topic_rate_hz is ONE budget shared by every topic of the "
+                         "domain (zenoh limits per rule, not per key) -- slow topics can starve. Prefer "
+                         "per-topic topic_rates, or vehicle_state for Home widgets.\n")
         return [{"key_expr": f"{domain}/**", "freq": _hz(rate, "topic_rate_hz")}]
     if not isinstance(per, dict) or not per:
         raise SystemExit("dash_zenoh_config: topic_rates must be a non-empty mapping of topic -> Hz")
