@@ -2,14 +2,18 @@ import { useEffect, useRef, useState } from "react";
 import type { ServiceButtonWidgetConfig } from "../../config/schema";
 import { useTransportContext } from "../../transport/TransportContext";
 import { useRosGraphContext } from "../../ros/RosGraphContext";
-import { callService, ServiceCallError } from "../../services/callService";
+import { callService, describeCallError } from "../../services/callService";
 
 type Phase =
   | { kind: "idle" }
   | { kind: "confirm" }
   | { kind: "calling" }
   | { kind: "ok"; summary: string }
-  | { kind: "err"; message: string };
+  | { kind: "err"; message: string }
+  // The call may have run on the vehicle (no reply in time, link lost mid-call): say so, and make
+  // the next press a deliberate retry rather than a silent repeat of a non-idempotent action.
+  | { kind: "unknown"; message: string }
+  | { kind: "confirm-retry"; message: string };
 
 const FLASH_MS = 4000;
 
@@ -62,13 +66,24 @@ export function ServiceButtonWidget({ widget, compact = false }: { widget: Servi
       });
       flash({ kind: "ok", summary: summarize(result.response) });
     } catch (e) {
-      const message = e instanceof ServiceCallError ? `${e.kind}: ${e.message}` : String(e);
-      flash({ kind: "err", message });
+      const { text, unknown } = describeCallError(e);
+      if (unknown) {
+        if (flashTimer.current !== null) clearTimeout(flashTimer.current);
+        setPhase({ kind: "unknown", message: text }); // stays until acted on: not a 4 s flash
+      } else flash({ kind: "err", message: text });
     }
   };
 
   const onClick = () => {
     if (phase.kind === "calling") return;
+    if (phase.kind === "unknown") {
+      setPhase({ kind: "confirm-retry", message: phase.message });
+      return;
+    }
+    if (phase.kind === "confirm-retry") {
+      void fire();
+      return;
+    }
     if (widget.confirm && phase.kind !== "confirm") {
       setPhase({ kind: "confirm" });
       return;
@@ -78,20 +93,22 @@ export function ServiceButtonWidget({ widget, compact = false }: { widget: Servi
 
   const disabled = !online || !entry || phase.kind === "calling";
   const buttonLabel =
-    phase.kind === "confirm" ? "confirm?" : phase.kind === "calling" ? "calling…" : widget.label;
+    phase.kind === "confirm" ? "confirm?"
+      : phase.kind === "confirm-retry" ? "retry? may repeat"
+      : phase.kind === "calling" ? "calling…" : widget.label;
   const subText =
     phase.kind === "ok"
       ? phase.summary
-      : phase.kind === "err"
+      : phase.kind === "err" || phase.kind === "unknown" || phase.kind === "confirm-retry"
         ? phase.message
         : typeMismatch
           ? `⚠ ${typeMismatch}`
           : entry
             ? entry.typeName
             : "no server advertised";
-  const subClass = `dim mono widget-sub${phase.kind === "err" ? " is-err" : ""}`;
+  const subClass = `dim mono widget-sub${phase.kind === "err" ? " is-err" : phase.kind === "unknown" || phase.kind === "confirm-retry" ? " is-warn" : ""}`;
   const button = (
-    <button className={`btn primary${phase.kind === "confirm" ? " confirm" : ""}`} disabled={disabled} onClick={onClick}>
+    <button className={`btn primary${phase.kind === "confirm" || phase.kind === "confirm-retry" ? " confirm" : ""}`} disabled={disabled} onClick={onClick}>
       {buttonLabel}
     </button>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ServiceCallSpec, ServicesWidgetConfig } from "../../config/schema";
 import { useRosGraphContext } from "../../ros/RosGraphContext";
-import { callService, describeService, ServiceCallError } from "../../services/callService";
+import { callService, describeCallError, describeService, ServiceCallError } from "../../services/callService";
 import { EMPTY_STRUCT_PLACEHOLDER, fieldSpecs, initialTexts, parseFieldText, stringify, type FieldSpec } from "../../services/fields";
 import { useTransportContext } from "../../transport/TransportContext";
 
@@ -97,7 +97,7 @@ function ServiceRow({ spec }: { spec: ServiceCallSpec }) {
       });
       if (alive.current) setOutcome({ kind: "ok", response: r.response, rttMs: r.rttMs, at: new Date(), warning: r.warning });
     } catch (e) {
-      if (alive.current) setOutcome({ kind: "err", message: e instanceof ServiceCallError ? `${e.kind}: ${e.message}` : String(e), at: new Date() });
+      if (alive.current) setOutcome({ kind: "err", message: describeCallError(e).text, at: new Date() });
     }
     if (alive.current) setPhase("idle");
   };

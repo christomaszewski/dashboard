@@ -29,6 +29,9 @@ export class TransportError extends Error {
   constructor(
     readonly code: TransportErrorCode,
     message: string,
+    /** The request may have left this page (in flight when the link died, or past its deadline).
+     *  false = refused before sending: the far end never saw it. */
+    readonly sent = true,
   ) {
     super(message);
     this.name = "TransportError";
@@ -429,7 +432,7 @@ export class ReconnectingTransport implements Transport {
 
   private requireLink(): Transport {
     if (this.closed) throw new TransportError("closed", "transport closed");
-    if (this.inner === null || !this.connected) throw new TransportError("disconnected", `link ${this.status_}: ${this.error_ || "not connected"}`);
+    if (this.inner === null || !this.connected) throw new TransportError("disconnected", `link ${this.status_}: ${this.error_ || "not connected"}`, false);
     return this.inner;
   }
 

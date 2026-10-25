@@ -13,7 +13,7 @@ import { ServiceCallError } from "./errors";
 import { pickServer, serviceQueryKeyexpr } from "./keyexpr";
 import { SrvCodecResolver } from "./resolveSrv";
 
-export { ServiceCallError, type ServiceCallErrorKind } from "./errors";
+export { ServiceCallError, describeCallError, type CallOutcome, type ServiceCallErrorKind } from "./errors";
 
 const DEFAULT_TIMEOUT_MS = 5000;
 
@@ -84,7 +84,8 @@ export async function describeService(
 function asCallError(e: unknown, serviceName: string): unknown {
   if (e instanceof TransportError) {
     if (e.code === "deadline") return new ServiceCallError("timeout", serviceName, e.message, { cause: e });
-    return new ServiceCallError("disconnected", serviceName, e.message, { cause: e });
+    // Refused before sending (the link was already down) never reached the vehicle; dead mid-call might have.
+    return new ServiceCallError("disconnected", serviceName, e.message, { cause: e, outcome: e.sent ? "unknown" : "not-sent" });
   }
   return e;
 }

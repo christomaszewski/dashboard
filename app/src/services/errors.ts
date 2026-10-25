@@ -10,14 +10,42 @@ export type ServiceCallErrorKind =
   | "reply-error" // zenoh ReplyError received (its payload text in message)
   | "decode-failed";
 
+/** What the failure says about the vehicle: the request never reached it, the service refused it,
+ *  or nobody knows — it may have run (no reply in time, the link died mid-call, an unreadable
+ *  reply). On a spotty link the last is common, and retrying a non-idempotent action repeats it. */
+export type CallOutcome = "not-sent" | "refused" | "unknown";
+
+const OUTCOME: Record<ServiceCallErrorKind, CallOutcome> = {
+  "no-server": "not-sent",
+  "ambiguous-service": "not-sent",
+  "type-unresolvable": "not-sent",
+  "unsupported-type": "not-sent",
+  "encode-failed": "not-sent",
+  timeout: "unknown",
+  disconnected: "unknown",
+  "no-reply": "unknown",
+  "reply-error": "refused",
+  "decode-failed": "unknown",
+};
+
 export class ServiceCallError extends Error {
+  readonly outcome: CallOutcome;
   constructor(
     readonly kind: ServiceCallErrorKind,
     readonly serviceName: string,
     message: string,
-    options?: { cause?: unknown },
+    options?: { cause?: unknown; outcome?: CallOutcome },
   ) {
     super(message, options);
     this.name = "ServiceCallError";
+    this.outcome = options?.outcome ?? OUTCOME[kind];
   }
+}
+
+/** One line for an operator. An unknown outcome says so first: check before retrying. */
+export function describeCallError(e: unknown): { text: string; unknown: boolean } {
+  if (!(e instanceof ServiceCallError)) return { text: String(e instanceof Error ? e.message : e), unknown: false };
+  const detail = `${e.kind}: ${e.message}`;
+  if (e.outcome === "unknown") return { text: `outcome unknown — it may have run; check before retrying (${detail})`, unknown: true };
+  return { text: detail, unknown: false };
 }

@@ -132,7 +132,7 @@ describe("BagRecordersWidget", () => {
 
     call.mockRejectedValue(new ServiceCallError("timeout", `${LOGGER}/snapshot`, "no reply in 5000 ms"));
     fireEvent.click(row(LOGGER).querySelectorAll("button")[1]);
-    await waitFor(() => expect(row(LOGGER).querySelector(".recorder-note.is-err")!.textContent).toBe("timeout: no reply in 5000 ms"));
+    await waitFor(() => expect(row(LOGGER).querySelector(".recorder-note.is-err")!.textContent).toBe("outcome unknown — it may have run; check before retrying (timeout: no reply in 5000 ms)"));
   });
 
   it("confirm: the first click arms the button, the second fires; resume never asks", async () => {

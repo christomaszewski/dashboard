@@ -3,7 +3,7 @@ import type { BagRecordersWidgetConfig } from "../../config/schema";
 import type { BagRecorderAction } from "./specs";
 import type { RosGraph } from "../../ros/graph";
 import { useRosGraphContext } from "../../ros/RosGraphContext";
-import { callService, ServiceCallError } from "../../services/callService";
+import { callService, describeCallError } from "../../services/callService";
 import { useTransportContext } from "../../transport/TransportContext";
 
 /** A rosbag2 recorder node found on the graph: its node base and the services it advertises. */
@@ -115,7 +115,7 @@ function RecorderRow({ rec, widget }: { rec: Recorder; widget: BagRecordersWidge
         flash({ kind: "ok", text: `${action}: ok` });
       }
     } catch (e) {
-      flash({ kind: "err", text: e instanceof ServiceCallError ? `${e.kind}: ${e.message}` : String(e) });
+      flash({ kind: "err", text: describeCallError(e).text });
     }
   };
   const click = (action: BagRecorderAction) => {

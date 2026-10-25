@@ -94,7 +94,7 @@ export async function changeState(
   if (replies.length === 0) {
     if (replyErrors.length > 0) throw new LifecycleError("bad-reply", key, replyErrors.join("; "));
     if (rttMs >= timeoutMs * 0.95)
-      throw new LifecycleError("timeout", key, `no reply to ${transition} within ${timeoutMs / 1000} s`);
+      throw new LifecycleError("timeout", key, `no reply to ${transition} within ${timeoutMs / 1000} s — it may still have happened; the state shown is the vehicle's`);
     throw new LifecycleError("no-reply", key, `${transition}: query completed with no reply (service gone?)`);
   }
   const parsed = parseChangeStateReply(replies[0].payload);

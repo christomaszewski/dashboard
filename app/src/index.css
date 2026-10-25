@@ -846,6 +846,9 @@ ul.plain {
 .widget-sub.is-err {
   color: var(--err);
 }
+.widget-sub.is-warn {
+  color: var(--warn);
+}
 
 .widget-value {
   font-family: var(--mono);
