@@ -23,6 +23,10 @@ services:
       # the stock config, or dash-up's rendered copy carrying the instance's topic rate limits
       - ${DASH_ZENOH_CONFIG:-./zenohd-dashboard.json5}:/config/zenohd-dashboard.json5:ro
     restart: unless-stopped                    # retries if the router isn't up yet
+    # The remote-api plugin queues without bound for a client that cannot keep up; a ceiling turns
+    # that into a bridge restart (browsers reconnect) instead of memory pressure on the vehicle.
+    mem_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}
+    memswap_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}  # no swap: a runaway queue is killed, not paged (zram)
 
   dashboard-web:
     # Caddy with the React bundle baked in (deploy/Dockerfile.web builds it). Self-contained: nothing

@@ -21,6 +21,8 @@ services:
     volumes:
       - ./zenohd-dashboard.json5:/config/zenohd-dashboard.json5:ro
     restart: unless-stopped
+    mem_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}  # as dashboard-zenoh (unbounded per-client queues)
+    memswap_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}
 
   dashboard-state:
     image: ${DASH_STATE_IMAGE:-dashboard-state:local}
@@ -34,6 +36,8 @@ services:
     depends_on:
       - dashboard-state-zenoh
     restart: unless-stopped                    # crash-only: it exits when its bridge stops answering
+    mem_limit: 1g                              # steady state ~50-80 MB; frames convert big images
+    memswap_limit: 1g
 
   dashboard-web:
     volumes:

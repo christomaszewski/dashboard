@@ -73,6 +73,14 @@ def main() -> None:
     print(f"DASH_NAME={cfg.get('name', 'dashboard')}")
     print(f"DASH_WEB_PORT={cfg.get('web_port', 8080)}")
     print(f"DASH_WS_PORT={cfg.get('ws_port', 10000)}")
+    # Memory guard for the remote-api bridges: zenoh-ts 1.9's plugin queues without bound for a
+    # browser that cannot keep up (bench: +16 MB/s for one raw camera over a 128 kbit/s link). Past
+    # this the kernel restarts the bridge, not the vehicle's other services. 0 = no limit.
+    limit = str(cfg.get("bridge_mem_limit", "512m")).strip()
+    if not re.fullmatch(r"\d+[bkmg]?", limit, re.IGNORECASE):
+        print(f"dash_env: bridge_mem_limit is not a size like 512m: {limit!r} (using 512m)", file=sys.stderr)
+        limit = "512m"
+    print(f"DASH_BRIDGE_MEM_LIMIT={limit}")
     # Optional: a host dir of point-cloud files for the Clouds tab. Emitted only when set —
     # dash-up applies the clouds compose overlay only when this variable is non-empty.
     clouds = cfg.get("clouds_dir")
