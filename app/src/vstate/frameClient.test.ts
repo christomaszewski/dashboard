@@ -132,7 +132,9 @@ describe("FrameFetcher", () => {
       onUpdate: (u) => updates.push(u),
     });
     fetcher.start();
-    await vi.advanceTimersByTimeAsync(10);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(updates).toEqual([]); // a brief gap stays quiet
+    await vi.advanceTimersByTimeAsync(1600);
     expect(updates[0].error).toMatch(/not reachable \(fleet\/r1\/dash\/d\/state\/frame\)/);
     fetcher.stop();
     const count = updates.length;

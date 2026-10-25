@@ -38,6 +38,9 @@ export interface VehicleStateClientOptions {
   lingerMs?: number;
   /** Batch widget mounts into one view change. */
   debounceMs?: number;
+  /** How long the vehicle may go unanswered before items show it (a re-joining bridge, a service
+   *  restart: values stay up through brief gaps instead of flashing an error). */
+  outageGraceMs?: number;
 }
 
 interface ClientItem {
@@ -73,6 +76,9 @@ export class VehicleStateClient {
   private closed = false;
   /** Set while the vehicle does not answer: every item shows it, and the next reply is a full one. */
   private outage: string | null = null;
+  /** When the current run of unanswered requests began (null = the last one was answered). */
+  private unansweredSince: number | null = null;
+  private readonly outageGraceMs: number;
 
   constructor(opts: VehicleStateClientOptions) {
     this.transport = opts.transport;
@@ -81,6 +87,7 @@ export class VehicleStateClient {
     this.holdMs = opts.holdMs ?? 2000;
     this.lingerMs = opts.lingerMs ?? 1000;
     this.debounceMs = opts.debounceMs ?? 30;
+    this.outageGraceMs = opts.outageGraceMs ?? 3000;
   }
 
   acquire(spec: ItemSpec): { key: string; release(): void } {
@@ -212,9 +219,17 @@ export class VehicleStateClient {
           // Link trouble (refused while reconnecting, a missed deadline) keeps the last values: the
           // connection pill already says so. Only a vehicle that does not answer marks the items.
           const link = e instanceof TransportError;
-          if (!link) this.fail(e instanceof Error ? e.message : String(e));
+          // Nobody answered: mark the items once that has lasted the grace period; until then keep
+          // the values and retry quickly (a bridge re-joining the router, a restarting service).
+          let grace = false;
+          if (!link) {
+            const now = Date.now();
+            this.unansweredSince ??= now;
+            grace = now - this.unansweredSince < this.outageGraceMs;
+            if (!grace) this.fail(e instanceof Error ? e.message : String(e));
+          }
           // A refused call costs nothing on the link: retry quickly so recovery follows reconnect.
-          const quick = link && e.code === "disconnected";
+          const quick = (link && e.code === "disconnected") || grace;
           await this.orWake(sleep(quick ? 500 : backoff));
           if (!quick) backoff = Math.min(backoff * 2, 5000);
         }
@@ -253,6 +268,7 @@ export class VehicleStateClient {
     this.epoch = reply.epoch;
     this.since = reply.seq;
     this.outage = null;
+    this.unansweredSince = null;
     for (const [index, state] of reply.items) {
       const item = this.items.get(sigs[index] ?? "");
       if (!item) continue; // released since this view was registered

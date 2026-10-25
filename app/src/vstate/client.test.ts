@@ -126,6 +126,9 @@ describe("VehicleStateClient ↔ VehicleStateServer", () => {
     const answering = link.server;
     link.server = null;
     await vi.advanceTimersByTimeAsync(2100); // the held poll ends, the next finds no queryable
+    // A brief gap (a bridge re-joining, a service restarting) keeps the values up ...
+    expect(client.getSnapshot(h.key)).toMatchObject({ message: { orientation: { z: 0.3 } }, error: undefined });
+    await vi.advanceTimersByTimeAsync(3000); // ... a lasting one is shown on every item
     expect(client.getSnapshot(h.key)!.error).toMatch(/not reachable \(fleet\/r1\/dash\/d\/state\/poll\)/);
     expect(client.getSnapshot(h.key)!.message).toEqual({ orientation: { z: 0.3 } });
     link.server = answering;

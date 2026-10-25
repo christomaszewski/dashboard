@@ -41,6 +41,7 @@ export const LEVELS = [
 ] as const;
 const HOLD_MS = 2000;
 const FAST_FRAMES_TO_STEP_UP = 5;
+const OUTAGE_GRACE_MS = 3000; // as the state client: brief gaps keep the last frame up, quietly
 
 export class FrameFetcher {
   private stopped = false;
@@ -49,6 +50,8 @@ export class FrameFetcher {
   private level = 0;
   private fast = 0;
   private wake: (() => void) | null = null;
+  /** When the current run of unanswered requests began: errors show only after OUTAGE_GRACE_MS. */
+  private unansweredSince: number | null = null;
   private readonly key: string;
   private readonly now: () => number;
 
@@ -106,6 +109,7 @@ export class FrameFetcher {
         if (replies.length > 1) throw new Error(`more than one vehicle answers ${this.key} — give each vehicle a distinct vehicle_id`);
         if (replies.length === 0) throw new Error(replyError ? `vehicle frames: ${replyError}` : `vehicle state service not reachable (${this.key})`);
         const { header, image } = decodeFrameReply(replies[0].payload);
+        this.unansweredSince = null;
         const elapsed = this.now() - started;
         const linkMs = Math.max(0, elapsed - (header.held ?? 0));
         this.epoch = header.epoch;
@@ -120,8 +124,15 @@ export class FrameFetcher {
         if (this.stopped) return;
         const link = e instanceof TransportError;
         const message = e instanceof Error ? e.message : String(e);
-        this.opts.onUpdate(link ? { link: message, level: this.level } : { error: message, level: this.level });
-        const quick = link && e.code === "disconnected";
+        let grace = false;
+        if (!link) {
+          const now = Date.now();
+          this.unansweredSince ??= now;
+          grace = now - this.unansweredSince < OUTAGE_GRACE_MS;
+        }
+        if (link) this.opts.onUpdate({ link: message, level: this.level });
+        else if (!grace) this.opts.onUpdate({ error: message, level: this.level });
+        const quick = (link && e.code === "disconnected") || grace;
         await this.sleep(quick ? 500 : backoff);
         if (!quick) backoff = Math.min(backoff * 2, 5000);
       }
