@@ -1,0 +1,245 @@
+diff --git a/zenoh-plugin-remote-api/src/lib.rs b/zenoh-plugin-remote-api/src/lib.rs
+index f8fb26c..7755574 100644
+--- a/zenoh-plugin-remote-api/src/lib.rs
++++ b/zenoh-plugin-remote-api/src/lib.rs
+@@ -28,7 +28,7 @@ use std::{
+     sync::{Arc, Mutex},
+ };
+ 
+-use futures::{future, pin_mut, StreamExt, TryStreamExt};
++use futures::{future, pin_mut, SinkExt, StreamExt, TryStreamExt};
+ use interface::{InRemoteMessage, OutRemoteMessage, SequenceId};
+ use remote_state::RemoteState;
+ use rustls_pemfile::{certs, private_key};
+@@ -74,6 +74,8 @@ mod interface;
+ 
+ mod remote_state;
+ 
++mod sample_lane;
++
+ kedefine!(
+     // Admin space key expressions of plugin's version
+     pub ke_admin_version: "${plugin_status_key:**}/__version__",
+@@ -513,6 +515,8 @@ async fn run_websocket_server(
+         let new_websocket = async move {
+             let sock_adress = Arc::new(sock_addr);
+             let (ws_ch_tx, ws_ch_rx) = flume::unbounded::<(OutRemoteMessage, Option<SequenceId>)>();
++            // Subscriber samples go through a bounded, drop-oldest lane (sample_lane.rs).
++            let (sample_lane, sample_rx) = sample_lane::SampleLane::new();
+ 
+             let session = match zenoh::session::init(zenoh_runtime.clone()).await {
+                 Ok(session) => session,
+@@ -543,15 +547,36 @@ async fn run_websocket_server(
+                 }
+             };
+ 
+-            let (ws_tx, ws_rx) = ws_stream.split();
+-
+-            let ch_rx_stream = ws_ch_rx
+-                .into_stream()
+-                .map(|(out_msg, sequence_id)| {
++            let (mut ws_tx, ws_rx) = ws_stream.split();
++
++            // Replies, acknowledgements and liveliness first: never behind a backlog of samples.
++            let lane = sample_lane.clone();
++            let ch_rx_stream = async move {
++                loop {
++                    let (out_msg, sequence_id) = tokio::select! {
++                        biased;
++                        m = ws_ch_rx.recv_async() => match m {
++                            Ok(item) => item,
++                            Err(_) => break,
++                        },
++                        m = sample_rx.recv_async() => match m {
++                            Ok((msg, seq, size)) => {
++                                lane.taken(size);
++                                (msg, seq)
++                            }
++                            Err(_) => break,
++                        },
++                    };
+                     tracing::trace!("<< Send: {:?} (seq={:?})", out_msg.id(), sequence_id);
+-                    Ok(Message::Binary(out_msg.to_wire(sequence_id)))
+-                })
+-                .forward(ws_tx);
++                    if ws_tx
++                        .send(Message::Binary(out_msg.to_wire(sequence_id)))
++                        .await
++                        .is_err()
++                    {
++                        break;
++                    }
++                }
++            };
+ 
+             // send confirmation that session was successfully opened
+             let admin_client =
+@@ -561,7 +586,8 @@ async fn run_websocket_server(
+                 .await
+                 .insert(id.to_string(), admin_client.clone());
+ 
+-            let mut remote_state = RemoteState::new(ws_ch_tx.clone(), admin_client, session);
++            let mut remote_state =
++                RemoteState::new(ws_ch_tx.clone(), sample_lane, admin_client, session);
+ 
+             //  Incoming message from Websocket
+             let incoming_ws = tokio::task::spawn(async move {
+diff --git a/zenoh-plugin-remote-api/src/remote_state.rs b/zenoh-plugin-remote-api/src/remote_state.rs
+index 8da9208..3400af9 100644
+--- a/zenoh-plugin-remote-api/src/remote_state.rs
++++ b/zenoh-plugin-remote-api/src/remote_state.rs
+@@ -66,6 +66,7 @@ const MAX_NUM_PENDING_QUERIES: usize = 1000;
+ pub(crate) struct RemoteState {
+     id: String,
+     tx: Sender<(OutRemoteMessage, Option<SequenceId>)>,
++    samples: crate::sample_lane::SampleLane,
+     admin_client: Arc<Mutex<AdminSpaceClient>>,
+     session: Session,
+     subscribers: HashMap<SubscriberId, Subscriber<()>>,
+@@ -84,6 +85,7 @@ pub(crate) struct RemoteState {
+ impl RemoteState {
+     pub(crate) fn new(
+         tx: Sender<(OutRemoteMessage, Option<SequenceId>)>,
++        samples: crate::sample_lane::SampleLane,
+         admin_client: Arc<Mutex<AdminSpaceClient>>,
+         session: Session,
+     ) -> Self {
+@@ -92,6 +94,7 @@ impl RemoteState {
+         Self {
+             id,
+             tx,
++            samples,
+             admin_client,
+             session,
+             subscribers: HashMap::new(),
+@@ -260,17 +263,18 @@ impl RemoteState {
+                 declare_subscriber.id
+             );
+         }
+-        let tx = self.tx.clone();
++        let samples = self.samples.clone();
+         let subscriber = self
+             .session
+             .declare_subscriber(declare_subscriber.keyexpr)
+             .allowed_origin(declare_subscriber.allowed_origin)
+             .callback(move |s| {
++                let size = s.payload().len();
+                 let msg = interface::Sample {
+                     subscriber_id: declare_subscriber.id,
+                     sample: s,
+                 };
+-                let _ = tx.send((OutRemoteMessage::Sample(msg), None));
++                samples.push(OutRemoteMessage::Sample(msg), size);
+             })
+             .await?;
+         self.admin_client
+diff --git a/zenoh-plugin-remote-api/src/sample_lane.rs b/zenoh-plugin-remote-api/src/sample_lane.rs
+new file mode 100644
+index 0000000..f6bbda7
+--- /dev/null
++++ b/zenoh-plugin-remote-api/src/sample_lane.rs
+@@ -0,0 +1,104 @@
++//
++// Copyright (c) 2026 ZettaScale Technology
++//
++// This program and the accompanying materials are made available under the
++// terms of the Eclipse Public License 2.0 which is available at
++// http://www.eclipse.org/legal/epl-2.0, or the Apache License, Version 2.0
++// which is available at https://www.apache.org/licenses/LICENSE-2.0.
++//
++// SPDX-License-Identifier: EPL-2.0 OR Apache-2.0
++//
++
++//! Vehicle dashboard patch: subscriber samples ride a bounded lane, apart from replies,
++//! acknowledgements and liveliness. Upstream queues everything for a WebSocket client in one
++//! unbounded channel, so a client on a slow link made the bridge buffer without limit (one raw
++//! camera over 128 kbit/s: +16 MB/s) and its own requests waited behind the backlog. Here a client
++//! that falls behind loses its OLDEST samples first — a viewer wants the newest value — while every
++//! control message still arrives, ahead of any queued sample.
++
++use std::sync::{
++    atomic::{AtomicU64, AtomicUsize, Ordering},
++    Arc,
++};
++
++use flume::{Receiver, Sender, TrySendError};
++
++use crate::{OutRemoteMessage, SequenceId};
++
++pub(crate) type LaneItem = (OutRemoteMessage, Option<SequenceId>, usize);
++
++fn env_usize(name: &str, default: usize) -> usize {
++    std::env::var(name)
++        .ok()
++        .and_then(|v| v.trim().parse::<usize>().ok())
++        .filter(|v| *v > 0)
++        .unwrap_or(default)
++}
++
++#[derive(Clone)]
++pub(crate) struct SampleLane {
++    tx: Sender<LaneItem>,
++    /// A clone of the writer's receiver: lets the producer discard the oldest queued sample.
++    oldest: Receiver<LaneItem>,
++    bytes: Arc<AtomicUsize>,
++    dropped: Arc<AtomicU64>,
++    max_bytes: usize,
++}
++
++impl SampleLane {
++    /// The lane and the writer's end. Limits per WebSocket client:
++    /// ZENOH_REMOTE_API_SAMPLE_QUEUE_MESSAGES (default 1024) and
++    /// ZENOH_REMOTE_API_SAMPLE_QUEUE_BYTES (default 8 MiB; one larger sample still passes alone).
++    pub(crate) fn new() -> (Self, Receiver<LaneItem>) {
++        let max_messages = env_usize("ZENOH_REMOTE_API_SAMPLE_QUEUE_MESSAGES", 1024);
++        let max_bytes = env_usize("ZENOH_REMOTE_API_SAMPLE_QUEUE_BYTES", 8 * 1024 * 1024);
++        let (tx, rx) = flume::bounded(max_messages);
++        let lane = Self {
++            tx,
++            oldest: rx.clone(),
++            bytes: Arc::new(AtomicUsize::new(0)),
++            dropped: Arc::new(AtomicU64::new(0)),
++            max_bytes,
++        };
++        (lane, rx)
++    }
++
++    /// Queue a sample of `size` payload bytes, discarding the oldest queued ones to make room.
++    pub(crate) fn push(&self, msg: OutRemoteMessage, size: usize) {
++        while self.bytes.load(Ordering::Relaxed) + size > self.max_bytes {
++            match self.oldest.try_recv() {
++                Ok((_, _, s)) => self.discard(s),
++                Err(_) => break, // empty: a sample larger than the budget still goes alone
++            }
++        }
++        let mut item = (msg, None, size);
++        loop {
++            match self.tx.try_send(item) {
++                Ok(()) => {
++                    self.bytes.fetch_add(size, Ordering::Relaxed);
++                    return;
++                }
++                Err(TrySendError::Full(back)) => {
++                    item = back;
++                    if let Ok((_, _, s)) = self.oldest.try_recv() {
++                        self.discard(s);
++                    }
++                }
++                Err(TrySendError::Disconnected(_)) => return,
++            }
++        }
++    }
++
++    /// The writer took a sample of `size` bytes off the lane.
++    pub(crate) fn taken(&self, size: usize) {
++        self.bytes.fetch_sub(size, Ordering::Relaxed);
++    }
++
++    fn discard(&self, size: usize) {
++        self.bytes.fetch_sub(size, Ordering::Relaxed);
++        let n = self.dropped.fetch_add(1, Ordering::Relaxed) + 1;
++        if n == 1 || n % 1000 == 0 {
++            tracing::warn!("remote-api client cannot keep up: {n} stale samples dropped so far");
++        }
++    }
++}

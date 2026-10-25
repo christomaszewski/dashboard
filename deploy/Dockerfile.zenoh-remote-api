@@ -16,6 +16,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN git clone --depth 1 --branch "${ZENOH_TS_REF}" \
         https://github.com/eclipse-zenoh/zenoh-ts.git /src
 WORKDIR /src
+# Dashboard patch: a WebSocket client's subscriber samples ride a bounded, drop-oldest lane behind
+# replies, acknowledgements and liveliness, instead of upstream's one unbounded queue — a client on a
+# slow link no longer makes the bridge buffer without limit, nor waits for its own requests behind
+# its backlog. Limits per client: ZENOH_REMOTE_API_SAMPLE_QUEUE_BYTES (default 8 MiB) and
+# _MESSAGES (1024). --check fails the build if a new ZENOH_TS_REF no longer matches the patch.
+COPY zenoh-remote-api-sample-lane.patch /tmp/
+RUN git apply --check /tmp/zenoh-remote-api-sample-lane.patch && git apply /tmp/zenoh-remote-api-sample-lane.patch
 # Verified target: package + [[bin]] name = zenoh-bridge-remote-api.
 RUN cargo build --release --locked -p zenoh-bridge-remote-api \
  || cargo build --release          -p zenoh-bridge-remote-api   # fallback if no lockfile at ref
