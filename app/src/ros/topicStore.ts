@@ -61,6 +61,8 @@ const DEFAULT_WINDOW_MS = 5000;
 // re-acquire immediately. Cheaper than the session pool's 3 s — a zenoh re-sub is not a WebRTC
 // renegotiation.
 const LINGER_MS = 1000;
+const DECODER_RETRY_MS = 5000; // a failed type resolution is retried while samples arrive ...
+const DECODER_RETRY_MAX_MS = 60_000; // ... backing off to once a minute
 
 interface HandleRecord {
   windowMs: number;
@@ -77,6 +79,10 @@ interface Entry {
   lingerTimer: ReturnType<typeof setTimeout> | null;
   decoder: Decoder | null;
   decoderPromise: Promise<Decoder> | null;
+  /** After a failed resolution: when a decoding consumer retries it (a type described by a node
+   *  can resolve once that node's ~/get_type_description shows up in the graph). */
+  decoderRetryAt?: number;
+  decoderBackoffMs: number;
   latest: { payload: Uint8Array; latched: boolean } | null;
   monitor: RateMonitor;
   sampleCount: number;
@@ -128,6 +134,7 @@ export class TopicStore {
         lingerTimer: null,
         decoder: null,
         decoderPromise: null,
+        decoderBackoffMs: DECODER_RETRY_MS,
         latest: null,
         monitor: new RateMonitor(this.defaultWindowMs),
         sampleCount: 0,
@@ -248,11 +255,14 @@ export class TopicStore {
       .then((decoder) => {
         if (entry.closed || entry.decoderPromise !== pending) return;
         entry.decoder = decoder;
+        entry.decoderRetryAt = undefined;
         if (entry.error?.startsWith("no decoder")) entry.error = undefined;
       })
       .catch((e) => {
         if (entry.closed || entry.decoderPromise !== pending) return;
-        entry.decoderPromise = null; // a later decoding acquire retries (resolver evicts failures)
+        entry.decoderPromise = null; // the resolver evicts failures; flush retries after a backoff
+        entry.decoderRetryAt = this.now() + entry.decoderBackoffMs;
+        entry.decoderBackoffMs = Math.min(entry.decoderBackoffMs * 2, DECODER_RETRY_MAX_MS);
         entry.error = `no decoder: ${e instanceof Error ? e.message : String(e)}`;
         this.emit(entry);
       });
@@ -273,6 +283,9 @@ export class TopicStore {
     const pending = entry.latest;
     if (pending) {
       const wantsDecode = [...entry.handles].some((h) => h.decode);
+      if (wantsDecode && !entry.decoder && !entry.decoderPromise && entry.decoderRetryAt !== undefined && this.now() >= entry.decoderRetryAt) {
+        this.ensureDecoder(entry);
+      }
       if (wantsDecode && entry.decoder) {
         try {
           entry.message = entry.decoder.decode(pending.payload);

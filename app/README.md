@@ -247,7 +247,10 @@ The ROS graph is rebuilt client-side from rmw_zenoh's `@ros2_lv/**` liveliness t
 `lyrical` vehicle). Clicking a topic subscribes to its data keyexpr
 (`<domain>/<topic>/<dds-type>/<RIHS hash>`) and decodes CDR with readers built from
 `@foxglove/rosmsg-msgs-common` bundled definitions (`schema/decoders/staticDefs.ts`, loaded as an
-async chunk). Unit tests cover the parsers and a write→decode round-trip: `npm test`.
+async chunk). A type outside the bundle (vendor drivers, project messages) is described by a node
+that publishes or subscribes it, through that node's `~/get_type_description`
+(`schema/decoders/described.ts`), once per type; a failure is retried while samples arrive. Unit
+tests cover the parsers and a write→decode round-trip: `npm test`.
 
 The topic table lists publisher and subscriber nodes; Services lists server and client nodes.
 Domains remain separate, including when inspecting identically named topics. Hover an endpoint
@@ -267,11 +270,9 @@ Only selected/already-watched topics are subscribed; the graph table itself adds
 
 Known behaviors:
 
-- **Bundled defs only (topics)**: vendor types (novatel/sbg/vectornav…) aren't in the bundle and
-  show a "not in the bundled message definitions" error in the inspector. The machinery to fix this
-  now exists — `services/` implements rmw_zenoh service calls incl. dynamic `get_type_description`
-  typing (used by home-tab service buttons); wiring the same resolution into `schema/resolver.ts`
-  as a topic-decode backend is the remaining step.
+- **Types outside the bundle** decode only when a node using them answers `~/get_type_description`
+  (on by default since Iron; verified on a Lyrical bench with `sbg_msgs`). Otherwise the inspector
+  and widgets show "no decoder" with the reason.
 - **Version skew**: defs are jazzy-era; if a decode leaves trailing bytes the inspector shows a ⚠
   warning instead of failing (CDR ignores trailing bytes).
 - **image_transport gating**: camera topics publish only when a *ROS* subscriber matches; a raw

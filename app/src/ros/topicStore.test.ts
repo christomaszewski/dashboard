@@ -163,6 +163,28 @@ describe("TopicStore", () => {
     expect(snap?.lastBytes).toBe(1); // bytes still tracked without a decoder
   });
 
+  it("retries a failed type resolution while samples arrive, backing off", async () => {
+    resolver.failWith = "no node that can describe it yet";
+    store.acquire(INFO);
+    const pump = async (ms: number) => {
+      for (let e = 0; e < ms; e += 200) {
+        transport.push(new Uint8Array([7]));
+        await tick(200);
+      }
+    };
+    await pump(1000);
+    expect(resolver.resolveCalls).toHaveLength(1);
+    expect(store.getSnapshot(KEY)?.error).toMatch(/no decoder:/);
+    await pump(5000); // first retry after 5 s, still failing; the next waits 10 s
+    expect(resolver.resolveCalls).toHaveLength(2);
+    resolver.failWith = null; // the describing node joined the graph
+    await pump(5000);
+    expect(resolver.resolveCalls).toHaveLength(2);
+    await pump(5400);
+    expect(resolver.resolveCalls).toHaveLength(3);
+    expect(store.getSnapshot(KEY)).toMatchObject({ message: { n: 7 }, error: undefined });
+  });
+
   it("decode: false consumers never trigger resolution; a decoding joiner does", async () => {
     store.acquire(INFO, { decode: false });
     await tick(0);

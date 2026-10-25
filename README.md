@@ -20,6 +20,7 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   bind-mounted instance config at `/config/dashboard.yaml` for the Home tab.
 - ROS2 service calls run over the same bus as zenoh queries (rmw_zenoh wire format), with dynamic
   type resolution via each node's `~/get_type_description` — vendor srv types need no bundling.
+  Topics use the same resolution for message types outside the bundled definitions.
 - Camera widgets: `camera` (one tile you drive — its `stream` is a default the tile's picker can
   change, or omitted to pick from discovery) and `cameras` (several feeds: one in focus with a
   carousel of live thumbnails, or a grid — the same deck the Cameras tab uses).

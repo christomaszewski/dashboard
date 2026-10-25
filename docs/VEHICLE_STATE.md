@@ -287,8 +287,8 @@ covered items 1–3:
    vehicle state off). Locally, the rig checkout also passed with `vehicle_state: true`, covering
    both state services, the state image's registry rewrite and the loopback port.
 4. **On a vehicle — open:** the checklist in TESTING.md, "Vehicle state (on-vehicle acceptance)".
-   That includes the laptop-bridge route and a real ROS graph. Decoding uses the bundled message
-   definitions, as in the browser, so vendor types still need their own decoder.
+   That includes the laptop-bridge route and a real ROS graph. Types outside the bundled message
+   definitions resolve through a node's `~/get_type_description`, on the vehicle as in the browser.
 
 Found and fixed on the bench: after `docker restart dashboard-state`, 1 restart in 12 left some
 pages showing `vehicle state: Timeout` for about 9 s. zenoh-ts registers a queryable's handler only

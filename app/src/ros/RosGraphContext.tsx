@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from "react";
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from "react";
 import { useTransportContext } from "../transport/TransportContext";
 import { FlavorResolver } from "../schema/resolver";
 import type { SchemaResolver } from "../schema/types";
@@ -21,7 +21,13 @@ export const RosGraphCtx = createContext<RosGraphContextValue | null>(null);
 export function RosGraphProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
   const graph = useRosGraph(transport);
-  const resolver = useMemo(() => (transport ? new FlavorResolver(transport) : null), [transport]);
+  // The resolver reads the live graph to find a node that can describe a type outside the bundle.
+  const graphRef = useRef(graph);
+  graphRef.current = graph;
+  const resolver = useMemo(
+    () => (transport ? new FlavorResolver(transport, { graph: () => graphRef.current }) : null),
+    [transport],
+  );
   const store = useMemo(
     () => (transport && resolver ? new TopicStore({ transport, resolver }) : null),
     [transport, resolver],

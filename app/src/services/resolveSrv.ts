@@ -10,12 +10,9 @@ import type { LivelinessEntity, RosGraph } from "../ros/graph";
 import { ddsToRosName } from "../schema/typeName";
 import type { DecodedMessage } from "../schema/types";
 import { ServiceCallError } from "./errors";
-import { findTypeDescriptionServer, serviceQueryKeyexpr } from "./keyexpr";
-import { rawCall } from "./client";
-import { GET_TYPE_DESCRIPTION_SRV, STATIC_SRVS, type StaticSrvDef } from "./srvDefs";
-import { srvCodecDefs, type TypeDescriptionMsg } from "./typeDescription";
-
-const GTD_TIMEOUT_MS = 5000;
+import { describeType } from "./describeType";
+import { STATIC_SRVS, type StaticSrvDef } from "./srvDefs";
+import { srvCodecDefs } from "./typeDescription";
 
 export interface SrvCodec {
   typeName: string;
@@ -26,12 +23,6 @@ export interface SrvCodec {
   decodeResponse(bytes: Uint8Array): DecodedMessage;
   /** Trailing-bytes diagnostic for the most recent decodeResponse. */
   lastResponseWarning(): string | undefined;
-}
-
-interface GtdResponse {
-  successful: boolean;
-  failure_reason: string;
-  type_description: TypeDescriptionMsg;
 }
 
 function buildCodec(typeName: string, typeHash: string, defs: StaticSrvDef): SrvCodec {
@@ -76,45 +67,13 @@ export class SrvCodecResolver {
     if (bundled) return buildCodec(typeName, t.typeHash, bundled);
 
     // Dynamic path: ask the SERVING node — it definitionally knows the type it serves.
-    const gtdServer = findTypeDescriptionServer(graph, server);
-    if (!gtdServer) {
-      throw new ServiceCallError(
-        "type-unresolvable",
-        t.name,
-        `'${typeName}' is not bundled and node ${server.nodeFq} does not expose ~/get_type_description`,
-      );
+    const described = await describeType(this.transport, graph, server, typeName, t.typeHash);
+    if (!described.ok) {
+      const reason = described.reason.endsWith("does not expose ~/get_type_description")
+        ? `'${typeName}' is not bundled and ${described.reason}`
+        : described.reason;
+      throw new ServiceCallError("type-unresolvable", t.name, reason);
     }
-    const gtd = buildCodec("type_description_interfaces/srv/GetTypeDescription", "", GET_TYPE_DESCRIPTION_SRV);
-    const request = gtd.encodeRequest({ type_name: typeName, type_hash: t.typeHash, include_type_sources: false });
-    const { replies, replyErrors } = await rawCall(
-      this.transport,
-      serviceQueryKeyexpr(gtdServer),
-      request,
-      GTD_TIMEOUT_MS,
-    );
-    if (replies.length === 0) {
-      const detail = replyErrors.length > 0 ? `: ${replyErrors.join("; ")}` : "";
-      throw new ServiceCallError(
-        "type-unresolvable",
-        t.name,
-        `${server.nodeFq}/get_type_description did not reply${detail}`,
-      );
-    }
-    let response: GtdResponse;
-    try {
-      response = gtd.decodeResponse(replies[0].payload) as unknown as GtdResponse;
-    } catch (e) {
-      throw new ServiceCallError("type-unresolvable", t.name, `GetTypeDescription response undecodable: ${String(e)}`, {
-        cause: e,
-      });
-    }
-    if (!response.successful) {
-      throw new ServiceCallError(
-        "type-unresolvable",
-        t.name,
-        `${server.nodeFq} could not describe '${typeName}': ${response.failure_reason || "no reason given"}`,
-      );
-    }
-    return buildCodec(typeName, t.typeHash, srvCodecDefs(response.type_description));
+    return buildCodec(typeName, t.typeHash, srvCodecDefs(described.description));
   }
 }

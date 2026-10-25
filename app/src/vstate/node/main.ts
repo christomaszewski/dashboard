@@ -9,6 +9,7 @@ import { FlavorResolver } from "../../schema/resolver";
 import { TopicStore } from "../../ros/topicStore";
 import { STATE_KEY_RE, stateKeys } from "../protocol";
 import { LiveGraph, VehicleStateServer, serveQuery } from "../server";
+import { EMPTY_GRAPH, type RosGraph } from "../../ros/graph";
 
 // The few Node globals used here, declared locally so the app's DOM-only tsconfig stays as is.
 declare const process: {
@@ -57,9 +58,14 @@ async function main(): Promise<void> {
     process.exit(2);
   }
   const transport = await connect();
-  const store = new TopicStore({ transport, resolver: new FlavorResolver(transport) });
+  // Types outside the bundle resolve through a node that uses them (its ~/get_type_description).
+  let latest: RosGraph = EMPTY_GRAPH;
+  const store = new TopicStore({ transport, resolver: new FlavorResolver(transport, { graph: () => latest }) });
   const server = new VehicleStateServer({ store });
-  const graph = new LiveGraph(transport, (g) => server.setGraph(g));
+  const graph = new LiveGraph(transport, (g) => {
+    latest = g;
+    server.setGraph(g);
+  });
   await graph.start();
 
   let sent = 0;
