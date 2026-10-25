@@ -1,6 +1,9 @@
 import { createContext, useContext, useMemo, type ReactNode } from "react";
 import { useTransportContext } from "../transport/TransportContext";
 import { useHealth, type HealthSeries } from "./useHealth";
+import { useVehicleHealth } from "./useVehicleHealth";
+import { useVehicleState } from "../vstate/VehicleStateContext";
+import { useConfig } from "../config/ConfigContext";
 import type { HealthService } from "./types";
 import type { HealthEvent } from "./discovery";
 
@@ -20,7 +23,14 @@ export const HealthCtx = createContext<HealthContextValue | null>(null);
 
 export function HealthProvider({ children }: { children: ReactNode }) {
   const { transport } = useTransportContext();
-  const { services, series, events, errors } = useHealth(transport);
+  const vehicle = useVehicleState();
+  const config = useConfig();
+  const options = config.phase === "ready" ? config.config.health : undefined;
+  // With vehicle state the vehicle runs the discovery and every /diagnostics subscription; this
+  // page gets the assembled services as changes (docs/VEHICLE_STATE.md, "Health").
+  const direct = useHealth(vehicle.enabled ? null : transport);
+  const fromVehicle = useVehicleHealth(vehicle.enabled ? vehicle.client : null, options, vehicle.error);
+  const { services, series, events, errors } = vehicle.enabled ? fromVehicle : direct;
   const value = useMemo<HealthContextValue>(
     () => ({
       services,

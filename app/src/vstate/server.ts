@@ -6,9 +6,13 @@
 //
 // No per-client state: an item remembers the update number of its last change; a view is just a
 // list of items. Views nobody polls expire; items and raw subscriptions go with their last view.
+// What only grows — a position trail, a value history — is numbered point by point, so a reply
+// carries exactly the points the caller has not seen (all of them after a reconnect or reload).
 import { EMPTY_GRAPH, ROS2_LIVELINESS_GLOB, buildGraph, type RosGraph, type TopicEntry } from "../ros/graph";
 import type { TopicAcquireOptions, TopicHandle, TopicSnapshot } from "../ros/topicStore";
 import type { IncomingQuery, Subscription, Transport } from "../transport/types";
+import type { HealthService } from "../health/types";
+import { healthAges, healthToWire } from "./healthWire";
 import {
   LIMITS,
   VSTATE_VERSION,
@@ -23,6 +27,7 @@ import {
   type FieldSpec,
   type ItemSpec,
   type ItemState,
+  type PlainValue,
   type PollReply,
   type RegisterReply,
 } from "./protocol";
@@ -34,10 +39,21 @@ export interface TopicSource {
   getSnapshot(key: string): TopicSnapshot | null;
 }
 
+/** The vehicle's health services (healthHub.ts): started while some item watches them. */
+export interface HealthSource {
+  retain(): void;
+  release(): void;
+  list(): readonly HealthService[];
+  subscribe(cb: () => void): () => void;
+}
+
 export interface StateServerOptions {
   store: TopicSource;
+  health?: HealthSource;
   /** Monotonic ms — the same clock the store stamps `lastAt` with. */
   now?: () => number;
+  /** Wall-clock ms, for health ages (the discovery stamps services with both). */
+  wallNow?: () => number;
   epoch?: string;
   /** How long a poll with nothing new waits before an empty heartbeat reply. */
   holdMs?: number;
@@ -49,9 +65,13 @@ export interface StateServerOptions {
   coalesceMs?: number;
 }
 
+interface TrailPoint { seq: number; lat: number; lon: number }
+interface Bucket { seq: number; t0: number; min: number; max: number; last: number }
+
 interface ItemRecord {
   sig: string;
   spec: ItemSpec;
+  kind: "topic" | "node" | "health";
   fields: FieldSpec[];
   refs: number;
   entry?: TopicEntry;
@@ -62,6 +82,12 @@ interface ItemRecord {
   changedSeq: number;
   lastAt?: number;
   interval?: number;
+  /** Trail items: points, the absolute index of the first one kept. */
+  trail?: { first: number; pts: TrailPoint[] };
+  /** Series items: buckets, the absolute index of the first one kept. */
+  series?: { first: number; buckets: Bucket[] };
+  /** Health items: the service object last seen, and its counter. */
+  health?: { obj?: HealthService; counter: number };
 }
 
 interface View {
@@ -87,11 +113,14 @@ export interface StateServerStats {
 }
 
 const randomEpoch = () => Math.floor(Math.random() * 2 ** 48).toString(36);
+const num = (v: PlainValue | null | undefined): number | undefined => (typeof v === "number" && Number.isFinite(v) ? v : undefined);
 
 export class VehicleStateServer {
   readonly epoch: string;
   private readonly store: TopicSource;
+  private readonly health?: HealthSource;
   private readonly now: () => number;
+  private readonly wallNow: () => number;
   private readonly holdMs: number;
   private readonly viewTtlMs: number;
   private readonly staleMs: number;
@@ -103,10 +132,14 @@ export class VehicleStateServer {
   private readonly waiters = new Set<Waiter>();
   private wakeTimer: ReturnType<typeof setTimeout> | null = null;
   private counts = { registers: 0, polls: 0 };
+  private healthItems = 0;
+  private unlistenHealth: (() => void) | null = null;
 
   constructor(opts: StateServerOptions) {
     this.store = opts.store;
+    this.health = opts.health;
     this.now = opts.now ?? (() => performance.now());
+    this.wallNow = opts.wallNow ?? (() => Date.now());
     this.epoch = opts.epoch ?? randomEpoch();
     this.holdMs = opts.holdMs ?? 2000;
     this.viewTtlMs = opts.viewTtlMs ?? 60_000;
@@ -146,12 +179,12 @@ export class VehicleStateServer {
     });
   }
 
-  /** Re-bind every item to the topic now advertised under its name. */
+  /** Re-bind every item to the topic now advertised under its name; nodes come and go with it. */
   setGraph(graph: RosGraph): void {
     this.graph = graph;
     for (const rec of this.items.values()) {
-      this.bind(rec);
-      this.recompute(rec);
+      if (rec.kind === "topic") this.bind(rec);
+      if (rec.kind !== "health") this.recompute(rec);
     }
   }
 
@@ -182,9 +215,16 @@ export class VehicleStateServer {
     const sig = itemSignature(spec);
     let rec = this.items.get(sig);
     if (!rec) {
-      rec = { sig, spec, fields: spec.fields ?? [], refs: 0, state: {}, json: "", changedSeq: 0 };
+      const kind = spec.node !== undefined ? "node" : spec.health !== undefined ? "health" : "topic";
+      rec = { sig, spec, kind, fields: spec.fields ?? [], refs: 0, state: {}, json: "", changedSeq: 0 };
+      if (spec.trail !== undefined) rec.trail = { first: 0, pts: [] };
+      if (spec.series !== undefined) rec.series = { first: 0, buckets: [] };
+      if (kind === "health") {
+        rec.health = { counter: 0 };
+        this.retainHealth();
+      }
       this.items.set(sig, rec);
-      this.bind(rec);
+      if (kind === "topic") this.bind(rec);
       this.recompute(rec);
     }
     rec.refs += 1;
@@ -196,6 +236,22 @@ export class VehicleStateServer {
     if (rec.refs > 0) return;
     this.unbind(rec);
     this.items.delete(rec.sig);
+    if (rec.kind === "health") this.releaseHealth();
+  }
+
+  private retainHealth(): void {
+    if (!this.health || this.healthItems++ > 0) return;
+    this.health.retain();
+    this.unlistenHealth = this.health.subscribe(() => {
+      for (const rec of this.items.values()) if (rec.kind === "health") this.recompute(rec);
+    });
+  }
+
+  private releaseHealth(): void {
+    if (!this.health || --this.healthItems > 0) return;
+    this.unlistenHealth?.();
+    this.unlistenHealth = null;
+    this.health.release();
   }
 
   private bind(rec: ItemRecord): void {
@@ -222,18 +278,61 @@ export class VehicleStateServer {
   private recompute(rec: ItemRecord): void {
     let state = this.computeState(rec);
     let json = JSON.stringify(state);
-    if (json.length > LIMITS.stateBytes) {
+    if (json.length > LIMITS.stateBytes && rec.kind !== "health") {
       state = { t: state.t, d: state.d, e: `vehicle state: value too large (${json.length} B > ${LIMITS.stateBytes} B) — choose a smaller field` };
       json = JSON.stringify(state);
     }
     if (json === rec.json) return;
+    const previous = rec.state;
     rec.json = json;
     rec.state = state;
     rec.changedSeq = ++this.seq;
+    if (rec.trail || rec.series) this.record(rec, previous, state);
     this.scheduleWake();
   }
 
+  /** A changed value extends the item's trail and history, numbered with the change. */
+  private record(rec: ItemRecord, previous: ItemState, state: ItemState): void {
+    if (!state.f) return;
+    const now = this.now();
+    if (rec.trail) {
+      const lat = num(state.f[0]), lon = num(state.f[1]);
+      const last = rec.trail.pts[rec.trail.pts.length - 1];
+      if (lat !== undefined && lon !== undefined && (!last || last.lat !== lat || last.lon !== lon)) {
+        rec.trail.pts.push({ seq: rec.changedSeq, lat, lon });
+        const over = rec.trail.pts.length - (rec.spec.trail ?? 0);
+        if (over > 0) {
+          rec.trail.pts.splice(0, over);
+          rec.trail.first += over;
+        }
+      }
+    }
+    if (rec.series && rec.spec.series) {
+      const v = num(state.f[0]);
+      if (v === undefined || (previous.f && num(previous.f[0]) === v && state.s === previous.s)) return;
+      const { window_ms, bucket_ms } = rec.spec.series;
+      const buckets = rec.series.buckets;
+      const cur = buckets[buckets.length - 1];
+      if (cur && now - cur.t0 < bucket_ms) {
+        cur.min = Math.min(cur.min, v);
+        cur.max = Math.max(cur.max, v);
+        cur.last = v;
+        cur.seq = rec.changedSeq;
+      } else buckets.push({ seq: rec.changedSeq, t0: now, min: v, max: v, last: v });
+      // Keep the window, and always the newest bucket: a value that has not changed in a while
+      // is still the value (the browser draws it on to now).
+      let drop = 0;
+      while (drop < buckets.length - 1 && now - buckets[drop].t0 > window_ms) drop += 1;
+      if (drop > 0) {
+        buckets.splice(0, drop);
+        rec.series.first += drop;
+      }
+    }
+  }
+
   private computeState(rec: ItemRecord): ItemState {
+    if (rec.kind === "node") return { a: this.graph.nodes.some((n) => n.nodeFq === rec.spec.node) ? 1 : 0 };
+    if (rec.kind === "health") return this.healthState(rec);
     const entry = rec.entry;
     if (!entry) return {};
     const state: ItemState = { t: entry.typeName, d: entry.domainId };
@@ -259,6 +358,22 @@ export class VehicleStateServer {
     return state;
   }
 
+  private healthState(rec: ItemRecord): ItemState {
+    const services = this.health?.list() ?? [];
+    if (rec.spec.health === "*") return { hk: services.map((s) => s.key).sort() };
+    const service = services.find((s) => s.key === rec.spec.health);
+    const h = rec.health!;
+    if (!service) {
+      h.obj = undefined;
+      return {};
+    }
+    if (service !== h.obj) {
+      h.obj = service;
+      h.counter += 1;
+    }
+    return { hd: healthToWire(service, h.counter) };
+  }
+
   /** Latched topics publish once by design; everything else is stale after an unusual silence. */
   private isStale(rec: ItemRecord, entry: TopicEntry): boolean {
     if (rec.lastAt === undefined || entry.transientLocal) return false;
@@ -281,9 +396,30 @@ export class VehicleStateServer {
   private delta(view: View, since: number): [number, ItemState][] {
     const out: [number, ItemState][] = [];
     view.items.forEach((rec, i) => {
-      if (rec.changedSeq > since) out.push([i, rec.state]);
+      if (rec.changedSeq > since) out.push([i, this.withExtras(rec, since)]);
     });
     return out;
+  }
+
+  /** The item's state plus what only this caller lacks: new trail points, changed buckets, ages. */
+  private withExtras(rec: ItemRecord, since: number): ItemState {
+    if (!rec.trail && !rec.series && !rec.state.hd) return rec.state;
+    const state: ItemState = { ...rec.state };
+    if (rec.trail && rec.trail.pts.length > 0) {
+      let k = 0;
+      if (since > 0) while (k < rec.trail.pts.length && rec.trail.pts[k].seq <= since) k += 1;
+      if (k < rec.trail.pts.length) state.tr = { i: rec.trail.first + k, p: rec.trail.pts.slice(k).map((p) => [p.lat, p.lon]) };
+    }
+    if (rec.series && rec.series.buckets.length > 0) {
+      const now = this.now();
+      const hs: [number, number, number, number, number][] = [];
+      rec.series.buckets.forEach((b, j) => {
+        if (since === 0 || b.seq > since) hs.push([rec.series!.first + j, Math.round(now - b.t0), b.min, b.max, b.last]);
+      });
+      if (hs.length > 0) state.hs = hs;
+    }
+    if (state.hd && rec.health?.obj) state.hd = { ...state.hd, ...healthAges(rec.health.obj, this.wallNow(), this.now()) };
+    return state;
   }
 
   private reply(items: [number, ItemState][]): PollReply {

@@ -37,6 +37,31 @@ export class SeriesBuffer {
   }
 }
 
+/**
+ * A vehicle-kept history (min/max/last buckets) as points to draw: each bucket's spread as a short
+ * vertical stroke, so spikes survive the bucketing, clipped to the window and carried on to `now`
+ * at the last value (an unchanged value sends no new buckets).
+ */
+export function historyPoints(
+  history: readonly { t: number; min: number; max: number; last: number }[],
+  now: number,
+  windowMs: number,
+): SeriesPoint[] {
+  if (history.length === 0) return [];
+  const start = now - windowMs;
+  let first = 0;
+  while (first < history.length - 1 && history[first + 1].t <= start) first += 1;
+  const out: SeriesPoint[] = [];
+  history.slice(first).forEach((b, i) => {
+    const t = i === 0 ? Math.max(b.t, start) : b.t;
+    if (b.min === b.max) out.push({ t, v: b.last });
+    else if (b.last === b.min) out.push({ t, v: b.max }, { t: t + 1, v: b.min });
+    else out.push({ t, v: b.min }, { t: t + 1, v: b.max });
+  });
+  out.push({ t: now, v: history[history.length - 1].last });
+  return out;
+}
+
 export interface SeriesPath {
   d: string; // SVG path data
   min: number; // y-range actually used (after overrides / padding)

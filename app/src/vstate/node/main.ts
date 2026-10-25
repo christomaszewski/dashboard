@@ -11,6 +11,7 @@ import { STATE_KEY_RE, stateKeys } from "../protocol";
 import { LiveGraph, VehicleStateServer, serveQuery } from "../server";
 import { FrameServer, serveFrameQuery, type FrameEncoder } from "../frames";
 import { loadSharpEncoder, unavailableEncoder } from "./sharpEncoder";
+import { HealthHub } from "../healthHub";
 import { EMPTY_GRAPH, type RosGraph } from "../../ros/graph";
 
 // The few Node globals used here, declared locally so the app's DOM-only tsconfig stays as is.
@@ -64,7 +65,8 @@ async function main(): Promise<void> {
   let latest: RosGraph = EMPTY_GRAPH;
   const resolver = new FlavorResolver(transport, { graph: () => latest });
   const store = new TopicStore({ transport, resolver });
-  const server = new VehicleStateServer({ store });
+  const health = new HealthHub(transport, resolver, log);
+  const server = new VehicleStateServer({ store, health });
   let encoder: FrameEncoder;
   try {
     encoder = await loadSharpEncoder();
@@ -77,6 +79,7 @@ async function main(): Promise<void> {
     latest = g;
     server.setGraph(g);
     frames.setGraph(g);
+    health.setGraph(g);
   });
   await graph.start();
 

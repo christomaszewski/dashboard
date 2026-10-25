@@ -34,6 +34,18 @@ export interface TopicSnapshot {
   stale?: boolean;
   /** The latest sample's serialized bytes, for `raw` consumers that decode on demand (frames). */
   raw?: Uint8Array;
+  /** Vehicle-state snapshots only: the position trail the vehicle keeps (latitude, longitude). */
+  trail?: readonly [number, number][];
+  /** Vehicle-state snapshots only: the first field's history, in min/max/last buckets. */
+  history?: readonly HistoryPoint[];
+}
+
+/** One history bucket: its start on this browser's monotonic clock (performance.now()). */
+export interface HistoryPoint {
+  t: number;
+  min: number;
+  max: number;
+  last: number;
 }
 
 export interface TopicAcquireOptions {

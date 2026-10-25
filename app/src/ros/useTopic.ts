@@ -3,7 +3,7 @@ import { useRosGraphContext } from "./RosGraphContext";
 import type { TopicAcquireOptions, TopicSnapshot } from "./topicStore";
 import type { TopicEntry } from "./graph";
 import { TopicSourceCtx, VehicleStateCtx } from "../vstate/VehicleStateContext";
-import { isRosTopicName, itemSignature, type FieldSpec, type ItemSpec } from "../vstate/protocol";
+import { isRosTopicName, itemSignature, type FieldSpec, type ItemSpec, type SeriesSpec } from "../vstate/protocol";
 
 export interface UseTopicOptions extends TopicAcquireOptions {
   /**
@@ -13,6 +13,11 @@ export interface UseTopicOptions extends TopicAcquireOptions {
    * ignores this and decodes whole messages. Omit it to always get whole messages.
    */
   fields?: FieldSpec[];
+  /** Vehicle state only: the vehicle keeps this many trail points (fields 0, 1 = latitude,
+   *  longitude) and the snapshot carries them as `trail` — whole again after a reload. */
+  trail?: number;
+  /** Vehicle state only: the vehicle keeps the first field's min/max/last history (`history`). */
+  series?: SeriesSpec;
 }
 
 export interface UseTopicResult {
@@ -48,6 +53,8 @@ export function useTopic(topicName: string | TopicEntry | null | undefined, opts
         fields: rateOnly ? undefined : opts?.fields,
         hz: rateOnly || undefined,
         window_ms: rateOnly && opts?.windowMs !== undefined ? Math.min(60_000, Math.max(500, opts.windowMs)) : undefined,
+        trail: rateOnly ? undefined : opts?.trail,
+        series: rateOnly ? undefined : opts?.series,
       })
     : null;
   const client = vehicle.client;

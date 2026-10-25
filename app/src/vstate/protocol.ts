@@ -4,6 +4,7 @@
 // has one definition on both sides of the radio.
 import { pluckField } from "../home/pluck";
 import type { DecodedMessage } from "../schema/types";
+import type { HealthWire } from "./healthWire";
 
 export const VSTATE_VERSION = 1;
 
@@ -14,6 +15,8 @@ export const LIMITS = {
   stateBytes: 8 * 1024, // one encoded item state
   leaves: 2048, // array/object members converted per field before giving up
   views: 64, // live views on one vehicle
+  trail: 5000, // points kept per trail item
+  buckets: 600, // history buckets per series item
 } as const;
 
 /** One projected field: a dot-path and an optional rounding quantum for numeric leaves. */
@@ -22,12 +25,30 @@ export interface FieldSpec {
   q?: number;
 }
 
-/** What one widget needs from one topic. No fields = rate/presence only (never decoded). */
+/** History of a topic item's first numeric field, kept on the vehicle in min/max/last buckets. */
+export interface SeriesSpec {
+  window_ms: number;
+  bucket_ms: number;
+}
+
+/**
+ * What one widget needs from the vehicle. Exactly one of:
+ *   topic   a ROS topic: projected fields (none = rate/presence only, never decoded), optionally a
+ *           position trail or a value history kept on the vehicle
+ *   node    is this fully-qualified node in the vehicle's ROS graph
+ *   health  "*" = the keys of the vehicle's health services; else one service, as its own
+ *           discovery assembled it (docs/VEHICLE_STATE.md, "Health")
+ */
 export interface ItemSpec {
-  topic: string;
+  topic?: string;
   fields?: FieldSpec[];
   hz?: boolean;
   window_ms?: number;
+  /** Topic items with latitude, longitude as their first two fields: keep this many points. */
+  trail?: number;
+  series?: SeriesSpec;
+  node?: string;
+  health?: string;
 }
 
 export interface ViewSpec {
@@ -61,6 +82,17 @@ export interface ItemState {
   w?: string; // decoder warning
   l?: 1; // latched (transient-local) value
   s?: 1; // stale
+  // Attached per reply, for what the caller has not seen yet (its `since`):
+  /** Trail points from absolute index `i`: a continuation of the caller's trail, or all of it. */
+  tr?: { i: number; p: [number, number][] };
+  /** History buckets: [absolute index, age in ms of the bucket start, min, max, last]. */
+  hs?: [number, number, number, number, number][];
+  /** Node items: the node is (1) or is not (0) in the vehicle's graph. */
+  a?: 0 | 1;
+  /** Health "*": the service keys. */
+  hk?: string[];
+  /** Health service: as the vehicle's discovery holds it, with ages instead of timestamps. */
+  hd?: HealthWire;
 }
 
 export type PollReply =
@@ -83,6 +115,8 @@ export function stateKeys(base: string): { view: string; poll: string; frame: st
 // ---- validation ------------------------------------------------------------------------------
 
 const PATH_RE = /^[A-Za-z0-9_]+(?:\.[A-Za-z0-9_]+)*$/;
+const NODE_RE = /^\/[A-Za-z0-9_/]*$/;
+const HEALTH_RE = /^fleet\/[A-Za-z0-9_.-]+\/svc\/[A-Za-z0-9_.-]+\/health$/;
 const TOPIC_RE = /^\/[A-Za-z0-9_~{}/]*$/;
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
 
@@ -96,6 +130,18 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function validateItem(raw: unknown, i: number): ItemSpec {
   if (!isRecord(raw)) fail(`items[${i}] must be a mapping`);
+  const kinds = ["topic", "node", "health"].filter((k) => raw[k] !== undefined);
+  if (kinds.length !== 1) fail(`items[${i}] needs exactly one of topic, node, health`);
+  if (raw.node !== undefined) {
+    if (typeof raw.node !== "string" || raw.node.length > 256 || !NODE_RE.test(raw.node)) fail(`items[${i}].node must be a ROS node name`);
+    return { node: raw.node };
+  }
+  if (raw.health !== undefined) {
+    if (typeof raw.health !== "string" || raw.health.length > 256 || (raw.health !== "*" && !HEALTH_RE.test(raw.health))) {
+      fail(`items[${i}].health must be "*" or a health key`);
+    }
+    return { health: raw.health };
+  }
   const topic = raw.topic;
   if (typeof topic !== "string" || topic.length > 256 || !TOPIC_RE.test(topic)) fail(`items[${i}].topic must be a ROS topic name`);
   let fields: FieldSpec[] | undefined;
@@ -110,7 +156,21 @@ function validateItem(raw: unknown, i: number): ItemSpec {
   if (raw.hz !== undefined && typeof raw.hz !== "boolean") fail(`items[${i}].hz must be true or false`);
   const w = raw.window_ms;
   if (w !== undefined && !(typeof w === "number" && Number.isFinite(w) && w >= 500 && w <= 60_000)) fail(`items[${i}].window_ms must be 500–60000`);
-  return canonicalItem({ topic, fields, hz: raw.hz as boolean | undefined, window_ms: w as number | undefined });
+  const trail = raw.trail;
+  if (trail !== undefined && !(Number.isInteger(trail) && (trail as number) >= 2 && (trail as number) <= LIMITS.trail && (fields?.length ?? 0) >= 2)) {
+    fail(`items[${i}].trail must be 2–${LIMITS.trail}, with latitude and longitude as the first two fields`);
+  }
+  let series: SeriesSpec | undefined;
+  if (raw.series !== undefined) {
+    const sr = raw.series;
+    if (!isRecord(sr) || !Number.isInteger(sr.window_ms) || !Number.isInteger(sr.bucket_ms) || (sr.window_ms as number) < 1000 ||
+      (sr.window_ms as number) > 3_600_000 || (sr.bucket_ms as number) < 100 || (sr.window_ms as number) / (sr.bucket_ms as number) > LIMITS.buckets ||
+      (fields?.length ?? 0) < 1) {
+      fail(`items[${i}].series must be {window_ms: 1000–3600000, bucket_ms ≥ 100, at most ${LIMITS.buckets} buckets} on an item with fields`);
+    }
+    series = { window_ms: sr.window_ms as number, bucket_ms: sr.bucket_ms as number };
+  }
+  return canonicalItem({ topic, fields, hz: raw.hz as boolean | undefined, window_ms: w as number | undefined, trail: trail as number | undefined, series });
 }
 
 export function validateViewSpec(raw: unknown): ViewSpec {
@@ -131,10 +191,14 @@ export function validatePollRequest(raw: unknown): PollRequest {
 
 /** Fixed key order and no undefined members, so equal specs serialize identically. */
 export function canonicalItem(spec: ItemSpec): ItemSpec {
+  if (spec.node !== undefined) return { node: spec.node };
+  if (spec.health !== undefined) return { health: spec.health };
   const out: ItemSpec = { topic: spec.topic };
   if (spec.fields && spec.fields.length > 0) out.fields = spec.fields.map((f) => (f.q === undefined ? { p: f.p } : { p: f.p, q: f.q }));
   if (spec.hz) out.hz = true;
   if (spec.window_ms !== undefined) out.window_ms = spec.window_ms;
+  if (spec.trail !== undefined) out.trail = spec.trail;
+  if (spec.series !== undefined) out.series = { window_ms: spec.series.window_ms, bucket_ms: spec.series.bucket_ms };
   return out;
 }
 

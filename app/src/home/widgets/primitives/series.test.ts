@@ -52,3 +52,18 @@ describe("seriesPath", () => {
     expect(seriesPath([], 10, 10)).toBeNull();
   });
 });
+
+describe("historyPoints", () => {
+  it("draws each bucket's spread, clips to the window, and carries the last value to now", async () => {
+    const { historyPoints } = await import("./series");
+    const h = [
+      { t: 0, min: 1, max: 1, last: 1 }, // older than the window: only its value carries in
+      { t: 500, min: 2, max: 2, last: 2 },
+      { t: 1500, min: 1, max: 5, last: 5 },
+    ];
+    expect(historyPoints(h, 3000, 2000)).toEqual([
+      { t: 1000, v: 2 }, { t: 1500, v: 1 }, { t: 1501, v: 5 }, { t: 3000, v: 5 },
+    ]);
+    expect(historyPoints([], 10, 5)).toEqual([]);
+  });
+});

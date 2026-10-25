@@ -21,7 +21,12 @@ export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, 
   // ≈1 cm of latitude; a quaternion component to 1e-3 (≈0.1° of heading).
   const latField = feed.lat_field ?? "latitude";
   const lonField = feed.lon_field ?? "longitude";
-  const position = useTopic(feed.topic, { fields: [{ p: latField, q: 1e-7 }, { p: lonField, q: 1e-7 }] });
+  // With vehicle state the vehicle keeps the trail: a reload or reconnect redraws it whole.
+  const position = useTopic(feed.topic, {
+    fields: [{ p: latField, q: 1e-7 }, { p: lonField, q: 1e-7 }],
+    trail: trailMax > 0 ? Math.min(trailMax, 5000) : undefined,
+  });
+  const vehicleTrail = position.snapshot?.trail;
   const orientationField = feed.orientation_field ?? "orientation";
   const orientation = useTopic(feed.orientation_topic, {
     fields: orientationField === "orientation"
@@ -70,14 +75,19 @@ export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, 
     const ll = L.latLng(pos.lat, pos.lon);
     layer.marker.setLatLng(ll);
     if (!layer.group.hasLayer(layer.marker)) layer.group.addLayer(layer.marker);
-    if (trailMax > 0) {
+    if (trailMax > 0 && !vehicleTrail) {
       const points = layer.trail.getLatLngs() as L.LatLng[];
       points.push(ll);
       if (points.length > trailMax) points.splice(0, points.length - trailMax);
       layer.trail.setLatLngs(points);
     }
     onPosition(feed.id, pos);
-  }, [layer, message, feed.id, latField, lonField, trailMax, onPosition]);
+  }, [layer, message, feed.id, latField, lonField, trailMax, onPosition, vehicleTrail]);
+
+  useEffect(() => {
+    if (!layer || !vehicleTrail || trailMax <= 0) return;
+    layer.trail.setLatLngs(vehicleTrail.map(([lat, lon]) => L.latLng(lat, lon)));
+  }, [layer, vehicleTrail, trailMax]);
 
   // IMU updates only rotate the inner symbol; Leaflet owns the outer marker's map transform.
   // They never append trail points or move the map.

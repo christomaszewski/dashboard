@@ -2,7 +2,9 @@
 // fields they render); the client registers the set of live items as one view and keeps exactly
 // one poll in flight for it. Each reply carries only the items that changed, so on a slow link
 // replies get rarer and intermediate values are skipped — nothing queues.
-import type { TopicSnapshot } from "../ros/topicStore";
+import type { HistoryPoint, TopicSnapshot } from "../ros/topicStore";
+import type { HealthService } from "../health/types";
+import { healthFromWire } from "./healthWire";
 import { TransportError } from "../transport/reconnecting";
 import type { Transport } from "../transport/types";
 import {
@@ -24,6 +26,12 @@ export interface VehicleSnapshot extends TopicSnapshot {
   /** Present when the vehicle advertises the topic. */
   typeName?: string;
   domainId?: number;
+  /** Node items: the node is in the vehicle's graph. */
+  alive?: boolean;
+  /** Health "*": the vehicle's health service keys. */
+  healthKeys?: readonly string[];
+  /** Health service items: the service on this browser's clocks. */
+  health?: HealthService;
 }
 
 export interface VehicleStateClientOptions {
@@ -51,6 +59,10 @@ interface ClientItem {
   refs: number;
   snapshot: VehicleSnapshot | null;
   linger: ReturnType<typeof setTimeout> | null;
+  /** Trail items: the points so far and the absolute index of the next one. */
+  trail?: { next: number; pts: [number, number][] };
+  /** Series items: buckets by absolute index, on this browser's monotonic clock. */
+  series?: Map<number, HistoryPoint>;
 }
 
 const SUPERSEDED = Symbol("superseded");
@@ -203,6 +215,8 @@ export class VehicleStateClient {
             this.since = 0;
           }
           const started = performance.now();
+          const askedSince = this.since;
+          const askedEpoch = this.epoch;
           const reply = await this.orWake(this.poll(this.view!.id));
           if (reply === SUPERSEDED || gen !== this.generation) continue;
           if ("error" in reply) {
@@ -212,7 +226,8 @@ export class VehicleStateClient {
             if (fresh) await this.orWake(sleep(backoff));
             continue;
           }
-          this.apply(reply, sigs);
+          // A reply to since 0, or from a different epoch, is complete: trails and histories restart.
+          this.apply(reply, sigs, askedSince === 0 || reply.epoch !== askedEpoch);
           backoff = 1000;
           await this.orWake(sleep(Math.max(0, this.minIntervalMs - (performance.now() - started))));
         } catch (e) {
@@ -264,7 +279,7 @@ export class VehicleStateClient {
     return this.query<PollReply>(this.keys.poll, { v: VSTATE_VERSION, view, epoch: this.epoch, since: this.since }, this.holdMs + 6000);
   }
 
-  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[]): void {
+  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[], full: boolean): void {
     this.epoch = reply.epoch;
     this.since = reply.seq;
     this.outage = null;
@@ -279,6 +294,9 @@ export class VehicleStateClient {
         next.message = item.snapshot.message;
         next.stale = true;
       }
+      if (item.spec.trail !== undefined) next.trail = mergeTrail(item, state, full);
+      else if (item.trail) delete item.trail;
+      if (item.spec.series !== undefined) next.history = mergeSeries(item, state, full);
       item.snapshot = next;
       this.notify(item.sig);
     }
@@ -300,6 +318,37 @@ export class VehicleStateClient {
   }
 }
 
+/** New trail points continue the trail when they start where it ends; anything else replaces it. */
+function mergeTrail(item: ClientItem, state: ItemState, full: boolean): readonly [number, number][] | undefined {
+  const t = (item.trail ??= { next: 0, pts: [] });
+  if (state.tr) {
+    const { i, p } = state.tr;
+    if (!full && i === t.next) t.pts.push(...p);
+    else if (!full && i < t.next && i + p.length > t.next) t.pts.push(...p.slice(t.next - i));
+    else if (full || i !== t.next) t.pts = [...p];
+    t.next = i + p.length;
+    const over = t.pts.length - (item.spec.trail ?? t.pts.length);
+    if (over > 0) t.pts.splice(0, over);
+  } else if (full) {
+    t.pts = [];
+    t.next = 0;
+  }
+  return t.pts.slice();
+}
+
+/** Changed buckets replace theirs by index; ages become this browser's clock; the window is kept. */
+function mergeSeries(item: ClientItem, state: ItemState, full: boolean): readonly HistoryPoint[] | undefined {
+  const series = (item.series ??= new Map());
+  if (full) series.clear();
+  const now = performance.now();
+  for (const [index, age, min, max, last] of state.hs ?? []) series.set(index, { t: now - age, min, max, last });
+  const windowMs = item.spec.series?.window_ms ?? Infinity;
+  const ordered = [...series.entries()].sort((a, b) => a[0] - b[0]);
+  // Keep the window, and always the newest bucket (an unchanged value is still the value).
+  for (const [index, point] of ordered.slice(0, -1)) if (now - point.t > windowMs) series.delete(index);
+  return [...series.entries()].sort((a, b) => a[0] - b[0]).map(([, point]) => point);
+}
+
 function toSnapshot(item: ClientItem, state: ItemState): VehicleSnapshot {
   const fields = item.spec.fields ?? [];
   return {
@@ -312,6 +361,9 @@ function toSnapshot(item: ClientItem, state: ItemState): VehicleSnapshot {
     warning: state.w,
     latched: state.l === 1 || undefined,
     stale: state.s === 1 || undefined,
+    alive: state.a === undefined ? undefined : state.a === 1,
+    healthKeys: state.hk,
+    health: state.hd ? healthFromWire(state.hd) : undefined,
   };
 }
 

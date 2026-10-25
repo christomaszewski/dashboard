@@ -52,6 +52,29 @@ export class HealthDiscovery {
     }));
   }
 
+  /** Vehicle state (docs/VEHICLE_STATE.md, "Health"): no subscriptions of its own; services the
+   *  vehicle's discovery assembled arrive through mirror(), and history and events are kept here as
+   *  for locally received ones. */
+  observe(onChange: (services: HealthService[]) => void): void {
+    this.onChange = onChange;
+  }
+
+  mirror(service: HealthService): void {
+    if (this.closed) return;
+    const old = this.services.get(service.key);
+    // Statuses the vehicle re-sent unchanged keep their receive time (within reply jitter).
+    const fresh = service.snapshot.status.filter((s) => {
+      const p = old?.snapshot.status.find((o) => o.name === s.name);
+      return !p || p.receivedAtMs === undefined || s.receivedAtMs === undefined || s.receivedAtMs > p.receivedAtMs + 250;
+    });
+    this.save(service, old, fresh, service.receivedMonoMs);
+    this.emit();
+  }
+
+  forget(key: string): void {
+    if (this.services.delete(key)) this.emit();
+  }
+
   series(key: string, name: string, metric: string): readonly SeriesPoint[] {
     return this.history.get(seriesKey(key, name, metric))?.points ?? NO_POINTS;
   }
@@ -134,8 +157,8 @@ export class HealthDiscovery {
     this.events.splice(200);
   }
 
-  private save(service: HealthService, old?: HealthService, incoming = service.snapshot.status) {
-    service.receivedMonoMs = performance.now();
+  private save(service: HealthService, old?: HealthService, incoming = service.snapshot.status, mono = performance.now()) {
+    service.receivedMonoMs = mono;
     this.services.set(service.key, service);
     for (const status of incoming) {
       const previous = old?.snapshot.status.find((s) => s.name === status.name);

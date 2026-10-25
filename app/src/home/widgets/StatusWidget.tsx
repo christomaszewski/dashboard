@@ -1,4 +1,7 @@
+import { useContext } from "react";
 import type { StatusWidgetConfig } from "../../config/schema";
+import { TopicSourceCtx, useVehicleState } from "../../vstate/VehicleStateContext";
+import { useVehicleItem } from "../../vstate/useVehicleItem";
 import { useStreamsContext } from "../../streams/StreamsContext";
 import { useRosGraphContext } from "../../ros/RosGraphContext";
 import { useTopic } from "../../ros/useTopic";
@@ -53,7 +56,16 @@ function StreamStatus({ widget, compact }: { widget: StatusWidgetConfig; compact
 
 function NodeStatus({ widget, compact }: { widget: StatusWidgetConfig; compact?: boolean }) {
   const { graph } = useRosGraphContext();
-  const present = graph.nodes.some((n) => n.nodeFq === widget.node);
+  // With vehicle state the vehicle answers from its own graph (docs/VEHICLE_STATE.md).
+  const source = useContext(TopicSourceCtx);
+  const vehicle = useVehicleState();
+  const viaVehicle = source === "vehicle" && vehicle.enabled;
+  const fromVehicle = useVehicleItem(viaVehicle && widget.node ? { node: widget.node } : null);
+  if (viaVehicle && fromVehicle?.error)
+    return <StatusCard label={widget.label} level="err" detail="!" mono={fromVehicle.error} compact={compact} />;
+  if (viaVehicle && fromVehicle?.alive === undefined)
+    return <StatusCard label={widget.label} level="idle" detail="checking…" mono={widget.node} compact={compact} />;
+  const present = viaVehicle ? fromVehicle?.alive === true : graph.nodes.some((n) => n.nodeFq === widget.node);
   return (
     <StatusCard label={widget.label} level={present ? "ok" : "err"} detail={present ? "up" : "down"} mono={widget.node} compact={compact} />
   );
