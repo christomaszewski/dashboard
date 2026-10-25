@@ -320,7 +320,8 @@ export async function serveQuery(server: VehicleStateServer, op: "view" | "poll"
     await query.reply(bytes);
     return bytes.length;
   } catch (e) {
-    await query.replyErr(e instanceof Error ? e.message : String(e));
+    // The reply itself can fail (the socket to the bridge is closing): never an unhandled rejection.
+    await query.replyErr(e instanceof Error ? e.message : String(e)).catch(() => undefined);
     return 0;
   }
 }

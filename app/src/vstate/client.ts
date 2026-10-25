@@ -256,7 +256,14 @@ export class VehicleStateClient {
     for (const [index, state] of reply.items) {
       const item = this.items.get(sigs[index] ?? "");
       if (!item) continue; // released since this view was registered
-      item.snapshot = toSnapshot(item, state);
+      const next = toSnapshot(item, state);
+      // Advertised but no sample since the vehicle (re)subscribed — a restarted service, a
+      // re-advertised topic: keep showing the last value, marked stale, instead of blanking it.
+      if (next.message === undefined && state.t !== undefined && !state.e && item.snapshot?.message !== undefined && (item.spec.fields?.length ?? 0) > 0) {
+        next.message = item.snapshot.message;
+        next.stale = true;
+      }
+      item.snapshot = next;
       this.notify(item.sig);
     }
   }

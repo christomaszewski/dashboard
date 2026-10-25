@@ -101,6 +101,24 @@ describe("VehicleStateClient ↔ VehicleStateServer", () => {
     expect(link.calls.filter((c) => c.op === "view")).toHaveLength(2);
   });
 
+  it("keeps the last value, marked stale, when a restarted vehicle has not seen the topic yet", async () => {
+    store.emit(imuKey, { message: { orientation: { z: 0.4 } } });
+    const h = client.acquire(heading);
+    await vi.advanceTimersByTimeAsync(50);
+    expect(client.getSnapshot(h.key)).toMatchObject({ message: { orientation: { z: 0.4 } }, stale: undefined });
+    // The new service subscribes afresh: the topic is advertised, but silent so far.
+    server.close();
+    store.snaps.delete(imuKey);
+    server = newServer("e2");
+    link.server = server;
+    await vi.advanceTimersByTimeAsync(2500);
+    expect(client.getSnapshot(h.key)).toMatchObject({ message: { orientation: { z: 0.4 } }, stale: true, error: undefined });
+    // The first sample replaces it.
+    store.emit(imuKey, { message: { orientation: { z: 0.5 } } });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(client.getSnapshot(h.key)).toMatchObject({ message: { orientation: { z: 0.5 } }, stale: undefined });
+  });
+
   it("marks items while nothing answers and restores them in full afterwards", async () => {
     store.emit(imuKey, { message: { orientation: { z: 0.3 } } });
     const h = client.acquire(heading);

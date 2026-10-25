@@ -170,6 +170,25 @@ describe("ReconnectingTransport", () => {
     expect(await err).toMatchObject({ name: "TransportError", code: "deadline" });
   });
 
+  it("a query rejected by a closed socket is a disconnect, not the far end's answer, and probes at once", async () => {
+    const w = world();
+    await w.t.start();
+    const q = w.t.get("svc/x", { timeoutMs: 5000 }).catch((e) => e);
+    await flush();
+    const pending = w.current().pending.find((p) => p.keyexpr === "svc/x")!;
+    pending.reject(new Error("WebSocket is closed"));
+    expect(await q).toMatchObject({ name: "TransportError", code: "disconnected", message: "WebSocket is closed" });
+    await flush();
+    expect(w.current().probes()).toBe(1);
+    // an application-level failure still reaches the caller as it was
+    const r = w.t.get("svc/y", { timeoutMs: 5000 }).catch((e) => e);
+    await flush();
+    w.current().pending.find((p) => p.keyexpr === "svc/y")!.reject(new Error("bad request"));
+    const err = await r;
+    expect(err).not.toBeInstanceOf(TransportError);
+    expect(err.message).toBe("bad request");
+  });
+
   it("a failed probe drops the link, fails what is in flight at once, refuses new queries, then reconnects and re-declares", async () => {
     const w = world();
     await w.t.start();

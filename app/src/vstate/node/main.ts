@@ -28,11 +28,22 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
   return Promise.race([promise, sleep(ms).then(() => Promise.reject(new Error(`no answer within ${ms} ms`)))]);
 }
 
+// Crash-only: once serving, a closed socket to the bridge ends the process at once (Docker restarts
+// it with a new epoch; every browser re-registers on its next poll). Waiting for the probe instead
+// left pages on "service not reachable" for ~12 s after a bridge restart.
+let serving = false;
+let stopping = false;
+function onSocketEvent(event: string, detail: Record<string, unknown>): void {
+  if (event !== "ws-close" || !serving || stopping) return;
+  log(`bridge socket closed (code ${String(detail.code)}); exiting for a clean restart`);
+  process.exit(1);
+}
+
 /** The bridge may start after us (compose order is not readiness); keep dialing. */
 async function connect(): Promise<ZenohRemoteApiTransport> {
-  for (let delay = 500; ; delay = Math.min(delay * 2, 5000)) {
+  for (let delay = 500; ; delay = Math.min(delay * 2, 2000)) {
     try {
-      return await ZenohRemoteApiTransport.open(locator, undefined, 5000);
+      return await ZenohRemoteApiTransport.open(locator, undefined, 5000, onSocketEvent);
     } catch (e) {
       log(`bridge ${locator} not reachable (${errorText(e)}); retrying in ${delay} ms`);
       await sleep(delay);
@@ -54,7 +65,11 @@ async function main(): Promise<void> {
   let sent = 0;
   const keys = stateKeys(base);
   const queryables = await Promise.all((["view", "poll"] as const).map((op) =>
-    transport.declareQueryable(keys[op], (q) => void serveQuery(server, op, q).then((n) => (sent += n)))));
+    transport.declareQueryable(keys[op], (q) => void serveQuery(server, op, q).then(
+      (n) => void (sent += n),
+      (e) => log(`could not answer a ${op} query (${errorText(e)})`),
+    ))));
+  serving = true;
   log(`connected to ${locator}; serving ${keys.view} and ${keys.poll} (epoch ${server.epoch})`);
 
   const housekeeping = setInterval(() => server.tick(), 1000);
@@ -79,6 +94,7 @@ async function main(): Promise<void> {
   }, 5000);
 
   const shutdown = async () => {
+    stopping = true;
     clearInterval(housekeeping);
     clearInterval(report);
     clearInterval(probe);

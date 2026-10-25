@@ -81,8 +81,14 @@ export function MapFeedLayer({ map, feed, color, visible, trailMax, onPosition, 
 
   // IMU updates only rotate the inner symbol; Leaflet owns the outer marker's map transform.
   // They never append trail points or move the map.
-  const heading = feed.orientation_topic && !orientation.snapshot?.error
+  // A stale orientation is no heading claim: the plain dot. A stale position dims the marker.
+  const heading = feed.orientation_topic && !orientation.snapshot?.error && !orientation.snapshot?.stale
     ? extractHeading(orientation.snapshot?.message, feed) : null;
+  const positionStale = position.snapshot?.stale === true;
+  useEffect(() => {
+    if (!layer) return;
+    layer.symbol.classList.toggle("stale", positionStale);
+  }, [layer, positionStale]);
   useEffect(() => {
     if (!layer) return;
     layer.symbol.classList.toggle("has-heading", heading !== null);

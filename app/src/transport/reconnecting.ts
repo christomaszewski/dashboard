@@ -450,6 +450,12 @@ export class ReconnectingTransport implements Transport {
         });
         void this.probe();
       }
+      // A socket that closed under the query (zenoh-ts rejects with a plain Error) is a link
+      // fault, not the far end's answer: callers keep their state for those. A probe decides now.
+      if (!(e instanceof TransportError) && declarationLinkFailure(e)) {
+        void this.probe();
+        throw new TransportError("disconnected", e instanceof Error ? e.message : String(e));
+      }
       throw e;
     } finally {
       this.pendingQueries -= 1;

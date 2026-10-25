@@ -1306,6 +1306,7 @@ ul.plain {
 .map-vehicle-arrow::after { inset: 4px; background: currentColor; }
 .map-vehicle-symbol.has-heading .map-vehicle-dot { display: none; }
 .map-vehicle-symbol.has-heading .map-vehicle-arrow { display: block; }
+.map-vehicle-symbol.stale { opacity: 0.45; }
 
 .map-overlay {
   position: absolute;
