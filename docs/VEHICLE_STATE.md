@@ -199,6 +199,20 @@ only when a widget asks, downscales it to the widget's `max_width`, and encodes 
   it (dropped 10 s after the last request) and keeps raw bytes, never decoding unwatched samples.
   Bench: a 640×480 `rgb8` camera at 15 Hz plus a 1024×64 `mono16` range image and a 1280×720
   JPEG stream, all at full rate, took 8–14% of one Apple-silicon core and ~60 MB.
+- **On a Jetson AGX Orin** (MAXN, Cortex-A78AE at 2.2 GHz) the same work costs about ten times as
+  much CPU as on Apple silicon. The bench Home, with those three image widgets at 5, 2 and 2 frames
+  a second and eleven other widgets, held `dashboard-state` at 72–95% of one of its 12 cores and
+  43–67 MB. Per frame, on one core:
+
+  | Work | CPU |
+  |---|---|
+  | Receive a 640×480 `rgb8` camera at 15 Hz (13.8 MB/s), before any encode | ~13% of a core |
+  | 640×480 `rgb8` → JPEG | 20 ms |
+  | 640×480 `rgb8` → WebP | 90 ms |
+  | 1280×720 JPEG → 480 wide, JPEG or WebP | 50–60 ms |
+
+  Prefer the default JPEG on Jetson-class CPUs, keep `max_hz` modest, and size `max_width` to the
+  tile. Encodes are shared: more operators on the same widget settings cost nothing extra.
 
 Measured on the bench (real `rmw_zenohd`, Lyrical): the 640×480 camera reached the operator at
 5 frames a second in 31 KB/s (6–7 KB per frame, ~10 ms old on leaving the vehicle) where the raw
@@ -405,6 +419,9 @@ ROS domain 1) from the fleet message image:
 - **Soak:** 20 min over 1 Mbit/s with 3% loss and a 5 s outage every minute, four state clients and
   two image streams, three service restarts: no widget or frame errors, values under 2 s old in 88% of
   samples, `dashboard-state` at 46–80 MB without a trend.
+- **Jetson AGX Orin** (2026-10-25): the same images and bench publisher on an Orin, the browser on
+  a Mac across the LAN. Every phase 2 check below passed there too; image costs are under
+  [Images](#images).
 - **Phase 2** (2026-10-25, Chromium against the same bench): the map trail and a sparkline history
   came back whole after a reload; a health widget showed a `/diagnostics` reporter's level and
   temperature through the vehicle; node status and a service button (`list_parameters`) worked; Home
