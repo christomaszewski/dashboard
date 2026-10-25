@@ -3,28 +3,23 @@
 
 The browser hop is one WebSocket: every subscribed ROS topic crosses it sample by sample at the
 publisher's rate, and on a spotty wireless link that volume queues behind TCP retransmits and
-reaches the page late, in bursts. The instance config can cap it BEFORE the air, in the sidecar,
-with zenoh's downsampling interceptor on the sidecar's ingress from the router:
+reaches the page late, in bursts. The instance config can cap heavy topics BEFORE the air, in the
+sidecar, with zenoh's downsampling interceptor on the sidecar's ingress from the router:
 
-  topic_rate_hz: 5                # ALL topics of this domain together at most 5 msg/s (see below)
-  # -- or --
-  topic_rates:                    # explicit per-topic caps (needs PyYAML on the host)
+  topic_rates:                    # per-topic caps (read with or without PyYAML on the host)
     /imu/data: 10
     /ouster/points: 1
 
-  ros_domain_id: 1                # scopes the rules to `<domain>/**` (rmw_zenoh's topic keys);
+  ros_domain_id: 1                # scopes the rules to `<domain>/<topic>/**` (rmw_zenoh's keys);
                                   #   default: rig's ROS_DOMAIN_ID, exported to every launcher
 
-Zenoh keeps one rate budget per RULE, shared by every key the rule matches. topic_rate_hz is one
-rule for the whole domain, so its budget is shared by all topics and fast topics starve slow ones;
-dash-up warns about it. topic_rates gives each listed topic its own rule and budget.
-
-Global XOR per-topic, on purpose: zenoh applies the FIRST rule whose key expression intersects a
-key, not the most specific one, so a `<domain>/**` cap and a per-topic rule cannot be layered
-predictably. Scoping to the domain keeps the control plane (fleet/<vehicle>/svc/... lifecycle and
-playback state, the rig agent) at full rate: a dropped state publication would be a missed
-transition, not a stale readout. `put` messages only: service queries/replies and liveliness are
-never rate-limited. Rate widgets (`topic_hz`) read the capped rate -- set their min_hz accordingly.
+One rule per topic, on purpose: zenoh keeps ONE rate budget per rule, shared by every key the rule
+matches. The former `topic_rate_hz` (one rule for the whole domain) therefore capped all topics
+together and starved the slow ones -- on a real rmw_zenoh bench a 1 Hz status topic got nothing
+behind a 5 Hz cap next to an IMU -- and is refused now. `put` messages only: service
+queries/replies and liveliness are never rate-limited; lifecycle/playback state and the rig agent
+(fleet/<vehicle>/...) stay at full rate. Rate widgets (`topic_hz`) read the capped rate. For Home
+widgets, `vehicle_state: true` sends only what they show and needs no caps.
 
 Usage: dash_zenoh_config.py <config.yaml> <out.json5> [<template.json5>]
 Prints the rendered file's path when the config carries rate limits, nothing otherwise (dash-up
@@ -53,27 +48,20 @@ def _hz(value, where: str) -> float:
 
 
 def rules(cfg: dict, env: dict) -> list[dict]:
-    """The downsampling rules the config asks for: [] when none. Pure."""
-    rate = cfg.get("topic_rate_hz")
+    """The downsampling rules for `cfg` (empty = no limits)."""
+    if cfg.get("topic_rate_hz") is not None:
+        raise SystemExit("dash_zenoh_config: topic_rate_hz was removed -- zenoh keeps ONE rate budget per "
+                         "rule, so a cap on the whole domain is shared by every topic and starves the slow "
+                         "ones. Cap heavy topics one by one with topic_rates (`/topic: Hz` lines), and use "
+                         "vehicle_state for Home widgets.")
     per = cfg.get("topic_rates")
-    if rate is None and per is None:
+    if per is None:
         return []
-    if rate is not None and per is not None:
-        raise SystemExit("dash_zenoh_config: topic_rate_hz and topic_rates are exclusive -- zenoh applies "
-                         "the first matching rule, so a global cap and per-topic caps cannot be layered")
     domain = cfg.get("ros_domain_id", env.get("ROS_DOMAIN_ID"))
     if domain is None or str(domain).strip() == "" or not str(domain).strip().isdigit():
         raise SystemExit("dash_zenoh_config: topic rate limits need the ROS domain to scope their keys -- "
                          "set ros_domain_id (rig exports ROS_DOMAIN_ID to every launcher)")
     domain = str(domain).strip()
-    if rate is not None:
-        # Zenoh keeps ONE rate budget per downsampling rule, not one per key it matches: this cap is
-        # shared by every topic of the domain, and a fast topic starves the slow ones (bench, 2026-10:
-        # behind topic_rate_hz 5, a 100 Hz IMU took 4 msg/s and a 1 Hz status topic got none).
-        sys.stderr.write("dash_zenoh_config: warning: topic_rate_hz is ONE budget shared by every topic of the "
-                         "domain (zenoh limits per rule, not per key) -- slow topics can starve. Prefer "
-                         "per-topic topic_rates, or vehicle_state for Home widgets.\n")
-        return [{"key_expr": f"{domain}/**", "freq": _hz(rate, "topic_rate_hz")}]
     if not isinstance(per, dict) or not per:
         raise SystemExit("dash_zenoh_config: topic_rates must be a non-empty mapping of topic -> Hz")
     out = []
@@ -119,8 +107,8 @@ def main() -> int:
         except OSError:
             text = ""
         if any(line.startswith("topic_rates:") for line in text.splitlines()):
-            sys.stderr.write("dash_zenoh_config: warning: topic_rates is a mapping and needs PyYAML on this "
-                             "host (the stdlib fallback reads flat keys only) -- no per-topic limits applied\n")
+            sys.stderr.write("dash_zenoh_config: warning: topic_rates could not be read without PyYAML -- "
+                             "write it as indented `/topic: Hz` lines -- no per-topic limits applied\n")
     rule_list = rules(cfg, dict(os.environ))
     if not rule_list:
         return 0

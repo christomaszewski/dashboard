@@ -28,21 +28,20 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # Every subscribed ROS topic crosses the browser's ONE WebSocket sample by sample at the publisher's
 # rate; on a spotty link that volume queues behind TCP retransmits and reaches the page late. Cap it
 # BEFORE the air: dash-up renders these into the sidecar's zenoh config as downsampling rules on its
-# ingress from the router (tools/dash_zenoh_config.py). Generic readouts coalesce at 5 Hz; health
-# diagnostics and 3D use their own ingestion paths. Scoped to
+# ingress from the router (tools/dash_zenoh_config.py), one rule per topic (zenoh keeps one rate
+# budget per rule: a single domain-wide cap, the removed topic_rate_hz, starved slow topics). Generic
+# readouts coalesce at 5 Hz; health diagnostics and 3D use their own ingestion paths. Scoped to
 # the ROS domain, so lifecycle/playback/rig state and every service call stay untouched; `put`
-# messages only. Rate widgets (`topic_hz`) read the capped rate — set their min_hz accordingly.
+# messages only. With vehicle_state: true, Home widgets need no caps at all. Rate widgets (`topic_hz`) read the capped rate — set their min_hz accordingly.
 # These rules apply to the vehicle sidecar path. A laptop bridge connected directly to the router
 # bypasses them; native-link rate limits must run on the vehicle before the wireless hop.
 # Leave DiagnosticArray topics uncapped: many publishers can share /diagnostics, so downsampling
-# can discard another service's status or a brief fault. Prefer topic_rates on high-volume data
-# instead of topic_rate_hz when health reporting is enabled. Native fleet health is not capped.
+# can discard another service's status or a brief fault. Cap only the high-volume topics.
+# Native fleet health is not capped.
 #
-# topic_rate_hz: 5        # CAUTION: one budget for ALL topics of the domain together (zenoh limits per
-#                          #   rule, not per topic), so fast topics starve slow ones -- prefer topic_rates
-# topic_rates:            # OR explicit per-topic caps (needs PyYAML on the host); never both — zenoh
-#   /imu/data: 10         #   applies the first matching rule, so a global cap can't be layered under
-#   /ouster/points: 1     #   per-topic ones
+# topic_rates:            # per-topic caps in Hz, one indented `/topic: Hz` line each (read with or
+#   /imu/data: 10         #   without PyYAML on the host)
+#   /ouster/points: 1
 # ros_domain_id: 1        # scopes the rules (default: rig's ROS_DOMAIN_ID, exported to every launcher)
 
 # bridge_mem_limit: 512m   # memory ceiling for the remote-api bridges (default 512m; 0 = none). The

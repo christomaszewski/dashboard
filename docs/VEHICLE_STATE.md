@@ -354,8 +354,8 @@ Known limits, not changed here:
 - The remote-api plugin queues without bound for a slow client. `bridge_mem_limit` (default 512m)
   bounds the damage — the bridge restarts instead of the vehicle paging — but a direct view of a
   heavy topic over a weak link still fails; use vehicle frames, or `topic_rates` for that topic.
-- `topic_rate_hz` is one budget shared by every topic of the domain (zenoh limits per rule): fast
-  topics starve slow ones. dash-up warns; prefer `topic_rates`.
+- `topic_rate_hz` was removed: zenoh keeps one budget per rule, so a domain-wide cap starved slow
+  topics. dash-up refuses it and points to per-topic `topic_rates`.
 - The private bridge grew ~3–4 MB per `dashboard-state` restart in the soak (per-client state in the
   plugin); a bridge restart clears it.
 - Image rates read on the vehicle are true rates; there is no image ingest cap (zenoh's per-rule

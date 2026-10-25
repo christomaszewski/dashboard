@@ -68,7 +68,7 @@ After granting access, reload to retry localhost. See [MDN's local network acces
 
 The native laptop-to-vehicle transport can be configured for Zenoh compression separately. Bridge
 selection itself does not enable compression or lower message rates. In particular, dashboard
-`topic_rate_hz` / `topic_rates` rules live in the **vehicle remote-api sidecar**: connecting directly
+`topic_rates` rules live in the **vehicle remote-api sidecar**: connecting directly
 to the router bypasses them. To save wireless bandwidth on the native path, apply rate limits on
 the vehicle before that link; filtering after arrival on the laptop does not save airtime. Likewise,
 sidecar-specific access policies do not automatically apply to the independent laptop bridge.

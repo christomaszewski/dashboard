@@ -46,7 +46,7 @@ eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
 # The SAME config file is bind-mounted into dashboard-web (docker-compose.external-config.yml) and
 # served at /config/dashboard.yaml — the app reads its `home:` block + ws_port at load.
 export DASH_CONFIG_HOST="$CONFIG_ABS"
-# Topic rate limits for the browser hop (`topic_rate_hz` / `topic_rates`, tools/dash_zenoh_config.py):
+# Topic rate limits for the browser hop (per-topic `topic_rates`, tools/dash_zenoh_config.py):
 # rendered into a copy of the sidecar's zenoh config as downsampling rules on its ingress from the
 # router, scoped to the ROS domain (rig's ROS_DOMAIN_ID, or `ros_domain_id:`), so high-rate topics
 # reach the wireless link at a viewing rate. No limits configured -> the stock template is mounted.

@@ -80,9 +80,9 @@ topic_rates:
 Rig supplies the ROS domain through `ROS_DOMAIN_ID`; otherwise set top-level `ros_domain_id` to
 the actual domain number. These caps run in the vehicle's `dashboard-zenoh` sidecar before the
 WebSocket hop, preserving the onboard publisher and recorder rates. Widgets watching the same
-orientation topic share one subscription and see the same capped stream. Use either `topic_rates`
-or the global `topic_rate_hz`, never both, and leave shared diagnostic topics such as `/diagnostics`
-uncapped. A laptop bridge connected directly to the router bypasses the vehicle sidecar's caps.
+orientation topic share one subscription and see the same capped stream. Caps are per topic only
+(a single domain-wide cap would share one zenoh budget across all topics and starve the slow ones),
+and leave shared diagnostic topics such as `/diagnostics` uncapped. A laptop bridge connected directly to the router bypasses the vehicle sidecar's caps.
 
 After editing, use the existing Rig deployment or the same configured launcher and Compose project
 to regenerate the configuration and recreate `dashboard-zenoh`, so it loads the new limits and

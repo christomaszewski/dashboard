@@ -29,10 +29,11 @@ def test_no_limits_no_rules():
     assert dz.rules({"web_port": 8080}, {"ROS_DOMAIN_ID": "1"}) == []
 
 
-def test_a_global_cap_is_one_rule_on_the_domain_from_the_config_or_rigs_env():
-    assert dz.rules({"topic_rate_hz": 5, "ros_domain_id": 7}, {}) == [{"key_expr": "7/**", "freq": 5.0}]
-    assert dz.rules({"topic_rate_hz": "2.5"}, {"ROS_DOMAIN_ID": "1"}) == [{"key_expr": "1/**", "freq": 2.5}]
-    assert dz.rules({"topic_rate_hz": 5, "ros_domain_id": 3}, {"ROS_DOMAIN_ID": "1"})[0]["key_expr"] == "3/**"  # config wins
+def test_the_domain_wide_cap_is_refused_with_its_replacement():
+    # zenoh's per-rule budget made it starve slow topics; per-topic rules each get their own
+    _raises(lambda: dz.rules({"topic_rate_hz": 5, "ros_domain_id": 7}, {}), "topic_rate_hz was removed")
+    _raises(lambda: dz.rules({"topic_rate_hz": 5, "topic_rates": {"/a": 1}}, {"ROS_DOMAIN_ID": "1"}), "topic_rates")
+    assert dz.rules({"topic_rates": {"/a": 1}, "ros_domain_id": 3}, {"ROS_DOMAIN_ID": "1"})[0]["key_expr"] == "3/a/**"  # config wins
 
 
 def test_per_topic_caps_map_to_rmw_zenoh_topic_keys():
@@ -41,11 +42,10 @@ def test_per_topic_caps_map_to_rmw_zenoh_topic_keys():
 
 
 def test_refusals_name_the_reason():
-    _raises(lambda: dz.rules({"topic_rate_hz": 5, "topic_rates": {"/a": 1}}, {"ROS_DOMAIN_ID": "1"}), "exclusive")
-    _raises(lambda: dz.rules({"topic_rate_hz": 5}, {}), "ros_domain_id")
-    _raises(lambda: dz.rules({"topic_rate_hz": 0, "ros_domain_id": 1}, {}), "> 0 Hz")
-    _raises(lambda: dz.rules({"topic_rate_hz": "fast", "ros_domain_id": 1}, {}), "rate in Hz")
-    _raises(lambda: dz.rules({"topic_rate_hz": True, "ros_domain_id": 1}, {}), "rate in Hz")
+    _raises(lambda: dz.rules({"topic_rates": {"/a": 1}}, {}), "ros_domain_id")
+    _raises(lambda: dz.rules({"topic_rates": {"/a": 0}, "ros_domain_id": 1}, {}), "> 0 Hz")
+    _raises(lambda: dz.rules({"topic_rates": {"/a": "fast"}, "ros_domain_id": 1}, {}), "rate in Hz")
+    _raises(lambda: dz.rules({"topic_rates": {"/a": True}, "ros_domain_id": 1}, {}), "rate in Hz")
     _raises(lambda: dz.rules({"topic_rates": {"imu": 1}, "ros_domain_id": 1}, {}), "not a ROS topic name")
     _raises(lambda: dz.rules({"topic_rates": {}, "ros_domain_id": 1}, {}), "non-empty mapping")
 
@@ -75,12 +75,17 @@ def test_cli_writes_the_file_and_prints_its_path_only_when_limits_are_set():
         cfg.write_text("service: dashboard\nname: dash\n")
         r = subprocess.run([sys.executable, str(TOOL), str(cfg), str(out)], env=env, capture_output=True, text=True)
         assert r.returncode == 0 and r.stdout == "" and not out.exists(), r
-        cfg.write_text("service: dashboard\nname: dash\ntopic_rate_hz: 5\n")
+        # an indented /topic: Hz block, read with or without PyYAML on the host
+        cfg.write_text("service: dashboard\nname: dash\ntopic_rates:\n  /imu/data: 10   # IMU\n  /ouster/points: 1\nhome:\n  widgets: []\n")
         r = subprocess.run([sys.executable, str(TOOL), str(cfg), str(out)], env=env, capture_output=True, text=True)
         assert r.returncode == 1 and "ros_domain_id" in r.stderr, r
         r = subprocess.run([sys.executable, str(TOOL), str(cfg), str(out)], env={**env, "ROS_DOMAIN_ID": "1"}, capture_output=True, text=True)
         assert r.returncode == 0 and r.stdout.strip() == str(out), r
-        assert '{ key_expr: "1/**", freq: 5 },' in out.read_text()
+        text = out.read_text()
+        assert '{ key_expr: "1/imu/data/**", freq: 10 },' in text and '{ key_expr: "1/ouster/points/**", freq: 1 },' in text
+        cfg.write_text("service: dashboard\nname: dash\ntopic_rate_hz: 5\nros_domain_id: 1\n")
+        r = subprocess.run([sys.executable, str(TOOL), str(cfg), str(out)], env=env, capture_output=True, text=True)
+        assert r.returncode == 1 and "topic_rate_hz was removed" in r.stderr, r
 
 
 if __name__ == "__main__":

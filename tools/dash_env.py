@@ -21,7 +21,14 @@ def load(path: str) -> dict:
         return yaml.safe_load(text) or {}
     except ModuleNotFoundError:
         data: dict = {}
+        block = None  # the one nested mapping read without PyYAML: `topic_rates:` (/topic: Hz)
         for raw in text.splitlines():
+            if block is not None and raw[:1] in (" ", "\t"):
+                m = re.match(r"^\s+(/[^\s:#]+)\s*:\s*([^\s#]+)\s*(#.*)?$", raw)
+                if m:
+                    block[m.group(1)] = m.group(2).strip('"').strip("'")
+                continue
+            block = None
             # Top-level scalars only: skip indented lines (nested keys) and list items.
             if not raw or raw[0] in " \t" or raw.lstrip().startswith("-"):
                 continue
@@ -31,6 +38,8 @@ def load(path: str) -> dict:
             key, _, val = line.partition(":")
             val = val.strip().strip('"').strip("'")
             if val == "":
+                if key.strip() == "topic_rates":
+                    block = data["topic_rates"] = {}
                 continue  # block opener (e.g. `home:`) — no top-level scalar value
             data[key.strip()] = val
         return data

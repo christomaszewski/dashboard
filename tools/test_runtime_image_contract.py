@@ -237,7 +237,7 @@ class LauncherTests(unittest.TestCase):
     def test_agent_rate_limits_and_data_mount_selection_without_writes(self):
         (self.fleet / "vehicle.yaml").write_text("name: fixture\n")
         self.config.write_text("service: dashboard\nname: dash\nrig_agent: true\n"
-                               "topic_rate_hz: 5\nros_domain_id: 7\nclouds_dir: clouds\nrig_data_dir: runs\n")
+                               "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\nclouds_dir: clouds\nrig_data_dir: runs\n")
         before = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*"))
         self.assertEqual(self.inventory()["images"], sorted(BASE_IMAGES + ["dashboard-rig-agent:local"]))
         after = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*") if p != self.log)
@@ -280,7 +280,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(json.loads(result.stdout)["images"], BASE_IMAGES)
 
     def test_inventory_validates_rate_limits_and_rejects_extra_selection(self):
-        self.config.write_text("name: dash\ntopic_rate_hz: 5\n")
+        self.config.write_text("name: dash\ntopic_rates:\n  /imu/data: 5\n")
         result = self.invoke("runtime-images")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("ros_domain_id", result.stderr)
@@ -330,7 +330,7 @@ class LauncherTests(unittest.TestCase):
 
     @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
     def test_real_compose_vehicle_state_round_trip(self):
-        self.config.write_text("name: dash\nvehicle_state: true\nvehicle_id: rover-3\ntopic_rate_hz: 5\nros_domain_id: 7\n")
+        self.config.write_text("name: dash\nvehicle_state: true\nvehicle_id: rover-3\ntopic_rates:\n  /imu/data: 5\nros_domain_id: 7\n")
         env = dict(REAL_DOCKER=DOCKER)
         inventory = self.inventory(**env)
         self.assertEqual(inventory["images"], sorted(BASE_IMAGES + ["dashboard-state:local"]))
@@ -354,7 +354,7 @@ class LauncherTests(unittest.TestCase):
     @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
     def test_real_compose_agent_opt_in_and_native_platform_rejection(self):
         self.config.write_text(f"name: dash\nrig_agent: true\nrig_root: {self.fleet}\n"
-                               "topic_rate_hz: 5\nros_domain_id: 7\n")
+                               "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\n")
         env = dict(REAL_DOCKER=DOCKER)
         inventory = self.inventory(**env)
         self.assertEqual(inventory["images"], sorted(BASE_IMAGES + ["dashboard-rig-agent:local"]))

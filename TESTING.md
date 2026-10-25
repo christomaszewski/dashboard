@@ -82,11 +82,10 @@ switching never drops video or subscriptions:
    page stays; every lifecycle / playback / service button disables), then `connected` on its own
    within ~10 s; readouts, tiles and the graph resume without a reload. A button clicked during the
    outage must fail at once with `disconnected`, never sit at "calling…" (the old behaviour: a query
-   into a dead socket hung forever). With `topic_rate_hz: 5` in the instance YAML, `dash-up config`
-   mounts `var/run/<name>/zenohd-dashboard.json5` and the ROS tab's Hz columns add up to ~5 across
-   all topics (one budget for the whole domain: a 1 Hz topic can get nothing next to an IMU), while
-   lifecycle/playback state and service calls are unaffected. `topic_rates` caps each listed topic
-   on its own.
+   into a dead socket hung forever). With `topic_rates: {/imu/data: 5}` (as indented lines) in the instance
+   YAML, `dash-up config` mounts `var/run/<name>/zenohd-dashboard.json5` and the ROS tab's Hz column
+   tops out at ~5 for `/imu/data` only, while other topics, lifecycle/playback state and service
+   calls are unaffected. `topic_rate_hz` is refused (it shared one budget across all topics).
 5. **Clouds** (lazy — its chunk loads on first click): drag & drop a `.bpf` or `.las` onto the tab
    (drops on other tabs must do nothing), or set `clouds_dir:` in the instance YAML → the tab lists
    the vehicle's `/clouds/` files. **Runs…** (and the idle overlay) browses the rig run registry
