@@ -11,6 +11,8 @@ RUN npm ci
 COPY app/ ./
 # tsc --noEmit && vite build -> /app/dist
 RUN npm run build
+# Maximum-level .br/.gz copies, served as they are (Caddyfile: file_server precompressed).
+RUN node scripts/precompress.mjs dist
 
 FROM caddy:2-alpine
 COPY deploy/Caddyfile /etc/caddy/Caddyfile
