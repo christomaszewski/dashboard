@@ -314,40 +314,55 @@ second old.
 
 ## Open items
 
-Phase 1 was built in a cloud session without a Docker daemon or a vehicle. A bench pass on
-2026-10-24 (Docker Desktop on an arm64 Mac, host networking enabled, a stand-in Zenoh router)
-covered items 1–3:
+Phase 1 was built in a cloud session without a Docker daemon or a vehicle. Bench passes on
+2026-10-24 (Docker Desktop on an arm64 Mac) covered everything short of the vehicle:
 
-1. **Image builds — done.** `./dash-up <config> build` with `vehicle_state: true` builds all three
-   images; `dashboard-state` typechecks during its build. The stack came up with the private bridge
-   on 127.0.0.1 only, `/config/runtime.json` served, and the service logging its keys and per-minute
-   summary. A seven-widget Home showed live values in Chromium at about 2.6 KB/s; stopping the IMU
-   marked its widgets stale within 8 s.
-2. **Docker mode of `tools/test_vehicle_state.mjs` — done.** All checks pass: 54× fewer bytes
-   moving, 111× parked. On a Mac, Docker Desktop's host networking must be enabled.
-3. **`rig certify --require-build-check` — done.** CI passed on this branch (example config, so
-   vehicle state off). Locally, the rig checkout also passed with `vehicle_state: true`, covering
-   both state services, the state image's registry rewrite and the loopback port.
-4. **On a vehicle — open:** the checklist in TESTING.md, "Vehicle state (on-vehicle acceptance)".
-   That includes the laptop-bridge route and a real ROS graph. Types outside the bundled message
-   definitions resolve through a node's `~/get_type_description`, on the vehicle as in the browser.
+1. **Image builds — done.** `./dash-up <config> build` with `vehicle_state: true` builds all images;
+   `dashboard-state` typechecks during its build and installs the pinned `sharp`.
+2. **Docker mode of `tools/test_vehicle_state.mjs` — done.** 54× fewer bytes moving, 111× parked. On a
+   Mac, Docker Desktop's host networking must be enabled.
+3. **`rig certify --require-build-check` — done**, in CI (example config) and locally with
+   `vehicle_state: true`.
+4. **On a vehicle — open:** TESTING.md, "Vehicle state (on-vehicle acceptance)".
 
-Found and fixed on the bench: after `docker restart dashboard-state`, 1 restart in 12 left some
-pages showing `vehicle state: Timeout` for about 9 s. zenoh-ts registers a queryable's handler only
-after the bridge acknowledges the declaration and drops, unanswered, a query that arrives first; the
-querier then waits out its whole deadline. `app/patches/zenoh-ts.mjs` now registers the handler
-first. With it, 25 restarts under 40 polling clients all recovered within 1.2 s.
+What the bench exercised beyond that, against a real `rmw_zenohd` and an rclpy node (Lyrical,
+ROS domain 1) from the fleet message image:
 
-Observed, not changed: after a service restart, a topic that is silent at that moment loses its last
-value and sparkline history in the browser (the new service has never seen it), and the map keeps
-showing a heading arrow while the IMU behind it is stale.
+- **Vendor types:** `sbg_msgs` topics decode through the publisher's `~/get_type_description`, on
+  the vehicle and in the browser, within ~1.3 s — the same call service buttons use, so this also
+  exercised the rmw_zenoh service wire format.
+- **Images:** a 640×480 `rgb8` camera, a 1024×64 `mono16` range image and a 1280×720 JPEG stream as
+  vehicle frames (see [Images](#images)), in Chromium and over simulated radios.
+- **Faults** (each with a page-like client watching): public sidecar restart — values kept, back in
+  1.5 s; private bridge restart — 1.3 s; bridge down 15 s — 2.1 s after it returns; service restart
+  — under 1.2 s across 25 restarts × 40 clients; router restart or outage — no visible effect, as the
+  bridges also hold direct links to rmw_zenoh peers; publisher restart — none.
+- **Laptop bridge** (`--mode client`): Home and frames work through it; cutting its radio kept values
+  without errors, and the page failed over to the vehicle sidecar 6 s in.
+- **Soak:** 20 min over 1 Mbit/s with 3% loss and a 5 s outage every minute, four state clients and
+  two image streams, three service restarts: no widget or frame errors, values under 2 s old in 88% of
+  samples, `dashboard-state` at 46–80 MB without a trend.
+
+Found and fixed on the way: a zenoh-ts race that left some pages on `vehicle state: Timeout` for ~9 s
+after a service restart (handlers now registered before their declaration); every widget flashing
+`WebSocket is closed` on a sidecar restart; ~12 s of `service not reachable` after a private-bridge
+restart; silent topics going blank after a service restart (now held, stale); error flashes during
+1–2 s gaps (a 3 s grace); a stale IMU still drawing a heading.
+
+Known limits, not changed here:
+
+- The remote-api plugin queues without bound for a slow client. `bridge_mem_limit` (default 512m)
+  bounds the damage — the bridge restarts instead of the vehicle paging — but a direct view of a
+  heavy topic over a weak link still fails; use vehicle frames, or `topic_rates` for that topic.
+- `topic_rate_hz` is one budget shared by every topic of the domain (zenoh limits per rule): fast
+  topics starve slow ones. dash-up warns; prefer `topic_rates`.
+- The private bridge grew ~3–4 MB per `dashboard-state` restart in the soak (per-client state in the
+  plugin); a bridge restart clears it.
+- Image rates read on the vehicle are true rates; there is no image ingest cap (zenoh's per-rule
+  budget would starve the slower cameras).
 
 A 1.9.0 bridge binary for `BRIDGE_BIN`: crates.io has `zenoh-plugin-remote-api` 1.9.0 but no
 `zenoh-bridge-remote-api` 1.9.0. Build the 1.10.1 bridge crate with every `zenoh*` dependency pinned
 to `=1.9.0`, or use the `dashboard-zenoh:local` image built from `deploy/Dockerfile.zenoh-remote-api`.
-
-`src/transport/useTransport.test.tsx` failed on `main` in the cloud session (a leftover-timer
-assertion); it passes on the bench with Node 26, so it may be timing-sensitive. This branch does not
-touch it.
 
 Next: item 4 on a vehicle, then phase 2, starting with the vehicle-kept map trail.

@@ -146,14 +146,27 @@ With `vehicle_state: true` in the instance YAML ([docs/VEHICLE_STATE.md](docs/VE
 - `dash-up <config> up -d` prints `vehicle-state=fleet/<vehicle>/dash/<name>/state`, and
   `docker compose ps` lists `dashboard-state` and `dashboard-state-zenoh`.
 - `ss -ltn | grep <state_ws_port>` shows the private bridge on `127.0.0.1` only.
+- `docker inspect -f '{{.HostConfig.Memory}}' <project>-dashboard-zenoh-1` shows the bridge memory
+  ceiling (536870912 = the default `bridge_mem_limit: 512m`).
 - `curl http://<vehicle-ip>:8080/config/runtime.json` returns that key.
-- `docker logs dashboard-state` shows `serving …/view and …/poll`, then a `views= items= topics=`
-  line every minute once a page is open.
+- `docker logs dashboard-state` shows `serving …/view, …/poll and …/frame`, then a `views= items=
+  topics= … frames= encodes=` line every minute once a page is open. No `image frames disabled`.
+- Vendor topics (SBG, NovAtel, VectorNav, project messages) decode in Home widgets and the ROS tab.
+  If one says `no decoder`, its reason names the node that did not answer `~/get_type_description`.
 - Home widgets show values. In the downloaded connection trace (header pill), the `ws-snapshot`
   byte counters grow by a few KB/s, against tens of KB/s or more with `vehicle_state: false` on the
   same Home.
 - Stop one publisher: its widgets dim and say `stale` within about 5 s; others stay live.
-- `docker restart dashboard-state`: widgets recover within a few seconds without a page reload.
+- `docker restart dashboard-state`: widgets keep their values and recover within ~2 s without a page
+  reload; a topic silent at that moment keeps its last value, marked stale.
+- `docker restart dashboard-state-zenoh` (the private bridge): values back within ~2 s.
+- A `ros_image` widget on a real camera shows vehicle frames: the status line reads
+  `<w> × <h> of <source size> · <encoding> · <n> KB`, and the camera costs tens of KB/s in the
+  connection trace, not megabytes. On a weak link it says `reduced for the link` and frames get
+  smaller instead of older. Check a `CompressedImage` topic and, if present, an Ouster `mono16` one.
+- Laptop bridge (docs/LOCAL_BRIDGE.md, started with `--mode client`): the header shows the laptop
+  locator, Home and image widgets work through it, and pulling the radio freezes values with a
+  `reconnecting` pill rather than errors.
 - With two vehicles on one mesh, give each a distinct `vehicle_id`. If two answer the same key,
   every widget says so instead of mixing their data.
 
