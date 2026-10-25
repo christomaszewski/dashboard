@@ -145,4 +145,78 @@ describe("vehicle-kept trails, histories, nodes and health", () => {
     server.tick();
     expect(health.refs).toBe(0);
   });
+
+  describe("a view change", () => {
+    type Poll = { since: number; fresh?: number[] };
+    const polls = () => link.calls.filter((c) => c.op === "poll").map((c) => c.body as Poll);
+    const views = () => link.calls.filter((c) => c.op === "view").length;
+
+    it("keeps the trail flowing and asks only for the new item whole", async () => {
+      const h = client.acquire(trailSpec);
+      for (const lat of [40.1, 40.2, 40.3]) {
+        fix(lat);
+        await advance(300);
+      }
+      volts(24.0);
+      const before = link.bytes;
+      const b = client.acquire(seriesSpec); // another widget appears
+      await advance(100);
+      expect(views()).toBe(2);
+      const first = polls().find((q) => q.fresh !== undefined)!;
+      expect(first.since).toBeGreaterThan(0); // not a since-0 resend of everything
+      expect(first.fresh).toEqual([0]); // the battery item sorts first in the new view
+      expect(client.getSnapshot(b.key)!.message).toEqual({ voltage: 24 });
+      expect(client.getSnapshot(b.key)!.history).toHaveLength(1);
+      // The trail was not sent again: what crossed is the new item, small.
+      expect(link.bytes - before).toBeLessThan(400);
+      fix(40.4);
+      await advance(300);
+      expect(client.getSnapshot(h.key)!.trail).toEqual([[40.2, -79.9], [40.3, -79.9], [40.4, -79.9]]);
+    });
+
+    it("starts over with an older vehicle that does not offer it", async () => {
+      const register = server.register.bind(server);
+      server.register = (raw) => { const r = register(raw); delete r.fresh; return r; };
+      client.acquire(trailSpec);
+      fix(40.1);
+      await advance(300);
+      client.acquire(seriesSpec);
+      await advance(100);
+      const after = polls().slice(-2);
+      expect(after.some((q) => q.since === 0)).toBe(true);
+      expect(after.every((q) => q.fresh === undefined)).toBe(true);
+    });
+
+    it("asks for everything when the vehicle forgot the view", async () => {
+      const h = client.acquire(trailSpec);
+      fix(40.1);
+      await advance(300);
+      fix(40.2);
+      await advance(300);
+      server.close();
+      server = newServer("e1"); // same epoch, no views: as after an eviction
+      link.server = server;
+      fix(40.3);
+      await advance(2500);
+      const last = polls().at(-1)!;
+      expect(last.fresh).toBeUndefined();
+      expect(polls().some((q, i, all) => i > 0 && q.since === 0 && all[i - 1].since > 0)).toBe(true);
+      // The new record's trail replaces the old one; it is not spliced onto it.
+      expect(client.getSnapshot(h.key)!.trail).toEqual([[40.3, -79.9]]);
+    });
+
+    it("on the vehicle: fresh items come whole and at once, the rest as changes", async () => {
+      const raw = server as unknown as { poll(raw: unknown): Promise<PollReply> };
+      fix(40.1);
+      volts(24);
+      const view = server.register({ v: 1, items: [seriesSpec, trailSpec] });
+      expect(view.fresh).toBe(1);
+      const all = await raw.poll({ v: 1, view: view.view, epoch: "e1", since: 0 });
+      const since = "seq" in all ? all.seq : 0;
+      const reply = await raw.poll({ v: 1, view: view.view, epoch: "e1", since, fresh: [1] }); // not held
+      expect("items" in reply && reply.items.map(([i]) => i)).toEqual([1]);
+      expect("items" in reply && reply.items[0][1].tr).toEqual({ i: 0, p: [[40.1, -79.9]] });
+      expect(() => raw.poll({ v: 1, view: view.view, epoch: "e1", since, fresh: [-1] })).toThrow(/poll.fresh/);
+    });
+  });
 });

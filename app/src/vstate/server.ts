@@ -161,7 +161,7 @@ export class VehicleStateServer {
       view = { id, items: spec.items.map((s) => this.retain(s)), lastPolled: this.now() };
       this.views.set(id, view);
     } else view.lastPolled = this.now();
-    return { v: VSTATE_VERSION, view: id, epoch: this.epoch };
+    return { v: VSTATE_VERSION, view: id, epoch: this.epoch, fresh: 1 };
   }
 
   poll(raw: unknown): Promise<PollReply> {
@@ -171,8 +171,10 @@ export class VehicleStateServer {
     if (!view) return Promise.resolve({ v: VSTATE_VERSION, error: "unknown-view" });
     view.lastPolled = this.now();
     const since = req.epoch === this.epoch && req.since <= this.seq ? req.since : 0;
-    const items = this.delta(view, since);
-    if (items.length > 0 || since === 0) return Promise.resolve(this.reply(items));
+    // Items new to the caller come whole and at once; the rest as changes after its `since`.
+    const fresh = since > 0 && req.fresh && req.fresh.length > 0 ? new Set(req.fresh) : undefined;
+    const items = this.delta(view, since, fresh);
+    if (items.length > 0 || since === 0 || fresh) return Promise.resolve(this.reply(items));
     return new Promise((resolve) => {
       const waiter: Waiter = { view, since, resolve, timer: setTimeout(() => this.finish(waiter, []), this.holdMs) };
       this.waiters.add(waiter);
@@ -393,10 +395,11 @@ export class VehicleStateServer {
     for (const rec of view.items) this.release(rec);
   }
 
-  private delta(view: View, since: number): [number, ItemState][] {
+  private delta(view: View, since: number, fresh?: ReadonlySet<number>): [number, ItemState][] {
     const out: [number, ItemState][] = [];
     view.items.forEach((rec, i) => {
-      if (rec.changedSeq > since) out.push([i, this.withExtras(rec, since)]);
+      const from = fresh?.has(i) ? 0 : since;
+      if (rec.changedSeq > from) out.push([i, this.withExtras(rec, from)]);
     });
     return out;
   }

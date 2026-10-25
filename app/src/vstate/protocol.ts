@@ -60,6 +60,8 @@ export interface RegisterReply {
   v: typeof VSTATE_VERSION;
   view: string;
   epoch: string;
+  /** This vehicle honours `poll.fresh`: a caller changing its view may keep its `since`. */
+  fresh?: 1;
 }
 
 export interface PollRequest {
@@ -67,6 +69,8 @@ export interface PollRequest {
   view: string;
   epoch: string;
   since: number;
+  /** View indices of items new to this caller (added since its last view): answered whole, at once. */
+  fresh?: number[];
 }
 
 /** Field values after projection: JSON-safe, with tags for bigint and non-finite floats. */
@@ -184,7 +188,15 @@ export function validatePollRequest(raw: unknown): PollRequest {
   if (typeof raw.view !== "string" || !ID_RE.test(raw.view)) fail("poll.view must be a view id");
   if (typeof raw.epoch !== "string" || raw.epoch.length > 64) fail("poll.epoch must be a string");
   if (!Number.isSafeInteger(raw.since) || (raw.since as number) < 0) fail("poll.since must be a non-negative integer");
-  return { v: VSTATE_VERSION, view: raw.view, epoch: raw.epoch, since: raw.since as number };
+  const req: PollRequest = { v: VSTATE_VERSION, view: raw.view, epoch: raw.epoch, since: raw.since as number };
+  if (raw.fresh !== undefined) {
+    const fresh = raw.fresh;
+    if (!Array.isArray(fresh) || fresh.length > LIMITS.items || !fresh.every((i) => Number.isSafeInteger(i) && i >= 0)) {
+      fail(`poll.fresh must be a list of at most ${LIMITS.items} item indices`);
+    }
+    req.fresh = fresh as number[];
+  }
+  return req;
 }
 
 // ---- identity --------------------------------------------------------------------------------

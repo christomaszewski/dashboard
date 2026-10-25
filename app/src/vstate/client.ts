@@ -18,6 +18,7 @@ import {
   validateViewSpec,
   type ItemSpec,
   type ItemState,
+  type PollRequest,
   type PollReply,
   type RegisterReply,
 } from "./protocol";
@@ -80,6 +81,10 @@ export class VehicleStateClient {
   private view: { id: string; sigs: string[] } | null = null;
   private epoch = "";
   private since = 0;
+  /** Items whose whole state this client holds (as of `since`). By object: a re-created item is new. */
+  private readonly complete = new WeakSet<ClientItem>();
+  /** Of the current view, the items to ask for whole on the next poll. */
+  private fresh = new Set<string>();
   private generation = 0;
   private wakeUp: () => void = () => undefined;
   private woken: Promise<typeof SUPERSEDED> = this.armWake();
@@ -210,24 +215,35 @@ export class VehicleStateClient {
           if (fresh) {
             const reg = await this.orWake(this.register(sigs));
             if (reg === SUPERSEDED || gen !== this.generation) continue;
+            // Our own view change: keep what we have and ask only for the new items whole. The
+            // previous view still holds the shared items on the vehicle, so their trails and
+            // histories continue. Otherwise (first view, new epoch, an older vehicle) start over.
+            const keep = reg.fresh === 1 && reg.epoch === this.epoch && this.since > 0;
             this.view = { id: reg.view, sigs };
             this.epoch = reg.epoch;
-            this.since = 0;
+            if (keep) this.fresh = new Set(sigs.filter((sig) => { const item = this.items.get(sig); return !item || !this.complete.has(item); }));
+            else this.since = 0;
           }
           const started = performance.now();
           const askedSince = this.since;
           const askedEpoch = this.epoch;
-          const reply = await this.orWake(this.poll(this.view!.id));
+          const askedFresh = askedSince > 0 ? this.fresh : new Set<string>();
+          const askedItems = sigs.map((sig) => this.items.get(sig));
+          const reply = await this.orWake(this.poll(this.view!, askedFresh));
           if (reply === SUPERSEDED || gen !== this.generation) continue;
           if ("error" in reply) {
             // The vehicle restarted or expired the view: register again now — but if it forgets a
             // view it just accepted (evicted at its view limit), back off instead of spinning.
+            // Its items may have been dropped and begun anew there: ask for everything.
             this.view = null;
+            this.since = 0;
             if (fresh) await this.orWake(sleep(backoff));
             continue;
           }
           // A reply to since 0, or from a different epoch, is complete: trails and histories restart.
-          this.apply(reply, sigs, askedSince === 0 || reply.epoch !== askedEpoch);
+          this.apply(reply, sigs, askedSince === 0 || reply.epoch !== askedEpoch, askedFresh);
+          // Every item asked about is now whole here: changed ones arrived, the rest already were.
+          for (const item of askedItems) if (item) this.complete.add(item);
           backoff = 1000;
           await this.orWake(sleep(Math.max(0, this.minIntervalMs - (performance.now() - started))));
         } catch (e) {
@@ -275,13 +291,16 @@ export class VehicleStateClient {
     return this.query<RegisterReply>(this.keys.view, { v: VSTATE_VERSION, items }, 5000);
   }
 
-  private poll(view: string): Promise<PollReply> {
-    return this.query<PollReply>(this.keys.poll, { v: VSTATE_VERSION, view, epoch: this.epoch, since: this.since }, this.holdMs + 6000);
+  private poll(view: { id: string; sigs: string[] }, fresh: ReadonlySet<string>): Promise<PollReply> {
+    const body: PollRequest = { v: VSTATE_VERSION, view: view.id, epoch: this.epoch, since: this.since };
+    if (fresh.size > 0) body.fresh = view.sigs.flatMap((sig, i) => (fresh.has(sig) ? [i] : []));
+    return this.query<PollReply>(this.keys.poll, body, this.holdMs + 6000);
   }
 
-  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[], full: boolean): void {
+  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[], full: boolean, fresh: ReadonlySet<string>): void {
     this.epoch = reply.epoch;
     this.since = reply.seq;
+    this.fresh = new Set();
     this.outage = null;
     this.unansweredSince = null;
     for (const [index, state] of reply.items) {
@@ -294,9 +313,10 @@ export class VehicleStateClient {
         next.message = item.snapshot.message;
         next.stale = true;
       }
-      if (item.spec.trail !== undefined) next.trail = mergeTrail(item, state, full);
+      const whole = full || fresh.has(item.sig);
+      if (item.spec.trail !== undefined) next.trail = mergeTrail(item, state, whole);
       else if (item.trail) delete item.trail;
-      if (item.spec.series !== undefined) next.history = mergeSeries(item, state, full);
+      if (item.spec.series !== undefined) next.history = mergeSeries(item, state, whole);
       item.snapshot = next;
       this.notify(item.sig);
     }
