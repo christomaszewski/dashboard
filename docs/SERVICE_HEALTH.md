@@ -1,10 +1,13 @@
 # Sensor and service health specification
 
-Revision 1, 2026-10-08 (dashboard presentation update). This contract lets service authors report measurements, active
+Revision 3, 2026-10-26 (link quality keys and the radio indicator). This contract lets service authors report measurements, active
 conditions, and operational state to the vehicle dashboard. ROS 2 services publish standard
 diagnostics; other services publish native Zenoh JSON. Both inputs use the same semantics.
 The canonical copy lives in dashboard/docs/SERVICE_HEALTH.md; identical copies accompany
-camera-service and ouster. Update the copies together when changing the contract.
+camera-service, ouster and doodle. Update the copies together when changing the contract.
+Revision 2 added the radio keys below (`rf.*`, `links.*`, `link.*`, `mesh.*`, `system.*`), written
+in doodle. Revision 3 adds vendor-neutral link quality keys any radio can publish, and the
+dashboard's radio indicator. Consumers that predate them show these keys as ordinary values.
 
 ## Identity and components
 
@@ -64,6 +67,55 @@ are informational; temporarily unavailable supported measurements need attention
 | `frame_age_s` | s | Age of the most recent data frame |
 | `disk.free_gb`, `disk.free_pct` | GB, percent | Recording filesystem capacity |
 | `uptime_s`, `ptp.state`, `ptp.offset_ns` | s, string, ns | Device uptime and clock synchronization |
+
+Radio keys (Revision 2, Doodle Labs radios). Power values are what the radio reports at its antenna
+port, not a measurement.
+
+| Key | Unit | Meaning |
+|---|---|---|
+| `rf.state` | on/off | Transmitter state |
+| `rf.tx_power_dbm` | dBm | Effective transmit power level |
+| `rf.target`, `rf.target_dbm` | string, dBm | Requested level and what it resolves to now |
+| `rf.converged` | bool | The radio is at the target |
+| `rf.changing` | string | Change in progress, empty otherwise |
+| `rf.startup`, `rf.shutdown` | string | Configured startup and shutdown levels |
+| `rf.tx_power_min_dbm`, `rf.tx_power_max_dbm` | dBm | Supported range on the current channel |
+| `rf.channel`, `rf.frequency_mhz`, `rf.bandwidth_mhz` | -, MHz, MHz | Operating channel |
+| `rf.noise_dbm`, `rf.noise_peak_dbm` | dBm | Noise floor (average, peak) |
+| `rf.channel_activity_pct` | percent | Channel busy time |
+| `rf.lna_status` | string | Vendor LNA state, raw |
+| `rf.auto_power_control`, `rf.auto_power_control_aggressive` | bool | Vendor automatic power control |
+| `rf.ack_power_dbm`, `rf.broadcast_power_dbm` | dBm | Power of ACK and broadcast frames |
+| `rf.ack_power_override`, `rf.broadcast_power_override` | bool | Those differ from the level |
+| `links.stations`, `links.mesh_nodes` | count | Peers in the radio's link report |
+| `links.unidentified` | count | Peer entries without a recognizable address |
+| `link.<field>`, `mesh.<field>` | vendor | One peer's fields as the radio reports them |
+| `link.present`, `link.last_seen_s` | bool, s | Whether the peer is in the latest report |
+| `system.load_1m`, `system.load_5m`, `system.load_15m` | - | Radio CPU load average |
+| `system.memory_total_mb`, `system.memory_free_mb` | MB (10^6 bytes) | Radio memory |
+| `system.firmware`, `system.model`, `system.parent_model`, `system.sub_model`, `system.hostname` | string | Radio identity |
+
+Link quality keys (Revision 3, any radio). Vendor-neutral, so the dashboard can show link
+strength without knowing the radio. Publish them on each peer's component (`link/<peer>`, or
+`mesh/<peer>` with the `mesh.` prefix), next to that peer's vendor fields. A radio that tracks
+one link only (or knows which peer carries the operator) may instead put the `links.*` summary on
+its `links` component. Convert vendor scales at the producer: an RSSI that is not in dBm is a
+vendor field, not `signal_dbm`.
+
+| Key | Unit | Meaning |
+|---|---|---|
+| `link.signal_dbm` | dBm | Received signal strength from this peer |
+| `link.snr_db` | dB | Signal-to-noise ratio of that signal |
+| `link.quality_pct` | percent | Vendor link quality on a 0–100 scale (BATMAN TQ × 100 / 255, for example) |
+| `link.loss_pct` | percent | Packet loss to this peer |
+| `link.rate_mbps` | Mbit/s | Current PHY rate to this peer |
+| `links.signal_dbm`, `links.snr_db`, `links.quality_pct` | dBm, dB, percent | The one link a radio reports, or the operator's |
+| `links.peer` | string | Which peer that summary describes |
+
+Interference is the radio's noise floor (`rf.noise_dbm`) and channel busy time
+(`rf.channel_activity_pct`). Until a producer adopts these keys the dashboard also reads
+`<kind>.rssi`, `<kind>.signal` and `<kind>.rssi_dbm` as dBm when they are between −130 and 0, and
+`mesh.tq` as quality.
 
 Accept only finite numeric measurements, excluding booleans. Convert source units at the
 producer. Ouster mV and mA become V and A; their product divided by 1,000,000 is watts.
@@ -206,7 +258,8 @@ ROS distro serialization and QoS, and recovery across disconnects and restarts.
 
 ## Implementation decisions and validation
 
-Implemented on `feat/health` in camera-service, ouster, and dashboard.
+Implemented on `feat/health` in camera-service, ouster, and dashboard; on `feat/radio-service`
+in doodle.
 
 - Camera retains schema v1 and existing keys. Each provider adds boot, publication, sample,
   age and validity metadata. Query replies age the cached snapshot on the producer's
@@ -278,6 +331,23 @@ chosen RMW/router connectivity across the real network. Tests use simulated hard
 no vehicle configuration, firmware, deployed container, or physical operating mode was
 changed for this implementation. The local runtime test image reuses the existing compiled
 Ouster overlay with the new supervisor files; the full upstream driver was not rebuilt.
+- Doodle publishes from the radio supervisor's own ROS node (`/<namespace>/radio`): `service`
+  from the supervisor's in-memory state every 1 s; `radio`, `links`, `link/<mac>`, `mesh/<mac>`,
+  `system` and `temperature` from a separate 5 s poll on its own radio API session with 2 s
+  request timeouts. A failed call blanks only the values it provides (null plus a metric
+  state); an outage marks every radio component `retrying`, then STALE. Departed peers stay
+  listed for the reporter lifetime as OK with `link.present: false` (a lost peer is not
+  automatically a fault; configure `links.*` limits to make it one). Temperature is
+  explicitly unsupported (the radio has no sensor).
+- The dashboard header shows a small radio indicator for each radio reporter (one with `rf.*` or
+  `links.*` values, or `link/` / `mesh/` components): signal bars and, when the channel is noisy or
+  busy, an interference mark. The bars describe the configured peer, else the strongest peer in the
+  latest report. They come from SNR (reported, or signal minus the noise floor), else signal strength,
+  else link quality; a configured peer that is not heard is zero bars. Hover, focus or tap shows the
+  peer, signal, SNR, quality, loss, rate, noise floor, channel busy time, TX power and peer counts.
+  The radio's health summary adds the same Signal and Interference readings. Both dim to last known
+  when the report is not current; the indicator travels over the link it describes, so a dropped
+  link shows as silence, not as zero bars. Thresholds are presentation only and configurable.
 
 ## Configuration and rollout
 
@@ -310,6 +380,14 @@ health:
   ros_topics: [/diagnostics]     # optional exact allowlist; omit for discovery by type
   ros_domains: [0]              # optional domain allowlist
   ros_stale_after_s: 15         # fallback for ordinary ROS diagnostics
+  radio:                         # optional: the header radio indicator
+    services: [vehicle/mesh]     # radio reporters to show; omit for every one
+    peer: "aa:bb:cc:dd:ee:ff"    # the peer carrying the operator link; omit for the strongest
+    # header: false              # hide the indicator (the health summary still shows the link)
+    # snr_db: [5, 12, 20, 30]    # SNR (dB) for 1–4 bars; also signal_dbm [-90, -80, -70, -60]
+    #                            #   and quality_pct [20, 40, 60, 80] when SNR is not known
+    # noise_dbm: [-88, -80]      # interference moderate / high above these noise floors
+    # busy_pct: [50, 80]         # ... or above these channel busy percentages
 home:
   version: 1
   widgets:

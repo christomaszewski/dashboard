@@ -185,6 +185,13 @@ the dashboard does about a bad link, and what to expect, is in docs/SPOTTY_LINK.
 - Offline shell (only when the page is served over HTTPS or opened on `localhost`): load the page
   once, stop `dashboard-web`, reload → the dashboard opens with its Home layout and live values.
   Over plain `http://<vehicle-ip>` the browser's error page is expected.
+- Radio indicator (with the Doodle service up and a second radio in range): the header shows signal
+  bars next to the connection pill; hover it → the peer's MAC, signal in dBm and SNR, the noise
+  floor and channel busy time. Walk the second radio away → bars drop; pull it → `no peers in
+  range` (or `peer … not heard` with `health.radio.peer`). If the tooltip shows a peer but no signal,
+  the radio's per-peer RSSI field has a name the dashboard does not read yet: copy the
+  `link/<mac>` component's values from the Health tab, and add the name to `peerValues` in
+  `app/src/health/radioLink.ts` (or have the doodle service publish `link.signal_dbm`).
 - A raw view of a heavy topic over a weak link (a `ros_image` with `vehicle_state: false`, the ROS
   tab inspecting a camera): `docker stats` shows the public bridge's memory level off in the tens of
   MB rather than climbing to `bridge_mem_limit`.

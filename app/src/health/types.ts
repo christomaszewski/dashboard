@@ -204,7 +204,10 @@ export function statusCurrent(service: HealthService, status: HealthStatus, nowM
 export function metricUnit(key: string): string | null {
   if (temperatureWhere(key) !== null) return "°C";
   return ({ "supply.voltage_v": "V", "supply.current_a": "A", "supply.power_w": "W",
-    "rf.tx_power_dbm": "dBm", "rf.target_dbm": "dBm" } as Record<string, string>)[key] ?? null;
+    "rf.tx_power_dbm": "dBm", "rf.target_dbm": "dBm", "rf.noise_dbm": "dBm", "rf.noise_peak_dbm": "dBm",
+    "rf.channel_activity_pct": "%", "rf.frequency_mhz": "MHz", "rf.bandwidth_mhz": "MHz" } as Record<string, string>)[key] ??
+    (/^(?:links?|mesh)\.signal_dbm$/.test(key) ? "dBm" : /^(?:links?|mesh)\.snr_db$/.test(key) ? "dB"
+      : /^(?:links?|mesh)\.(?:quality|loss)_pct$/.test(key) ? "%" : /^(?:link|mesh)\.rate_mbps$/.test(key) ? "Mbit/s" : null);
 }
 
 export interface HealthVerdict {

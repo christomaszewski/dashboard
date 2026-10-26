@@ -1,6 +1,8 @@
 import { formatValue, thresholdLevel } from "../home/value";
 import { HealthInstance, temperatureLabel, useTrend, type HealthViewOptions, type Measurement } from "./HealthInstance";
 import { HealthTooltip } from "./HealthTooltip";
+import { RadioDetail, interferenceValue, radioHeadline, strengthValue, useRadioOptions } from "./RadioIndicator";
+import { STRENGTH_WORDS, barsLevel, interferenceLevel, radioLink } from "./radioLink";
 import { healthIssues, observationText } from "./summary";
 import { componentOf, healthVerdict, levelClass, metricUnit, reporterCurrent, selectStatuses, statusCurrent, temperatureWhere,
   type HealthService, type HealthStatus, type HealthValue } from "./types";
@@ -110,10 +112,20 @@ function NavigationIndicator({ service, status, field, nowMs, connected }: {
 function RadioSummary({ service, statuses, nowMs, connected }: {
   service: HealthService; statuses: readonly HealthStatus[]; nowMs: number; connected: boolean;
 }) {
+  const radioOptions = useRadioOptions();
   const control = statuses.find((s) => componentOf(s, service.instance) === "service");
   const radio = statuses.find((s) => componentOf(s, service.instance) === "radio");
-  if (![control, radio].some((s) => s && (service.snapshot.service === "doodle" ||
-    ["rf.tx_power_dbm", "rf.target", "rf.target_dbm", "rf.state"].some((key) => key in s.values)))) return null;
+  const powered = [control, radio].some((s) => s && (service.snapshot.service === "doodle" ||
+    ["rf.tx_power_dbm", "rf.target", "rf.target_dbm", "rf.state"].some((key) => key in s.values)));
+  // Link strength and interference, from the components this view shows.
+  const link = radioLink({ ...service, snapshot: { ...service.snapshot, status: [...statuses] } }, nowMs, radioOptions, connected);
+  const linkFields = link ? [
+    ...(link.bars !== null ? [{ label: "Signal", level: barsLevel(link),
+      text: link.peer && link.bars !== null && !link.rfOff ? [STRENGTH_WORDS[link.bars], strengthValue(link)].filter(Boolean).join(" · ") : radioHeadline(link, radioOptions) }] : []),
+    ...(link.interference !== null ? [{ label: "Interference", level: link.current ? interferenceLevel(link.interference) : "idle" as const,
+      text: [link.interference, interferenceValue(link)].filter(Boolean).join(" · ") }] : []),
+  ] : [];
+  if (!powered && linkFields.length === 0) return null;
 
   // The radio poll owns observed RF state/power. Never replace an off, missing or stale
   // radio observation with the supervisor's independently sampled copy.
@@ -126,7 +138,7 @@ function RadioSummary({ service, statuses, nowMs, connected }: {
   const targetPower = dbm(control?.values["rf.target_dbm"]);
   const targetText = targetName && targetPower && targetName !== targetPower
     ? `${targetName} (${targetPower})` : targetName ?? targetPower;
-  const fields = [
+  const fields = !powered ? [] : [
     ...(observed ? [
       { label: "TX power", key: "rf.tx_power_dbm", text: rf === "off" ? "—" : power,
         status: observed, note: rf === "off" ? "RF off" : "" },
@@ -135,7 +147,15 @@ function RadioSummary({ service, statuses, nowMs, connected }: {
     ...(observed ? [{ label: "RF state", key: "rf.state", text: rf === "on" ? "On" : rf === "off" ? "Off" : null,
       status: observed, note: "" }] : []),
   ];
-  return <div className="health-summary-metrics health-radio-metrics">{fields.map(({ label, key, text, status, note }) => {
+  return <div className="health-summary-metrics health-radio-metrics">{link && linkFields.map(({ label, level, text }) =>
+    <HealthTooltip key={label} className={`health-summary-metric ${level}`}
+      label={`${label}: ${text}${link.current ? "" : ", last known"}`}
+      detail={<RadioDetail service={service} link={link} options={radioOptions} connected={connected} />}>
+      <span className="health-metric-label">{label}</span>
+      <span className={`row-value ${level}`}>{text}</span>
+      {!link.current && <span className="health-metric-quality">last known</span>}
+    </HealthTooltip>)}
+    {fields.map(({ label, key, text, status, note }) => {
     const state = status.values[`health.metric.${key}.state`];
     const current = text !== null && connected && reporterCurrent(service, nowMs) && statusCurrent(service, status, nowMs) &&
       status.values["health.availability"] !== "retrying" && (!state || state === "current");

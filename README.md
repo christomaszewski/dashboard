@@ -316,6 +316,13 @@ TX power, missing readings stay unavailable, and retrying/stale/offline observat
 marked last known independently of the target. These are radio-reported settings, not
 measurements of radiated power. No extra topic or widget configuration is needed.
 
+Any radio reporter also gets a **link indicator** in the header, next to the connection pill:
+signal bars for the configured peer (or the strongest one in the radio's report) and a wave mark
+when the channel is noisy or busy, with peer, signal, SNR, noise floor, channel busy time and TX
+power on hover. Both views add **Signal** and **Interference** readings. Radios feed it with the
+vendor-neutral `link.*` keys in [docs/SERVICE_HEALTH.md](docs/SERVICE_HEALTH.md); Doodle's own
+per-peer `rssi` is read too. `health.radio` in the instance YAML picks the peer and thresholds.
+
 ```yaml
 - type: health
   label: Sensors

@@ -121,6 +121,14 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #   ros_topics: [/diagnostics]   # example allowlist; omit for discovery by type
 #   ros_domains: [0]            # example allowlist; omit for all graph domains
 #   ros_stale_after_s: 15       # positive finite seconds; fallback only
+#   radio:                      # the header's radio link indicator (docs/SERVICE_HEALTH.md)
+#     services: [mesh]          # radio reporters to show (instance or vehicle/instance); omit = all
+#     peer: "aa:bb:cc:dd:ee:ff" # the peer carrying the operator link; omit = the strongest one
+#     header: true              # false hides the header indicator (health views keep the readings)
+#     snr_db: [5, 12, 20, 30]   # 1–4 bars; signal_dbm [-90,-80,-70,-60] and quality_pct
+#                               #   [20,40,60,80] apply when the radio reports no SNR or noise floor
+#     noise_dbm: [-88, -80]     # interference moderate / high above these noise floors
+#     busy_pct: [50, 80]        # ... or above these channel busy percentages
 #
 # To consume an aggregator instead, set ros_topics: [/diagnostics_agg]. Avoid consuming raw and
 # aggregated versions of the same statuses together unless that duplication is intentional.

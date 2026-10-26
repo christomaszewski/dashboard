@@ -1,8 +1,8 @@
 import type { TopicEntry } from "../ros/graph";
 import { parseStatus, type HealthStatus, type HealthValue } from "./types";
 
-const NUMBER = /^(?:health\.(?:sequence|sample_age_s|publish_interval_s|stale_after_s|last_level)|temp\..+_c|supply\.(?:voltage_v|current_a|power_w)|power\.mode_id|rf\.(?:tx_power_dbm|target_dbm)|alerts\.active|alert\.cursor)$/;
-const BOOL = new Set(["alert.active", "alerts.history_gap", "rf.converged", "power.switching"]);
+const NUMBER = /^(?:health\.(?:sequence|sample_age_s|publish_interval_s|stale_after_s|last_level)|temp\..+_c|supply\.(?:voltage_v|current_a|power_w)|power\.mode_id|rf\.(?:tx_power_dbm|target_dbm|tx_power_(?:min|max)_dbm|noise_dbm|noise_peak_dbm|channel_activity_pct|frequency_mhz|bandwidth_mhz|ack_power_dbm|broadcast_power_dbm)|links\.(?:stations|mesh_nodes|unidentified|signal_dbm|snr_db|quality_pct)|(?:link|mesh)\.(?:signal_dbm|snr_db|quality_pct|loss_pct|rate_mbps|last_seen_s)|alerts\.active|alert\.cursor)$/;
+const BOOL = new Set(["alert.active", "alerts.history_gap", "rf.converged", "power.switching", "link.present", "mesh.present"]);
 
 /** Only contract fields are coerced. Generic ROS KeyValue strings retain their meaning. */
 export function diagnosticStatuses(message: Record<string, unknown>): HealthStatus[] {

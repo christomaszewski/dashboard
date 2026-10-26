@@ -9,6 +9,7 @@ import { PlaybackProvider } from "./playback/PlaybackContext";
 import { RigProvider } from "./rig/RigContext";
 import { VehicleStateProvider } from "./vstate/VehicleStateContext";
 import { Shell } from "./shell/Shell";
+import { RadioOptionsCtx } from "./health/RadioIndicator";
 
 function ConnectedApp() {
   const config = useConfig();
@@ -21,6 +22,7 @@ function ConnectedApp() {
   const title = config.phase === "ready" ? config.config.home?.title : undefined;
   const tabs = config.phase === "ready" ? config.config.tabs : undefined;
   const vehicleState = config.phase === "ready" && config.config.vehicle_state === true;
+  const radio = config.phase === "ready" ? config.config.health?.radio : undefined;
   return (
     <TransportProvider locator={vehicleLocator} localLocator={localLocator}>
       <VehicleStateProvider enabled={vehicleState}>
@@ -28,11 +30,13 @@ function ConnectedApp() {
           <RosGraphProvider>
             <LifecycleProvider>
               <HealthProvider>
-                <PlaybackProvider>
-                  <RigProvider>
-                    <Shell title={title} tabs={tabs} />
-                  </RigProvider>
-                </PlaybackProvider>
+                <RadioOptionsCtx.Provider value={radio}>
+                  <PlaybackProvider>
+                    <RigProvider>
+                      <Shell title={title} tabs={tabs} />
+                    </RigProvider>
+                  </PlaybackProvider>
+                </RadioOptionsCtx.Provider>
               </HealthProvider>
             </LifecycleProvider>
           </RosGraphProvider>

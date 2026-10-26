@@ -2325,3 +2325,32 @@ ul.plain {
 .gauge-text.stale {
   opacity: 0.55;
 }
+
+/* ── Radio link indicator (header) ── */
+/* The radio indicator and the connection pill stay together when a narrow header wraps. */
+.topbar-status { display: inline-flex; align-items: center; gap: 0.5rem; margin-left: auto; }
+.radio-indicators { display: inline-flex; align-items: center; gap: 0.35rem; }
+.radio-indicator { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.18em 0.5em; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text-dim); font: inherit; font-size: 0.72rem; cursor: pointer; }
+.radio-indicator:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.radio-indicator.stale { opacity: 0.6; }
+.radio-bars { width: 19px; height: 14px; display: block; }
+.radio-bars rect.off { fill: var(--text-faint); opacity: 0.45; }
+.radio-bars.ok rect.on { fill: var(--ok); }
+.radio-bars.warn rect.on { fill: var(--warn); }
+.radio-bars.err rect.on { fill: var(--err); }
+.radio-bars.idle rect.on { fill: var(--text-dim); }
+/* A link this weak still says so: its empty bars carry the color, unlike "no report". */
+.radio-bars.err rect.off { fill: var(--err); opacity: 0.35; }
+.radio-interference { width: 14px; height: 12px; display: block; stroke-width: 1.6; stroke-linecap: round; }
+.radio-interference.warn { stroke: var(--warn); }
+.radio-interference.err { stroke: var(--err); }
+.radio-interference.idle, .radio-interference.ok { stroke: var(--text-dim); }
+.radio-name { font-family: var(--mono); }
+/* Narrow screens: the header wraps instead of pushing the radio and connection pills off-screen,
+   and drops the locator text (diagnostic detail, not status). */
+@media (max-width: 640px) {
+  .radio-name { display: none; }
+  .topbar { flex-wrap: wrap; row-gap: 0.45rem; padding: 0.55rem 1rem; }
+  .topbar .locator { display: none; }
+}

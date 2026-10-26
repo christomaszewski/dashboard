@@ -16,6 +16,7 @@ is configured, and how to rehearse a bad link on the bench before a vehicle test
 | Camera images | Megabytes per second; frames arrive later and later, then not at all | Vehicle frames: downscaled JPEG/WebP, one request in flight, size stepped down to fit the link | [VEHICLE_STATE.md](VEHICLE_STATE.md#images) |
 | Raw subscriptions (ROS tab, 3D, debug, `vehicle_state: false`) | The bridge buffers without limit and its replies wait behind the backlog | Per-topic `topic_rates`; a bounded, drop-oldest sample lane per client in the bridge; a memory ceiling | [Raw subscriptions](#raw-subscriptions) |
 | Commands | A call that times out may or may not have run; pressing again may repeat it | The outcome is reported as not sent, refused or unknown; after an unknown outcome the next press asks first | [Commands](#commands) |
+| Knowing the link | Nothing says whether the radio is weak or the channel is crowded | A header indicator: signal bars for the operator's peer and an interference mark, from the radio service's health report | [Radio indicator](#radio-indicator) |
 
 ## Opening the page
 
@@ -71,6 +72,25 @@ recorders report it as one of three outcomes:
 After an unknown outcome a service button's next press asks "retry? may repeat" before calling
 again. Calls are never retried automatically. A lifecycle timeout says the transition may still have
 happened; the card shows the vehicle's actual state as it arrives.
+
+## Radio indicator
+
+When a radio service reports health (the Doodle service does), the header shows signal bars next
+to the connection pill, and a wave mark when the channel is noisy or busy. Hover, focus or tap for
+the numbers: the peer, signal, SNR, noise floor, channel busy time, TX power and peer counts. The
+radio's health summary shows the same Signal and Interference readings.
+
+- The bars describe `health.radio.peer` when it is set, else the strongest peer in the radio's
+  report. Set the peer to the operator's ground radio on a mesh, so a strong link to another node
+  does not hide a weak link to the operator.
+- They come from SNR (reported, or signal minus the noise floor), else signal strength, else link
+  quality. Interference is moderate or high when the noise floor or the channel busy time is above
+  its threshold. Thresholds are presentation only; `health.radio` in the instance YAML changes them.
+- The report crosses the link it describes. When the link drops, the indicator dims to last known
+  rather than showing zero bars; the connection pill says `reconnecting`.
+- Any radio service can feed it: the vendor-neutral `link.*` keys are in
+  [SERVICE_HEALTH.md](SERVICE_HEALTH.md). For Doodle's own per-peer fields the dashboard also reads
+  `rssi` and BATMAN `tq`, pending a check with a second radio.
 
 ## Rehearsing a bad link
 
