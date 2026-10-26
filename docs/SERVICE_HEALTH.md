@@ -338,7 +338,14 @@ Ouster overlay with the new supervisor files; the full upstream driver was not r
   state); an outage marks every radio component `retrying`, then STALE. Departed peers stay
   listed for the reporter lifetime as OK with `link.present: false` (a lost peer is not
   automatically a fault; configure `links.*` limits to make it one). Temperature is
-  explicitly unsupported (the radio has no sensor).
+  explicitly unsupported (the radio has no sensor). Each present peer also carries the
+  Revision 3 link quality keys, mapped from its vendor fields: `link.signal_dbm` from `rssi`,
+  `link.snr_db` as reported or derived from the same report's noise floor, `mesh.quality_pct`
+  from BATMAN `tq`, and `link.loss_pct` from `pl_ratio` (a percentage; the radio alerts above
+  60). Values outside a key's range are not mapped. The per-peer format is not yet observed on
+  hardware; these are the fields the radio's linkstate configuration enables. `health.limits`
+  can set thresholds on them, for example `link.signal_dbm: {warn_below: -80}` makes a weak
+  peer WARN.
 - The dashboard header shows a small radio indicator for each radio reporter (one with `rf.*` or
   `links.*` values, or `link/` / `mesh/` components): signal bars and, when the channel is noisy or
   busy, an interference mark. The bars describe the configured peer, else the strongest peer in the

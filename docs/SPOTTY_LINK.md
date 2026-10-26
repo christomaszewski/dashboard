@@ -89,8 +89,9 @@ radio's health summary shows the same Signal and Interference readings.
 - The report crosses the link it describes. When the link drops, the indicator dims to last known
   rather than showing zero bars; the connection pill says `reconnecting`.
 - Any radio service can feed it: the vendor-neutral `link.*` keys are in
-  [SERVICE_HEALTH.md](SERVICE_HEALTH.md). For Doodle's own per-peer fields the dashboard also reads
-  `rssi` and BATMAN `tq`, pending a check with a second radio.
+  [SERVICE_HEALTH.md](SERVICE_HEALTH.md). The Doodle service publishes them from its peers' `rssi`,
+  `pl_ratio` and `tq` fields, and the dashboard reads those vendor fields directly too, for older
+  Doodle images. The exact per-peer format still needs a check with a second radio.
 
 ## Rehearsing a bad link
 
