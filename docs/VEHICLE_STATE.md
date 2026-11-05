@@ -30,16 +30,19 @@ calls. These stay on the direct path (see [What stays direct](#what-stays-direct
 
 ```text
                          vehicle                                          laptop
- ROS nodes ──► rmw_zenoh router ──► dashboard-state-zenoh (127.0.0.1 only)
-                     │                      │ full-rate topics, loopback
-                     │                      ▼
-                     │              dashboard-state (Node)
-                     │                decode · project · quantize · rate · staleness
-                     │                answers   fleet/<vehicle>/dash/<name>/state/{view,poll}
-                     │
-                     └──► dashboard-zenoh (public sidecar) ══ radio ══►  browser
-                                    only the small poll replies cross
+ ROS nodes ──► rmw_zenoh router ──► dashboard-zenoh ══ radio ══► browser
+                                    │   ▲              small projected replies
+             full-rate topics       │   │ view/poll replies
+             over loopback:ws_port  ▼   │
+                                dashboard-state (Node)
+                                  decode · project · quantize · rate · staleness
+                                  fleet/<vehicle>/dash/<name>/state/{view,poll}
 ```
+
+This is the default path with the stock, uncapped public bridge. When the public bridge uses
+generated topic caps or an external custom config, state instead connects to a private stock
+`dashboard-state-zenoh` bridge on loopback. Both bridges reach the same router, so browser queries
+still reach the state service while local ingestion remains uncapped.
 
 ### Widgets declare what they show
 
@@ -158,12 +161,17 @@ look like a frozen number. Value widgets mark stale readings in their detail lin
 the graph builder, `TopicStore` (subscription, decode at 5 Hz, rate, transient-local seeding),
 the decoders and `pluckField`, so field semantics have one implementation.
 
-- It connects to its **own** remote-api bridge, `dashboard-state-zenoh`: the existing
-  `dashboard-zenoh` image, listening on `127.0.0.1` only. The public sidecar's `topic_rates` caps
-  therefore apply to the browser path only, and the vehicle service always sees full-rate data and
-  measures true rates.
+- By default it connects over `ws/127.0.0.1:<ws_port>` to the stock, uncapped `dashboard-zenoh`
+  bridge already used by the browser. Local raw traffic stays on the vehicle and no second bridge
+  process is needed.
+- When `dash-up` has a nonempty effective `DASH_ZENOH_CONFIG` (generated `topic_rates` or an
+  external custom override), it adds `deploy/docker-compose.state-private-bridge.yml`. State then
+  connects to `dashboard-state-zenoh`, using the stock config at `127.0.0.1:<state_ws_port>`.
+  Public-side caps and custom rules therefore do not limit state ingestion or its rate measurements.
+  This also applies to run-only startup: the service still exposes generic state and frame APIs.
 - Crash-only: if its Zenoh session stops answering probes it exits and Docker restarts it. Browsers
-  see `unknown-view` (or a new epoch) and re-register automatically.
+  see `unknown-view` (or a new epoch) and re-register automatically. Sharing couples the services:
+  a public bridge restart also restarts dashboard-state through its socket-close handler.
 
 ### Vehicle identity
 
@@ -248,7 +256,8 @@ Over a simulated radio (`tools/radio_link.sh`), the same 640×480 camera as vehi
 The synthetic test pattern compresses unusually well (~7 KB per frame); a real 640-wide camera frame
 is more like 30–50 KB, so expect deeper size steps and roughly one frame a second at 128 kbit/s.
 
-There is no ingest cap on the private bridge: zenoh's downsampling keeps one budget per rule, so a
+State ingestion is uncapped through either the shared stock bridge or the private stock bridge:
+zenoh's downsampling keeps one budget per rule, so a
 cap on all image topics would be shared between cameras and starve the slower ones.
 
 ### Trails and histories
@@ -337,12 +346,15 @@ The ROS tab and the 3D view open the full graph when shown.
 ## Configuration
 
 ```yaml
-vehicle_state: true        # start dashboard-state + its private bridge; Home widgets use it
+vehicle_state: true        # start dashboard-state; Home widgets use it
 # vehicle_id: rover-3      # default: the vehicle host's short hostname
-# state_ws_port: 10001     # the private bridge's loopback WebSocket port
+# state_ws_port: 10001     # private mode only; shared mode uses ws_port over loopback
 ```
 
 Per widget: `vehicle_state: false` keeps that widget (or panel item) on the direct path.
+Bridge selection is automatic from the effective public Zenoh config; no additional YAML setting
+is needed. On the next `dash-up … up`, `--remove-orphans` removes a previously selected private
+bridge when the public config returns to the stock default.
 
 ## What stays direct
 
@@ -362,7 +374,7 @@ Per widget: `vehicle_state: false` keeps that widget (or panel item) on the dire
    and node status from the vehicle, a lazy browser graph so Home never pulls `@ros2_lv/**`, and
    view changes that resend only the new items.
 3. **Raw ROS is opt-in.** An optional "operator mode" that denies `<domain>/**` on the public sidecar
-   (the state service has its own bridge, so it is unaffected).
+   (a custom public config selects the private state bridge, so state ingestion is unaffected).
 
 The earlier idea of pausing direct subscriptions while Home is hidden is dropped: it would break map
 trails and sparkline history, and with vehicle state a hidden Home costs at most a heartbeat poll
@@ -370,6 +382,8 @@ per couple of seconds.
 
 ## Measured
 
+These historical measurements used separate public and private state bridges, before default
+bridge sharing. They have not been remeasured for the shared topology.
 Real 1.9.0 remote-api bridges on one machine, a publisher shaped like rmw_zenoh (200 Hz
 `sensor_msgs/Imu`, 10 Hz `NavSatFix`), bytes counted on the operator's WebSocket in steady state.
 
@@ -425,16 +439,22 @@ second old.
   widgets on the vehicle path. `app/src/shell/Shell.test.tsx` and
   `app/src/ros/RosGraphContext.test.tsx` cover when the browser's graph is open.
 - Deployment (`tools/test_runtime_image_contract.py`): the overlay, the service key, runtime.json,
-  registry images and the pinned replay model, including a real `docker compose config` round trip.
+  registry images and the pinned replay model, including a real `docker compose config` round trip
+  for shared/private bridge selection. Fixtures copy only Rig's declared launch files to catch
+  missing overlays in packaged deployments.
 - End to end (`tools/test_vehicle_state.mjs`): real bridges, the bundled service, the publisher
   above, and the browser's own client and TopicStore in Node. It checks heading and position against
   the published truth, that only the requested fields arrive, staleness of a silenced topic, and
   recovery from a service restart, and prints the table above (`MOTION=parked` for the parked rows).
+  `BRIDGE_MODE=shared` uses a single bridge for state and operator clients, and also checks native
+  health queries/subscriptions alongside projected updates. The default remains `private` for
+  comparison with the historical benchmark.
 
   ```sh
   cd app && npm ci && cd ..
   BRIDGE_BIN=/path/to/zenoh-bridge-remote-api node tools/test_vehicle_state.mjs   # or Docker:
   node tools/test_vehicle_state.mjs                     # BRIDGE_IMAGE=dashboard-zenoh:local, host network
+  BRIDGE_MODE=shared node tools/test_vehicle_state.mjs    # same bridge for state and operator
   ```
 - Bad links (`tools/test_vehicle_state_link.mjs`, bench only): against a running stack with
   `vehicle_state: true`, it starts two radios and the synthetic publisher, runs each link profile and
@@ -448,7 +468,8 @@ second old.
 ## Open items
 
 Phase 1 was built in a cloud session without a Docker daemon or a vehicle. Bench passes on
-2026-10-24 (Docker Desktop on an arm64 Mac) covered everything short of the vehicle:
+2026-10-24 (Docker Desktop on an arm64 Mac) used separate public and private state bridges and
+covered everything short of the vehicle. The results below describe that historical topology:
 
 1. **Image builds — done.** `./dash-up <config> build` with `vehicle_state: true` builds all images;
    `dashboard-state` typechecks during its build and installs the pinned `sharp`.
@@ -499,8 +520,9 @@ Known limits, not changed here:
   current values and levels come back at once.
 - `topic_rate_hz` was removed: zenoh keeps one budget per rule, so a domain-wide cap starved slow
   topics. dash-up refuses it and points to per-topic `topic_rates`.
-- The private bridge grew ~3–4 MB per `dashboard-state` restart in the soak (per-client state in the
-  plugin); a bridge restart clears it.
+- In the historical separate-bridge soak, the private bridge grew ~3–4 MB per `dashboard-state`
+  restart (per-client state in the plugin); a bridge restart cleared it. Shared-mode growth has
+  not been measured.
 - Image rates read on the vehicle are true rates; there is no image ingest cap (zenoh's per-rule
   budget would starve the slower cameras).
 

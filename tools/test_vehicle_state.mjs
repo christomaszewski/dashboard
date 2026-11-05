@@ -1,5 +1,5 @@
 // End-to-end check of vehicle state (docs/VEHICLE_STATE.md) with real Zenoh: a router that also
-// serves the public WebSocket, the private state bridge, the bundled dashboard-state service, a
+// serves the public WebSocket, optionally a private state bridge, the bundled dashboard-state service, a
 // publisher shaped like rmw_zenoh (200 Hz sensor_msgs/Imu, 10 Hz NavSatFix), and two operator
 // sessions on the public WebSocket — one reading raw topics through the browser's TopicStore, one
 // through vehicle state. Reports the bytes each operator socket carries and checks values,
@@ -9,6 +9,8 @@
 // BRIDGE_IMAGE (default dashboard-zenoh:local). Needs `npm ci` in app/ and Node 22+.
 //   node tools/test_vehicle_state.mjs              # SECONDS=10 per measurement window
 //   MOTION=parked node tools/test_vehicle_state.mjs  # sensor noise only (default: turning + driving)
+//   BRIDGE_MODE=shared node tools/test_vehicle_state.mjs # state and operator on one bridge
+// The default BRIDGE_MODE=private keeps the original two-bridge comparison.
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -16,6 +18,9 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleForNode } from "../app/scripts/build-state.mjs";
 
 const here = (p) => fileURLToPath(new URL(p, import.meta.url));
+if (!["private", "shared"].includes(process.env.BRIDGE_MODE || "private")) {
+  throw new Error("BRIDGE_MODE must be private or shared");
+}
 const dir = await mkdtemp(join(tmpdir(), "vstate-e2e-"));
 try {
   process.env.STATE_BUNDLE = join(dir, "dashboard-state.mjs");

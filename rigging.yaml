@@ -22,7 +22,7 @@ tier: infra           # rig bring-up tier: a vehicle-wide sidecar on the zenoh r
 host_ports:           # config keys rig reads to validate cross-service port clashes
   - web_port          #   http: serves the bundle
   - ws_port           #   remote-api websocket (zenoh-ts)
-  - state_ws_port     #   vehicle_state's private bridge (127.0.0.1 only; default 10001)
+  - state_ws_port     #   optional private bridge (topic caps/custom config; loopback, default 10001)
 
 external_volumes: []  # stateless: Caddy serves static files, the zenoh sidecar is a stateless client
 
@@ -50,7 +50,9 @@ launch_surface:       # files rig vendors/bakes to the vehicle (NOT the source /
   - deploy/docker-compose.rig-agent.yml         # optional rig agent (only when rig_agent: true)
   - deploy/docker-compose.rig-data-web.yml      # the run registry served read-only at /rig-data/ (when data_dir is known)
   - deploy/docker-compose.rig-data.yml          #   + the agent's read-write mount of it
-  - deploy/docker-compose.vehicle-state.yml     # optional vehicle state service + its bridge (vehicle_state: true)
+  - deploy/docker-compose.vehicle-state.yml     # projected widgets or the current-run feed; shares the stock bridge
+  - deploy/docker-compose.state-private-bridge.yml # uncapped state ingest when the public bridge is configured
+  - deploy/docker-compose.state-rig-data.yml    # current-run registry, read-only at its host path
   - deploy/zenohd-dashboard.json5
 
 examples:             # [0] seeds a new instance's editable config (rig pkg add convention)

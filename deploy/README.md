@@ -9,13 +9,29 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 |---|---|---|
 | `dashboard-zenoh` | `zenoh-bridge-remote-api` — a Zenoh **client** of the rmw_zenoh router that exposes a WebSocket for the browser's `zenoh-ts` | `:10000` (ws) |
 | `dashboard-web` | Caddy with the React bundle baked in (a built image — `deploy/Dockerfile.web`) | `:8080` (http) |
-| `dashboard-state` + `dashboard-state-zenoh` | vehicle state (`docs/VEHICLE_STATE.md`, `deploy/Dockerfile.state`): projected Home fields and the current run, sent as changes. Its own bridge uses the stock config and loopback WebSocket. Starts for `vehicle_state: true` or a known registry directory (`docker-compose.vehicle-state.yml`). | `127.0.0.1:10001` (ws, `state_ws_port`) |
+| `dashboard-state` | vehicle state (`docs/VEHICLE_STATE.md`, `deploy/Dockerfile.state`): projected Home fields and the current run, sent as changes. Starts for `vehicle_state: true` or a known registry directory (`docker-compose.vehicle-state.yml`); normally shares the stock public bridge over loopback. | connects to `127.0.0.1:<ws_port>` |
+| `dashboard-state-zenoh` (conditional) | private stock remote-api bridge for state ingestion when the public bridge has a custom config or generated topic caps (`docker-compose.state-private-bridge.yml`). | `127.0.0.1:10001` (ws, `state_ws_port`) |
 | `dashboard-rig-agent` (optional) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, registry browsing, Docker logs, and rig jobs. Selected by Rig/Logs tabs or Rig widgets; `rig_agent: true/false` overrides selection. | — (peer on `:7447`) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over
 `ws://127.0.0.1:10000` when a verified laptop bridge is available, otherwise
 `ws://<vehicle-ip>:10000`. See [laptop bridge setup and fallback](../docs/LOCAL_BRIDGE.md), including
 browser local-network permissions and the different placement required for native-link rate limits.
+
+## State bridge selection
+
+With the stock, uncapped public bridge, `dashboard-state` connects to `dashboard-zenoh` through
+`ws/127.0.0.1:<ws_port>`. Both processes are on the vehicle, so full-rate ingestion stays local.
+Sharing removes the second bridge process; restarting the public bridge also restarts the state
+service through its socket-close recovery, and browsers register their views again.
+
+`dash-up` adds `docker-compose.state-private-bridge.yml` only when its effective
+`DASH_ZENOH_CONFIG` is nonempty: either generated from `topic_rates` or supplied as an external
+custom override. The state service then uses `dashboard-state-zenoh` with the stock config and
+`ws/127.0.0.1:<state_ws_port>`, preserving uncapped local ingestion regardless of public-side
+caps or custom rules. `state_ws_port` applies only in this private mode; no new YAML option is
+needed. The same selection applies when only the current-run registry requires state, because
+the running service still exposes its generic state and frame APIs.
 
 ## Rig agent (opt-in)
 
@@ -57,7 +73,8 @@ known, `dash-up` starts `dashboard-state` with a read-only identity mount from
 Run-only startup leaves other widgets on their configured direct path. A dashboard with neither
 projected widgets nor a registry starts only the base web and Zenoh services.
 `dash-up … up` passes `--remove-orphans` so services no longer selected by the YAML are removed
-from this dashboard's Compose project, including a previously enabled Rig agent. Detached Rig
+from this dashboard's Compose project, including a previously enabled Rig agent or a private state
+bridge no longer needed after returning to the stock public config. Detached Rig
 job runners have no Compose labels and are unaffected.
 
 Rig-agent status/jobs use direct Zenoh publications and initial queries over the browser's

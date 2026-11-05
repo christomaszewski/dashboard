@@ -1,9 +1,10 @@
 // dashboard-state: the vehicle side of vehicle state (docs/VEHICLE_STATE.md). Bundled for Node by
-// `npm run build:state` and run by deploy/Dockerfile.state next to its own loopback-only
-// remote-api bridge, so it sees full-rate topics whatever the public sidecar's rate caps are.
+// `npm run build:state` and run by deploy/Dockerfile.state. dash-up shares the stock uncapped
+// public bridge over loopback; a custom public config selects a private stock bridge instead,
+// so state ingestion sees full-rate topics even when the public sidecar has topic caps.
 //
 //   DASH_STATE_KEY      fleet/<vehicle>/dash/<name>/state   (required; dash-up derives it)
-//   DASH_STATE_LOCATOR  ws/127.0.0.1:10001                  (the private bridge)
+//   DASH_STATE_LOCATOR  ws/127.0.0.1:<ws_port>             (private mode uses state_ws_port)
 //   RIG_DATA_DIR        read-only registry at its absolute host path (optional current-run feed)
 //   VEHICLE_ID          the authoritative vehicle key segment (required with RIG_DATA_DIR)
 import { ZenohRemoteApiTransport } from "../../transport/zenohRemoteApi";
@@ -26,7 +27,7 @@ declare const process: {
 };
 
 const base = process.env.DASH_STATE_KEY ?? "";
-const locator = process.env.DASH_STATE_LOCATOR || "ws/127.0.0.1:10001";
+const locator = process.env.DASH_STATE_LOCATOR || "ws/127.0.0.1:10000";
 const dataDir = process.env.RIG_DATA_DIR;
 
 const log = (message: string) => console.log(`${new Date().toISOString()} dashboard-state: ${message}`);
@@ -40,6 +41,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
 // Crash-only: once serving, a closed socket to the bridge ends the process at once (Docker restarts
 // it with a new epoch; every browser re-registers on its next poll). Waiting for the probe instead
 // left pages on "service not reachable" for ~12 s after a bridge restart.
+// In shared mode, restarting the public bridge therefore restarts this service too.
 let serving = false;
 let stopping = false;
 function onSocketEvent(event: string, detail: Record<string, unknown>): void {

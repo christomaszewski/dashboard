@@ -13,9 +13,13 @@ mounts that directory read-only into `dashboard-state` at its host path (or uses
 changes made by the Rig CLI. No separate run-directory launcher argument is needed. The registry
 watcher checks every two seconds and never scans run contents or computes disk usage.
 
-When a registry directory is available, `dash-up` starts `dashboard-state` and its private bridge
-even if `vehicle_state` is off. In that mode only the current-run header uses the optimized path;
-other widgets retain their configured direct transport. `/config/runtime.json` supplies
+When a registry directory is available, `dash-up` starts `dashboard-state` even if `vehicle_state`
+is off. It shares the stock, uncapped `dashboard-zenoh` bridge over loopback at the configured
+`ws_port`. If the effective `DASH_ZENOH_CONFIG` is nonempty (generated topic caps or an external
+custom override), `dash-up` also selects the private stock bridge overlay so generic state APIs
+retain uncapped ingestion. `state_ws_port` applies only in that private mode. In run-only mode,
+only the current-run header uses the optimized path; other widgets retain their configured direct
+transport. `/config/runtime.json` supplies
 `current_run_state_key` for the header. With `vehicle_state: true`, the header shares the existing
 view and poll connection with the other widgets. A stable run produces no repeated run payload in
 browser polls; ordinary empty poll replies confirm the service is still reachable.

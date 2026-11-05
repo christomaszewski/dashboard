@@ -149,8 +149,10 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
   fi
 fi
 
-# Vehicle state (docs/VEHICLE_STATE.md): projected widgets or a run registry need dashboard-state
-# and its private loopback bridge. Run-only mode leaves the browser's topic/health routing direct.
+# Vehicle state (docs/VEHICLE_STATE.md): projected widgets or a run registry need dashboard-state.
+# Reuse the stock public bridge over loopback; a configured public bridge gets a separate, stock
+# bridge so topic caps or custom policies cannot affect local state ingestion. Run-only mode
+# leaves the browser's topic/health routing direct, but the server still exposes projection APIs.
 # dash_env.py derives the key from Rig's VEHICLE_ID, config vehicle_id, then this host's name.
 VSTATE_STATUS=""
 if [ "${DASH_VEHICLE_STATE:-0}" = 1 ] || [ -n "$DASH_RIG_DATA" ]; then
@@ -167,8 +169,13 @@ if [ "${DASH_VEHICLE_STATE:-0}" = 1 ] || [ -n "$DASH_RIG_DATA" ]; then
     export DASH_STATE_IMAGE="${DASH_STATE_IMAGE:-$DASH_REGISTRY/dashboard-state:$TAG}"
   fi
   OVERLAYS+=(-f "$REPO/deploy/docker-compose.vehicle-state.yml")
+  STATE_BRIDGE="shared"
+  if [ -n "${DASH_ZENOH_CONFIG:-}" ]; then
+    OVERLAYS+=(-f "$REPO/deploy/docker-compose.state-private-bridge.yml")
+    STATE_BRIDGE="private"
+  fi
   [ -n "$DASH_RIG_DATA" ] && OVERLAYS+=(-f "$REPO/deploy/docker-compose.state-rig-data.yml")
-  VSTATE_STATUS=" vehicle-state=$DASH_STATE_KEY"
+  VSTATE_STATUS=" vehicle-state=$DASH_STATE_KEY state-bridge=$STATE_BRIDGE"
 fi
 
 ARGS=("$@"); [ ${#ARGS[@]} -eq 0 ] && ARGS=(up)

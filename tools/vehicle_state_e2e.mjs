@@ -171,24 +171,66 @@ function check(failures, name, ok, detail) {
   if (!ok) failures.push(name);
 }
 
+/** Three remote-api clients on one bridge: a health queryable/publisher, dashboard-state's
+ * subscriber/queryable, and an operator subscribing directly while polling assembled health. */
+async function sharedBridgeHealth(locator, client, vehicle, failures) {
+  label = "health-publisher";
+  const source = await Session.open(Object.assign(new Config(locator, 3000), { openTimeoutMs: 3000 }));
+  const key = "fleet/e2e/svc/camera/health";
+  const snapshot = (temperature) => ({ schema_version: 1, service: "camera-service", instance: "camera",
+    stamp_unix_ns: Date.now() * 1e6, level: 0, status: [{ name: "camera: sensor", level: 0,
+      message: "ok", hardware_id: "synthetic", values: { "temp.sensor_c": temperature } }] });
+  let latest = snapshot(40), queries = 0, directTemperature;
+  let handle, direct;
+  try {
+    await source.declareQueryable(key, { handler: (query) => {
+      queries += 1;
+      void query.reply(key, JSON.stringify(latest)).finally(() => query.finalize()).catch(() => undefined);
+    } });
+    await source.liveliness().declareToken(key);
+    direct = await vehicle.subscribe(`${key}/state`, (sample) => {
+      directTemperature = JSON.parse(new TextDecoder().decode(sample.payload)).status[0].values["temp.sensor_c"];
+    });
+    handle = client.acquire({ health: key });
+    const temperature = () => client.getSnapshot(handle.key)?.health?.snapshot.status[0]?.values["temp.sensor_c"];
+    await until(() => temperature() === 40, "queried health through the shared bridge");
+    check(failures, "shared bridge routes a health query between remote-api clients", queries > 0);
+    latest = snapshot(44);
+    await source.put(`${key}/state`, JSON.stringify(latest));
+    await until(() => directTemperature === 44 && temperature() === 44, "direct samples and projected health updates together");
+    check(failures, "shared bridge delivers native subscriptions alongside vehicle-state polls", true);
+  } finally {
+    handle?.release();
+    await direct?.close().catch(() => undefined);
+    await source.close().catch(() => undefined);
+  }
+}
+
 export async function run() {
+  const mode = process.env.BRIDGE_MODE || "private";
+  if (mode !== "private" && mode !== "shared") throw new Error("BRIDGE_MODE must be private or shared");
   const base = 20_000 + Math.floor(Math.random() * 9_000);
   const ports = { router: base, public: base + 1, private: base + 2 };
   const key = "fleet/e2e/dash/dash/state";
+  const publicLocator = `ws/127.0.0.1:${ports.public}`;
+  const stateLocator = mode === "shared" ? publicLocator : `ws/127.0.0.1:${ports.private}`;
+  // This fixture never reads an operator's real Rig registry, even if their shell configures one.
+  const stateEnv = { ...process.env, RIG_DATA_DIR: "", DASH_STATE_KEY: key, DASH_STATE_LOCATOR: stateLocator };
   const failures = [];
   let pub;
   let serviceLog = "";
   let client;
   let items = [];
   try {
-    // The vehicle: a router that also serves the public WebSocket, and the private state bridge.
+    console.log(`bridge mode: ${mode}; state=${stateLocator}; operator=${publicLocator}`);
+    // Shared mode deliberately has just one bridge process and one WebSocket listener.
     bridge("router", ["--mode", "peer", "--listen", `tcp/127.0.0.1:${ports.router}`, "--no-multicast-scouting", "--ws-port", `127.0.0.1:${ports.public}`]);
     // A client-mode bridge exits when no router answers at startup (compose restarts it on a vehicle).
     label = "probe";
     await (await open(`ws/127.0.0.1:${ports.public}`, "probe")).close();
-    bridge("state", ["--mode", "client", "--connect", `tcp/127.0.0.1:${ports.router}`, "--no-multicast-scouting", "--ws-port", `127.0.0.1:${ports.private}`]);
+    if (mode === "private") bridge("state", ["--mode", "client", "--connect", `tcp/127.0.0.1:${ports.router}`, "--no-multicast-scouting", "--ws-port", `127.0.0.1:${ports.private}`]);
     const service = spawn(process.execPath, [process.env.STATE_BUNDLE], {
-      env: { ...process.env, DASH_STATE_KEY: key, DASH_STATE_LOCATOR: `ws/127.0.0.1:${ports.private}` },
+      env: stateEnv,
       stdio: ["ignore", "pipe", "pipe"],
     });
     service.stdout.on("data", (d) => (serviceLog += d));
@@ -243,6 +285,7 @@ export async function run() {
     check(failures, "vehicle position tracks the moving fix", p !== null && Math.abs(p.lat - now.lat) < 3e-6 && Math.abs(p.lon - now.lon) < 1e-6,
       p ? `Δlat ${((p.lat - now.lat) * 111_320).toFixed(2)} m` : "no fix");
     check(failures, "only requested fields cross the link", Object.keys(client.getSnapshot(items[0].key).message).sort().join() === "orientation,orientation_covariance");
+    if (mode === "shared") await sharedBridgeHealth(publicLocator, client, vehicle, failures);
 
     // 3. Silence becomes state: stop the IMU; the fix keeps publishing.
     pub.stopImu();
@@ -254,7 +297,7 @@ export async function run() {
     service.kill("SIGTERM");
     await sleep(500);
     const again = spawn(process.execPath, [process.env.STATE_BUNDLE], {
-      env: { ...process.env, DASH_STATE_KEY: key, DASH_STATE_LOCATOR: `ws/127.0.0.1:${ports.private}` }, stdio: "ignore" });
+      env: stateEnv, stdio: "ignore" });
     children.push({ name: "dashboard-state (restarted)", kill: () => again.kill("SIGTERM") });
     const before = client.getSnapshot(items[1].key);
     await until(() => client.getSnapshot(items[1].key) !== before && !client.getSnapshot(items[1].key).error, "values after the service restart", 20_000);

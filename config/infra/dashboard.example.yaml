@@ -50,9 +50,11 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #                          #   pages reconnect, instead of the vehicle running out of memory
 
 # ── Vehicle state (optional) — keep ROS traffic on the vehicle ─────────────────────────────────
-# `vehicle_state: true` makes dash-up start dashboard-state and a private bridge for it (loopback
-# only). Home widgets then receive only the fields they show, rounded to their display precision,
-# and only when they change; a slow link skips intermediate values instead of queueing them
+# `vehicle_state: true` makes dash-up start dashboard-state. It shares the stock, uncapped public
+# bridge over localhost at ws_port. Generated topic_rates or an external DASH_ZENOH_CONFIG select
+# a private stock bridge instead, preserving uncapped local ingestion. Home widgets then receive
+# only the fields they show, rounded to their display precision, and only when they change;
+# a slow link skips intermediate values instead of queueing them
 # (docs/VEHICLE_STATE.md). Readouts, panels, gauges, sparklines (with their history), indicators,
 # topic-rate and node status, the map (with its trail), health and ros_image (as vehicle frames) use
 # it; a widget or panel item with `vehicle_state: false` keeps the raw path. The ROS, 3D and Bus
@@ -61,7 +63,7 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 #
 # vehicle_state: true
 # vehicle_id: rover-3      # used when Rig has not supplied VEHICLE_ID; otherwise host's short name
-# state_ws_port: 10001     # the private bridge's WebSocket, bound to 127.0.0.1 (host networking)
+# state_ws_port: 10001     # private-mode only: loopback WebSocket; shared mode uses ws_port
 
 # ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
 # A visible Rig/Logs tab or a rendered `type: rig` Home widget starts dashboard-rig-agent automatically:
@@ -74,8 +76,8 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # this file to the nearest vehicle.yaml and takes data_dir from rig's RIG_DATA_DIR; override below.
 #
 # The current-run header/feed does NOT need this agent. A known registry directory starts
-# dashboard-state with a read-only mount, independently of vehicle_state. The header uses its
-# optimized view/poll connection; other services can query/subscribe to
+# dashboard-state with a read-only mount, independently of vehicle_state, using the same bridge
+# selection above. The header uses its optimized view/poll connection; other services can query/subscribe to
 # fleet/<vehicle_id>/rig/current_run (docs/CURRENT_RUN.md).
 #
 # rig_agent: false                # explicit override; omit to infer from tabs/widgets

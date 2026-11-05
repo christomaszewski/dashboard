@@ -70,6 +70,9 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
 - Vehicle state: `vehicle_state: true` keeps ROS traffic on the vehicle. A small `dashboard-state`
   service projects each Home widget's fields there and sends only changes, one held poll at a time,
   so a slow link skips stale values instead of queueing them ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
+  It shares the stock, uncapped public bridge over localhost at `ws_port`. Generated topic caps or
+  an external custom Zenoh config select a private stock bridge to preserve uncapped ingestion;
+  `state_ws_port` applies only to that private bridge. Run-only startup uses the same selection.
 - Deploy/architecture details + security rationale: [deploy/README.md](deploy/README.md).
 
 ## Run standalone (on the vehicle)

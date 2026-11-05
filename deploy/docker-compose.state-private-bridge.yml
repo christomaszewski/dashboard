@@ -1,0 +1,23 @@
+# Add after docker-compose.vehicle-state.yml when the public bridge uses topic rate limits or
+# a custom DASH_ZENOH_CONFIG. State ingestion must keep its uncapped, stock configuration.
+services:
+  dashboard-state-zenoh:
+    image: ${DASH_ZENOH_IMAGE:-dashboard-zenoh:local}
+    build:                                     # same bridge image, built once and cached
+      context: .
+      dockerfile: Dockerfile.zenoh-remote-api
+      args:
+        ZENOH_TS_REF: ${ZENOH_TS_REF:-1.9.0}
+    network_mode: host
+    command: ["-c", "/config/zenohd-dashboard.json5", "--ws-port", "127.0.0.1:${DASH_STATE_WS_PORT:-10001}"]
+    volumes:
+      - ./zenohd-dashboard.json5:/config/zenohd-dashboard.json5:ro
+    restart: unless-stopped
+    mem_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}
+    memswap_limit: ${DASH_BRIDGE_MEM_LIMIT:-512m}
+
+  dashboard-state:
+    environment:
+      DASH_STATE_LOCATOR: ws/127.0.0.1:${DASH_STATE_WS_PORT:-10001}
+    depends_on:
+      - dashboard-state-zenoh

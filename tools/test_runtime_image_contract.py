@@ -1,7 +1,7 @@
 """Launcher contract regressions; no pull/build/start or running Docker daemon needed.
 
 Run: python3 tools/test_runtime_image_contract.py
-When Docker Compose is installed, two tests also resolve the real deployment files through
+When Docker Compose is installed, tests also resolve the real deployment files through
 `compose config`; a wrapper refuses every Docker operation except config/version and captures
 the final pinned-up model instead of starting it. All files written belong to temporary trees.
 """
@@ -269,7 +269,9 @@ elif args[0] == "compose" and args[-3:] == ["config", "--format", "json"]:
         if any(a.endswith("docker-compose.rig-agent.yml") for a in args):
             names.append("dashboard-rig-agent")
         if any(a.endswith("docker-compose.vehicle-state.yml") for a in args):
-            names += ["dashboard-state", "dashboard-state-zenoh"]
+            names.append("dashboard-state")
+        if any(a.endswith("docker-compose.state-private-bridge.yml") for a in args):
+            names.append("dashboard-state-zenoh")
         variables = {"dashboard-web":"DASH_WEB_IMAGE", "dashboard-zenoh":"DASH_ZENOH_IMAGE", "dashboard-rig-agent":"DASH_AGENT_IMAGE",
                      "dashboard-state":"DASH_STATE_IMAGE", "dashboard-state-zenoh":"DASH_ZENOH_IMAGE"}
         local = {"dashboard-state-zenoh": "dashboard-zenoh:local"}
@@ -293,11 +295,15 @@ class LauncherTests(unittest.TestCase):
         self.root = Path(self.tmp.name)
         self.repo = self.root / "dashboard"
         self.repo.mkdir()
-        shutil.copy2(REPO / "dash-up", self.repo / "dash-up")
-        shutil.copytree(REPO / "deploy", self.repo / "deploy")
-        (self.repo / "tools").mkdir()
-        for name in ("dash_env.py", "dash_zenoh_config.py", "runtime_images.py"):
-            shutil.copy2(REPO / "tools" / name, self.repo / "tools" / name)
+        # Match Rig's vendored/baked launcher, not the full checkout: an undeclared overlay must
+        # fail these real-Compose paths instead of being accidentally supplied by the test fixture.
+        for relative in de.load(str(REPO / "rigging.yaml"))["launch_surface"]:
+            source, target = REPO / relative, self.repo / relative
+            target.parent.mkdir(parents=True, exist_ok=True)
+            if source.is_dir():
+                shutil.copytree(source, target)
+            else:
+                shutil.copy2(source, target)
         self.fleet = self.root / "fleet"
         self.fleet.mkdir()
         self.config = self.fleet / "dash.yaml"
@@ -355,7 +361,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(entry["env"]["DASH_RIG_ROOT"], str(self.fleet))
         self.assertEqual(entry["env"]["DASH_RIG_DATA"], str(self.fleet / "runs"))
         self.assertEqual(entry["env"]["DASH_CLOUDS_HOST"], str(self.fleet / "clouds"))
-        for overlay in ("rig-agent", "rig-data", "rig-data-web", "clouds", "vehicle-state", "state-rig-data"):
+        for overlay in ("rig-agent", "rig-data", "rig-data-web", "clouds", "vehicle-state", "state-rig-data", "state-private-bridge"):
             self.assertIn(str(self.repo / "deploy" / f"docker-compose.{overlay}.yml"), entry["args"])
 
     def test_runtime_inventory_follows_rendered_agent_dependencies_and_overrides(self):
@@ -400,6 +406,31 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(env["DASH_RIG_DATA"], data)
         self.assertIn(str(self.repo / "deploy/docker-compose.state-rig-data.yml"), entry["args"])
         self.assertNotIn(str(self.repo / "deploy/docker-compose.rig-agent.yml"), entry["args"])
+        self.assertNotIn(str(self.repo / "deploy/docker-compose.state-private-bridge.yml"), entry["args"])
+        self.assertFalse((self.repo / "var").exists())
+
+    def test_bridge_selection_depends_on_effective_config_and_state_requirement(self):
+        custom = self.fleet / "custom-zenoh.json5"
+        custom.write_text('{mode: "client"}\n')
+        for mode in ("projected", "run-only", "no-state"):
+            for config in ("stock", "caps", "custom"):
+                with self.subTest(mode=mode, config=config):
+                    body = "name: dash\nvehicle_state: " + ("true" if mode == "projected" else "false") + "\n"
+                    if config == "caps":
+                        body += "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\n"
+                    self.config.write_text(body)
+                    env = {"RIG_DATA_DIR": str(self.fleet / "runs")} if mode == "run-only" else {}
+                    if config == "custom":
+                        env["DASH_ZENOH_CONFIG"] = str(custom)
+                    wanted = mode != "no-state"
+                    self.assertEqual(self.inventory(**env)["images"],
+                                     sorted(BASE_IMAGES + (["dashboard-state:local"] if wanted else [])))
+                    entry = self.entries()[-1]
+                    self.assertEqual(str(self.repo / "deploy/docker-compose.vehicle-state.yml") in entry["args"], wanted)
+                    self.assertEqual(str(self.repo / "deploy/docker-compose.state-private-bridge.yml") in entry["args"],
+                                     wanted and config != "stock")
+                    if config == "custom":
+                        self.assertEqual(entry["env"]["DASH_ZENOH_CONFIG"], str(custom))
         self.assertFalse((self.repo / "var").exists())
 
     def test_unsupported_fallback_config_fails_before_compose_selection(self):
@@ -415,7 +446,7 @@ class LauncherTests(unittest.TestCase):
     def test_vehicle_state_inventory_key_and_registry_without_writes(self):
         self.config.write_text("service: dashboard\nname: dash\nvehicle_state: true\nvehicle_id: rover-3\n")
         before = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*"))
-        # The private bridge reuses the dashboard-zenoh image: one new image, not two.
+        # Uncapped vehicle state shares the browser bridge: only the state image is added.
         self.assertEqual(self.inventory()["images"], sorted(BASE_IMAGES + ["dashboard-state:local"]))
         after = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*") if p != self.log)
         self.assertEqual(after, before)
@@ -424,6 +455,7 @@ class LauncherTests(unittest.TestCase):
         self.assertEqual(entry["env"]["DASH_STATE_WS_PORT"], "10001")
         self.assertEqual(entry["env"]["DASH_RUNTIME_JSON"], str(self.repo / "var/run/dash/runtime.json"))
         self.assertIn(str(self.repo / "deploy/docker-compose.vehicle-state.yml"), entry["args"])
+        self.assertNotIn(str(self.repo / "deploy/docker-compose.state-private-bridge.yml"), entry["args"])
         result = self.inventory(RIG_IMAGE_REGISTRY="localhost:5000", RIG_IMAGE_TAG="fleet")
         self.assertEqual(result["images"], sorted(f"localhost:5000/{n}:fleet" for n in ("dashboard-state", "dashboard-web", "dashboard-zenoh")))
 
@@ -486,6 +518,7 @@ class LauncherTests(unittest.TestCase):
         result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(inventory["images"]), **env)
         self.assertEqual(result.returncode, 0, result.stderr)
         frozen = self.entries()[-1]["model"]
+        self.assertEqual(set(frozen["services"]), {"dashboard-web", "dashboard-zenoh", "dashboard-state"})
         web = frozen["services"]["dashboard-web"]
         self.assertEqual({v["target"]: v["source"] for v in web["volumes"]}, {
             "/config/dashboard.yaml": str(self.config), "/clouds": str(self.fleet / "clouds"),
@@ -498,7 +531,8 @@ class LauncherTests(unittest.TestCase):
 
     @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
     def test_real_compose_vehicle_state_round_trip(self):
-        self.config.write_text("name: dash\nvehicle_state: true\nvehicle_id: rover-3\ntopic_rates:\n  /imu/data: 5\nros_domain_id: 7\n")
+        self.config.write_text("name: dash\nvehicle_state: true\nvehicle_id: rover-3\nws_port: 10333\nstate_ws_port: 10444\n"
+                               "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\n")
         env = dict(REAL_DOCKER=DOCKER)
         inventory = self.inventory(**env)
         self.assertEqual(inventory["images"], sorted(BASE_IMAGES + ["dashboard-state:local"]))
@@ -511,17 +545,89 @@ class LauncherTests(unittest.TestCase):
         self.assertIn({"target": "/config/runtime.json", "source": str(runtime)},
                       [{"target": v["target"], "source": v["source"]} for v in services["dashboard-web"]["volumes"]])
         state, bridge = services["dashboard-state"], services["dashboard-state-zenoh"]
+        self.assertEqual(set(services), {"dashboard-web", "dashboard-zenoh", "dashboard-state", "dashboard-state-zenoh"})
         self.assertEqual(state["environment"], {"DASH_STATE_KEY": "fleet/rover-3/dash/dash/state",
-                                                "DASH_STATE_LOCATOR": "ws/127.0.0.1:10001", "VEHICLE_ID": "rover-3"})
+                                                "DASH_STATE_LOCATOR": "ws/127.0.0.1:10444", "VEHICLE_ID": "rover-3"})
+        self.assertIn("dashboard-state-zenoh", state["depends_on"])
         self.assertEqual(bridge["image"], services["dashboard-zenoh"]["image"])  # one pinned bridge image
-        self.assertEqual(bridge["command"][-2:], ["--ws-port", "127.0.0.1:10001"])
+        self.assertEqual(bridge["command"][-2:], ["--ws-port", "127.0.0.1:10444"])
+        self.assertEqual(services["dashboard-zenoh"]["command"][-2:], ["--ws-port", "10333"])
         # The private bridge always gets the stock config: the browser path's rate limits never apply.
         self.assertEqual([v["source"] for v in bridge["volumes"]], [str(self.repo / "deploy/zenohd-dashboard.json5")])
         self.assertNotEqual(services["dashboard-zenoh"]["volumes"][0]["source"], bridge["volumes"][0]["source"])
 
     @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
+    def test_real_compose_private_to_shared_pinned_replay_removes_optional_bridge(self):
+        shared = "name: dash\nvehicle_state: true\nvehicle_id: rover-3\nws_port: 10333\nstate_ws_port: 10444\n"
+        self.config.write_text(shared + "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\n")
+        env = dict(REAL_DOCKER=DOCKER, COMPOSE_PROJECT_NAME="dash-vehicle-fixture")
+        inventory = self.inventory(**env)
+        pinned = pins(inventory["images"])
+        result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pinned, **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        before = self.entries()[-1]["model"]
+        self.assertIn("dashboard-state-zenoh", before["services"])
+        # An old generated file on disk must not keep the private bridge selected after caps go.
+        self.assertTrue((self.repo / "var/run/dash/zenohd-dashboard.json5").is_file())
+        self.config.write_text(shared)
+        self.assertEqual(self.inventory(**env), inventory)
+        result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pinned, **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        entry = self.entries()[-1]
+        self.assertEqual(entry["args"].count("--remove-orphans"), 1)
+        frozen = entry["model"]
+        self.assertEqual(frozen["name"], "dash-vehicle-fixture")
+        services = frozen["services"]
+        self.assertEqual(set(services), {"dashboard-web", "dashboard-zenoh", "dashboard-state"})
+        self.assertEqual(services["dashboard-state"]["environment"]["DASH_STATE_LOCATOR"], "ws/127.0.0.1:10333")
+        self.assertEqual(set(services["dashboard-state"]["depends_on"]), {"dashboard-zenoh"})
+        self.assertEqual(services["dashboard-zenoh"]["command"][-2:], ["--ws-port", "10333"])
+        self.assertEqual([volume["source"] for volume in services["dashboard-zenoh"]["volumes"]],
+                         [str(self.repo / "deploy/zenohd-dashboard.json5")])
+        for name, active in services.items():
+            self.assertEqual(active["image"], before["services"][name]["image"])
+            self.assertEqual(active["platform"], "linux/arm64")
+            self.assertEqual(active["pull_policy"], "never")
+            self.assertNotIn("build", active)
+        probe = subprocess.run([DOCKER, "compose", "-f", "-", "config", "--format", "json"],
+                               input=json.dumps(frozen), capture_output=True, text=True, timeout=30)
+        self.assertEqual(probe.returncode, 0, probe.stderr)
+        self.assertEqual(json.loads(probe.stdout)["services"], services)
+
+    @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
+    def test_real_compose_custom_config_and_run_only_caps_keep_private_ingress(self):
+        custom = self.fleet / "custom-zenoh.json5"
+        custom.write_text('{mode: "client", connect: {endpoints: ["tcp/localhost:7447"]}}\n')
+        for mode, config in (("projected", "custom"), ("run-only", "custom"), ("run-only", "caps")):
+            with self.subTest(mode=mode, config=config):
+                body = "name: dash\nws_port: 10333\nstate_ws_port: 10444\nvehicle_state: " + ("true" if mode == "projected" else "false") + "\n"
+                env = dict(REAL_DOCKER=DOCKER)
+                if mode == "run-only":
+                    env["RIG_DATA_DIR"] = str(self.fleet / "runs")
+                if config == "custom":
+                    env["DASH_ZENOH_CONFIG"] = str(custom)
+                else:
+                    body += "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\n"
+                self.config.write_text(body)
+                inventory = self.inventory(**env)
+                self.assertEqual(inventory["images"], sorted(BASE_IMAGES + ["dashboard-state:local"]))
+                result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(inventory["images"]), **env)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                services = self.entries()[-1]["model"]["services"]
+                self.assertEqual(set(services), {"dashboard-web", "dashboard-zenoh", "dashboard-state", "dashboard-state-zenoh"})
+                state, private, public = (services[name] for name in ("dashboard-state", "dashboard-state-zenoh", "dashboard-zenoh"))
+                self.assertEqual(state["environment"]["DASH_STATE_LOCATOR"], "ws/127.0.0.1:10444")
+                self.assertIn("dashboard-state-zenoh", state["depends_on"])
+                self.assertEqual(private["command"][-2:], ["--ws-port", "127.0.0.1:10444"])
+                self.assertEqual(private["image"], public["image"])
+                self.assertEqual([v["source"] for v in private["volumes"]], [str(self.repo / "deploy/zenohd-dashboard.json5")])
+                expected_public = custom if config == "custom" else self.repo / "var/run/dash/zenohd-dashboard.json5"
+                self.assertEqual([v["source"] for v in public["volumes"]], [str(expected_public)])
+
+    @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
     def test_real_compose_run_only_state_mount_and_identity(self):
-        self.config.write_text("name: dash\nvehicle_state: false\nrig_agent: false\nvehicle_id: ignored-config\n")
+        self.config.write_text("name: dash\nvehicle_state: false\nrig_agent: false\nvehicle_id: ignored-config\n"
+                               "ws_port: 10333\nstate_ws_port: 10444\n")
         data = str(self.fleet / "records")
         env = dict(REAL_DOCKER=DOCKER, RIG_DATA_DIR=data, VEHICLE_ID="rover.3")
         inventory = self.inventory(**env)
@@ -529,8 +635,10 @@ class LauncherTests(unittest.TestCase):
         result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(inventory["images"]), **env)
         self.assertEqual(result.returncode, 0, result.stderr)
         services = self.entries()[-1]["model"]["services"]
-        self.assertNotIn("dashboard-rig-agent", services)
+        self.assertEqual(set(services), {"dashboard-web", "dashboard-zenoh", "dashboard-state"})
         state = services["dashboard-state"]
+        self.assertEqual(state["environment"]["DASH_STATE_LOCATOR"], "ws/127.0.0.1:10333")
+        self.assertEqual(set(state["depends_on"]), {"dashboard-zenoh"})
         self.assertEqual(state["environment"]["VEHICLE_ID"], "rover.3")
         self.assertEqual(state["environment"]["RIG_DATA_DIR"], data)
         self.assertEqual(state["volumes"], [{"type": "bind", "source": data, "target": data,
