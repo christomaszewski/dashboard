@@ -35,6 +35,8 @@ const camera = (vehicleId = "truck", instance = "front"): LifecycleService => ({
 const health = (state = "inactive", vehicleId = "truck", instance = "front"): HealthService => ({ key: `fleet/${vehicleId}/svc/${instance}/health`, vehicleId, instance, alive: true, receivedAtMs: Date.now(),
   snapshot: { schema_version: 1, service: "camera-service", instance, stamp_unix_ns: 0, level: 0,
     status: ["stream", "recording"].map<HealthStatus>(name => ({ name: `${instance}: ${name}`, level: 0, hardware_id: "", message: "OK", values: name === "recording" ? { state, enabled: true, frames: state === "active" ? 10 : 0 } : {} as HealthStatus["values"] })) } });
+const genericHealth = (topic = "other_topic", domain = 4): HealthService => ({ ...health("inactive", `ROS domain ${domain}`),
+  key: `ros2/${domain}/%2F${topic}/front`, source: "ros2", sourceLabel: `ROS 2 · domain ${domain} · /${topic}` });
 const button = (name: string) => screen.getByRole("button", { name }) as HTMLButtonElement;
 const commands = () => call.mock.calls.filter(args => !args[2].endsWith("/is_paused"));
 const openIssues = () => {
@@ -198,6 +200,75 @@ it("uses the live identity for both camera status and Stop when another identity
   fireEvent.click(button("Stop recording")); await tick();
   expect(change).toHaveBeenCalledExactlyOnceWith(world.transport, "fleet/truck/svc/front/lifecycle", "deactivate", { expected: undefined });
   expectQuiet();
+});
+
+it("starts and stops the fleet camera when generic ROS diagnostics reuse its instance name", async () => {
+  world.healths.push(genericHealth());
+  const widget = config([{ type: "camera_recording", service: "front", label: "Front" }]);
+  const view = render(<PreflightWidget widget={widget} />); await tick();
+  expect(button("Front: Camera up, not recording")).toBeTruthy();
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).toHaveBeenCalledExactlyOnceWith(world.transport, "fleet/truck/svc/front/lifecycle", "activate", { expected: undefined });
+  expectQuiet();
+  world.healths.push(genericHealth());
+  view.rerender(<PreflightWidget widget={widget} />); await tick();
+  expect(button("Front: Recording").className).toContain("ok");
+  fireEvent.click(button("Stop recording")); await tick();
+  expect(change.mock.calls.map(args => [args[1], args[2]])).toEqual([
+    ["fleet/truck/svc/front/lifecycle", "activate"], ["fleet/truck/svc/front/lifecycle", "deactivate"],
+  ]);
+  expectQuiet();
+});
+
+it("does not borrow generic health for a uniquely identified lifecycle camera", async () => {
+  world.healths = [genericHealth()];
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />); await tick();
+  expect(button("Front: No health report").className).toContain("err");
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).toHaveBeenCalledExactlyOnceWith(world.transport, "fleet/truck/svc/front/lifecycle", "activate", { expected: undefined });
+  expectQuiet();
+});
+
+it("keeps an offline fleet camera selected despite live generic ROS diagnostics", async () => {
+  world.healths = [{ ...health(), alive: false }, genericHealth()];
+  world.cameras[0].alive = false;
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />); await tick();
+  expect(button("Front: Service offline").className).toContain("err");
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(openIssues().textContent).toContain("Camera recording control offline");
+});
+
+it("preserves genuine multi-vehicle ambiguity when generic ROS also shares the name", async () => {
+  world.healths.push(health("inactive", "other"), genericHealth());
+  world.cameras.push(camera("other"));
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />); await tick();
+  expect(button("Front: Ambiguous health service")).toBeTruthy();
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  const issues = openIssues().textContent;
+  expect(issues).toContain("truck/front"); expect(issues).toContain("other/front");
+  expect(issues).not.toContain("ROS domain 4");
+});
+
+it("keeps an explicit generic reporter key from targeting an unrelated same-name camera", async () => {
+  const generic = genericHealth();
+  world.healths.push(generic);
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: generic.key, label: "Generic" }])} />); await tick();
+  expect(button("Generic: Camera up, not recording")).toBeTruthy();
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(openIssues().textContent).toContain("Camera recording control unavailable");
+});
+
+it.each([1, 2])("keeps generic-only reporters visible without inventing camera control (%s reporter(s))", async count => {
+  world.cameras = [];
+  world.healths = [genericHealth(), genericHealth("diagnostics")].slice(0, count);
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />); await tick();
+  expect(button(count === 1 ? "Front: Camera up, not recording" : "Front: Ambiguous health service")).toBeTruthy();
+  fireEvent.click(button("Record all")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(button("Recording issues")).toBeTruthy();
 });
 
 it.each(["live-lifecycle", "stale-live-health"])("keeps status and Stop ambiguous with another %s identity", async mode => {

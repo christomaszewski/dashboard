@@ -268,6 +268,8 @@ rig_actuate: false                 # default: read-only agent; no verbs/buttons 
 #               # This does not call the service or prove that it can respond.
 #     # health/camera references: instance, vehicle/instance, or the full health key. Ambiguous
 #     # references are red. Replace all example names with identities from your deployment.
+#     # Short names prefer fleet-identified services over generic ros2/... diagnostic names,
+#     # including replayed diagnostics. Use a full ros2/... key to select that reporter explicitly.
 #     # domain_id applies only to bag_recording and ros_service; components only to health.
 #
 #     # -- status: presence / rate indicator ----------------------------------------------------

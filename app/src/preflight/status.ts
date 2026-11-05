@@ -7,9 +7,21 @@ export interface CheckStatus { level: "ok" | "warn" | "err"; summary: string; de
 export const disconnected = (): CheckStatus => ({ level: "err", summary: "Dashboard disconnected", details: ["Live status cannot be verified until the connection returns."] });
 export const problem = (summary: string, ...details: string[]): CheckStatus => ({ level: "err", summary, details });
 
+/** A generic ROS diagnostic name has no fleet identity: replay can publish it beside a live
+ * camera. For short references, prefer identified fleet reporters/control endpoints without
+ * merging the ROS report into them. Do this before presence filtering so replay cannot hide an
+ * offline or silent fleet service. Explicit references retain their exact source. */
+export function preferFleetIdentities<T extends { key: string; vehicleId: string; instance: string }>(matches: readonly T[], ref: string): T[] {
+  const hasFleet = matches.some((s) => {
+    const prefix = `fleet/${s.vehicleId}/svc/${s.instance}`;
+    return s.key === `${prefix}/health` || s.key === `${prefix}/lifecycle`;
+  });
+  return ref.includes("/") || !hasFleet ? [...matches] : matches.filter((s) => !s.key.startsWith("ros2/"));
+}
+
 /** Never silently choose another vehicle's similarly named service. Full health keys also work. */
 export function matchingHealth(services: readonly HealthService[], ref: string): HealthService[] {
-  return services.filter((s) => ref === s.key || ref === `${s.vehicleId}/${s.instance}` || ref === s.instance);
+  return preferFleetIdentities(services.filter((s) => ref === s.key || ref === `${s.vehicleId}/${s.instance}` || ref === s.instance), ref);
 }
 
 /** Offline history must not make a short name ambiguous once only one identity is live. Keep

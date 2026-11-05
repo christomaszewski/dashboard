@@ -5,7 +5,7 @@ import type { RosGraph } from "../ros/graph";
 import { callService } from "../services/callService";
 import type { Transport } from "../transport/types";
 import type { PreflightCheck, PreflightGroup } from "./spec";
-import { matchingHealth, preferLiveIdentities, recorderTarget, scopedGraph } from "./status";
+import { matchingHealth, preferFleetIdentities, preferLiveIdentities, recorderTarget, scopedGraph } from "./status";
 
 export type RecordingCheck = Extract<PreflightCheck, { type: "bag_recording" | "camera_recording" }>;
 export type RecordingAction = "start" | "stop";
@@ -42,7 +42,8 @@ export function cameraCandidates(ref: string, cameras: LifecycleService[], healt
   const healthIdentities = new Set(healthMatches.map(s => `${s.vehicleId}/${s.instance}`));
   const cameraMatches = cameras.filter(s => ref === s.instance || ref === `${s.vehicleId}/${s.instance}` ||
     ref === `fleet/${s.vehicleId}/svc/${s.instance}/health` || healthIdentities.has(`${s.vehicleId}/${s.instance}`));
-  const selected = preferLiveIdentities<HealthService | LifecycleService>([...healthMatches, ...cameraMatches], ref);
+  const identified = preferFleetIdentities<HealthService | LifecycleService>([...healthMatches, ...cameraMatches], ref);
+  const selected = preferLiveIdentities(identified, ref);
   const identities = new Set(selected.map(s => `${s.vehicleId}/${s.instance}`));
   return {
     health: healthMatches.filter(s => identities.has(`${s.vehicleId}/${s.instance}`)),

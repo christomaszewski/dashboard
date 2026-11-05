@@ -38,6 +38,34 @@ describe("preflight verdicts", () => {
     expect(matchingHealth([health, second], "2/cam0")).toEqual([second]);
     expect(matchingHealth([health, second], health.key)).toEqual([health]);
   });
+  it.each(["native", "ros2"] as const)("prefers a fleet-keyed %s reporter over anonymous ROS names", source => {
+    const fleet = service({ stream: {} }, { source });
+    const generic = service({ stream: {} }, { key: "ros2/4/%2Fother_topic/cam0", vehicleId: "ROS domain 4", source: "ros2" });
+    const all = [generic, fleet];
+    expect(matchingHealth(all, "cam0")).toEqual([fleet]);
+    expect(all).toEqual([generic, fleet]); // selection must not remove discovery rows
+    expect(matchingHealth(all, "1/cam0")).toEqual([fleet]);
+    expect(matchingHealth(all, fleet.key)).toEqual([fleet]);
+    expect(matchingHealth(all, generic.key)).toEqual([generic]);
+  });
+  it("keeps offline fleet health instead of silently selecting a live generic ROS reporter", () => {
+    const offline = service({ stream: {} }, { alive: false });
+    const generic = service({ stream: {} }, { key: "ros2/4/%2Fother_topic/cam0", vehicleId: "ROS domain 4", source: "ros2" });
+    const matches = preferLiveIdentities(matchingHealth([offline, generic], "cam0"), "cam0");
+    expect(matches).toEqual([offline]);
+    expect(healthStatus(matches[0], undefined, now).summary).toBe("Service offline");
+  });
+  it("retains real fleet collisions and every generic-only topic/domain collision", () => {
+    const first = service({ stream: {} });
+    const second = service({ stream: {} }, { key: "fleet/2/svc/cam0/health", vehicleId: "2" });
+    const generic = service({ stream: {} }, { key: "ros2/4/%2Fother_topic/cam0", vehicleId: "ROS domain 4", source: "ros2" });
+    expect(matchingHealth([first, generic, second], "cam0")).toEqual([first, second]);
+    const otherTopic = { ...generic, key: "ros2/4/%2Fdiagnostics/cam0" };
+    const otherDomain = { ...generic, key: "ros2/8/%2Fother_topic/cam0", vehicleId: "ROS domain 8" };
+    expect(matchingHealth([generic], "cam0")).toEqual([generic]);
+    expect(matchingHealth([generic, otherTopic, otherDomain], "cam0")).toEqual([generic, otherTopic, otherDomain]);
+    expect(matchingHealth([first, generic, otherDomain], "ROS domain 4/cam0")).toEqual([generic]);
+  });
   it("ignores retained offline identities for short names without hiding explicit or live collisions", () => {
     const resolve = (services: HealthService[], ref: string) => preferLiveIdentities(matchingHealth(services, ref), ref);
     const offline = service({ stream: {} }, { alive: false });

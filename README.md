@@ -231,10 +231,15 @@ With a named grid layout, add a full-width `preflight` row to `home.layout.areas
   No service is called by this check; advertised presence does not prove the server can respond.
 
 Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Short names
-ignore retained offline identities when an advertised match exists; camera checks and controls
-consider both health and lifecycle presence. A silent but still-advertised service remains a
-candidate. Multiple advertised identities require an explicit selection and show their matching
-keys in the tooltip. Qualified references stay pinned to that identity even when it is offline.
+prefer fleet-identified reporters over generic `ros2/...` diagnostic-name matches. This prevents
+replayed diagnostics without vehicle metadata from blocking a live camera's status or recording
+controls. Those diagnostics remain available in Health and through explicit full-key references;
+they cannot substitute for an offline or silent fleet reporter. Camera checks and controls also
+consider lifecycle identity, so a known camera with no health report stays visibly missing health.
+Within the selected identities, short names ignore retained offline entries when an advertised
+match exists. A silent but still-advertised service remains a candidate. Multiple advertised fleet
+identities (or multiple generic ROS reporters without a fleet match) require an explicit selection
+and show their matching keys in the tooltip. Qualified references stay pinned even when offline.
 Ambiguous ROS domains also require an explicit selection. A disconnected dashboard shows red
 rather than retaining green from an earlier observation. Tooltips explain the reason.
 
