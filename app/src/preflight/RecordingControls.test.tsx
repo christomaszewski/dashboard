@@ -189,6 +189,54 @@ it.each(["ambiguous", "disabled", "offline", "other-service"])("reports camera %
   expect(change).not.toHaveBeenCalled(); expect(button("Recording issues")).toBeTruthy();
 });
 
+it("uses the live identity for both camera status and Stop when another identity is explicitly offline", async () => {
+  world.cameras[0].descriptor = { ...world.cameras[0].descriptor, state: "active", transitions: ["deactivate"] };
+  world.healths = [health("active"), { ...health("active", "retired"), alive: false }];
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />);
+  await tick();
+  expect(button("Front: Recording").className).toContain("ok");
+  fireEvent.click(button("Stop recording")); await tick();
+  expect(change).toHaveBeenCalledExactlyOnceWith(world.transport, "fleet/truck/svc/front/lifecycle", "deactivate", { expected: undefined });
+  expectQuiet();
+});
+
+it.each(["live-lifecycle", "stale-live-health"])("keeps status and Stop ambiguous with another %s identity", async mode => {
+  const other = { ...health("active", "other"), alive: mode !== "live-lifecycle", receivedAtMs: 0 };
+  world.healths.push(other);
+  if (mode === "live-lifecycle") world.cameras.push(camera("other"));
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />);
+  await tick();
+  fireEvent.click(button("Front: Ambiguous health service"));
+  expect(screen.getByRole("tooltip").textContent).toContain("truck/front");
+  expect(screen.getByRole("tooltip").textContent).toContain("other/front");
+  fireEvent.keyDown(document, { key: "Escape" });
+  fireEvent.click(button("Stop recording")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(openIssues().textContent).toContain("Ambiguous camera");
+});
+
+it.each(["retired/front", "fleet/retired/svc/front/health"])("keeps qualified offline camera %s from drifting to a live vehicle", async service => {
+  world.healths.push({ ...health("active", "retired"), alive: false });
+  world.cameras.push({ ...camera("retired"), alive: false });
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service, label: "Old camera" }])} />);
+  await tick();
+  expect(button("Old camera: Service offline").className).toContain("err");
+  fireEvent.click(button("Stop recording")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(openIssues().textContent).toContain("Camera recording control offline");
+});
+
+it("keeps multiple offline camera identities ambiguous", async () => {
+  world.healths = [health("active"), health("active", "other")].map(s => ({ ...s, alive: false }));
+  world.cameras = [camera(), camera("other")].map(s => ({ ...s, alive: false }));
+  render(<PreflightWidget widget={config([{ type: "camera_recording", service: "front", label: "Front" }])} />);
+  await tick();
+  expect(button("Front: Ambiguous health service")).toBeTruthy();
+  fireEvent.click(button("Stop recording")); await tick();
+  expect(change).not.toHaveBeenCalled();
+  expect(openIssues().textContent).toContain("Ambiguous camera");
+});
+
 it("invalidates pending commands on disconnect, ignores late replies and never replays automatically", async () => {
   let finish!: (reply: ChangeStateResult) => void;
   change.mockImplementationOnce(() => new Promise(resolve => { finish = resolve; }));

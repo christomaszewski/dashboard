@@ -1,5 +1,5 @@
-# Overlay applied by dash-up ONLY when the instance YAML sets `rig_agent: true`: the vehicle-side rig
-# agent (docs/RIG_AGENT.md) as a third service. Opt-in on purpose — it holds the host's docker socket
+# Overlay applied by dash-up for configured Rig/Logs tabs or Rig widgets, or `rig_agent: true`.
+# The vehicle-side rig agent (docs/RIG_AGENT.md) holds the host's docker socket
 # (root-equivalent on the vehicle) and drives `rig` for the whole deployment.
 #
 # Mount rules (see deploy/README.md):
@@ -31,7 +31,7 @@ services:
       RIG_AGENT_PROJECT: ${COMPOSE_PROJECT_NAME:-dashboard}
       RIG_AGENT_USER: ${DASH_AGENT_USER:-}
       RIG_AGENT_GROUPS: ${DASH_DOCKER_GID:-}
-      RIG_AGENT_ACTUATE: ${DASH_RIG_ACTUATE:-1}
+      RIG_AGENT_ACTUATE: ${DASH_RIG_ACTUATE:-0}
       RIG_AGENT_POLL_S: ${DASH_RIG_POLL_S:-10}
       RIG_AGENT_LOG: ${DASH_RIG_LOG:-INFO}
       HOME: ${DASH_RIG_ROOT}/var/dashboard-rig-agent/home

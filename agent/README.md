@@ -2,8 +2,9 @@
 
 The vehicle-side producer of the rig-over-Zenoh contract in [docs/RIG_AGENT.md](../docs/RIG_AGENT.md):
 polls `rig status --format json`, mirrors the run registry, and runs a whitelisted set of rig verbs as
-detached jobs. Ships as the optional third compose service (`deploy/docker-compose.rig-agent.yml`,
-applied by `dash-up` when the instance YAML sets `rig_agent: true`); nothing in it is dashboard-specific.
+detached jobs. Ships as an optional compose service (`deploy/docker-compose.rig-agent.yml`,
+applied by `dash-up` for Rig/Logs tabs or Rig widgets, with explicit `rig_agent: true/false` overrides);
+nothing in it is dashboard-specific. Dashboard-launched agents are read-only unless `rig_actuate: true`.
 
 ```
 rig_agent/
@@ -44,6 +45,10 @@ The optional Logs tab uses the same agent, including in read-only mode. Docker r
 most two separate workers, with a three-second command deadline and bounded output; they never
 queue behind rig jobs or block Zenoh callbacks. No `docker logs --follow` processes are left
 running. See [the log query contract](../docs/RIG_AGENT.md#docker-logs).
+
+The header's [current-run feed](../docs/CURRENT_RUN.md) is owned by `dashboard-state` and does not
+require this agent. Its read-only registry mount and Zenoh producer remain available with
+`rig_agent: false`.
 
 Job supervision preserves active work when Docker cannot answer. Recovery retries before accepting
 new commands; a lost launch reply is reconciled without rerunning the verb. Cleanup never force-removes

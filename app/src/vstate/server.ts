@@ -12,7 +12,8 @@ import { EMPTY_GRAPH, ROS2_LIVELINESS_GLOB, buildGraph, type RosGraph, type Topi
 import type { TopicAcquireOptions, TopicHandle, TopicSnapshot } from "../ros/topicStore";
 import type { IncomingQuery, Subscription, Transport } from "../transport/types";
 import type { HealthService } from "../health/types";
-import { healthAges, healthToWire } from "./healthWire";
+import { healthAges, healthStructureSignature, healthToWire, type HealthStatusPatch, type HealthUpdate } from "./healthWire";
+import { currentRunSignature, type CurrentRunSource } from "./currentRun";
 import {
   LIMITS,
   VSTATE_VERSION,
@@ -50,6 +51,7 @@ export interface HealthSource {
 export interface StateServerOptions {
   store: TopicSource;
   health?: HealthSource;
+  currentRun?: CurrentRunSource;
   /** Monotonic ms — the same clock the store stamps `lastAt` with. */
   now?: () => number;
   /** Wall-clock ms, for health ages (the discovery stamps services with both). */
@@ -67,11 +69,19 @@ export interface StateServerOptions {
 
 interface TrailPoint { seq: number; lat: number; lon: number }
 interface Bucket { seq: number; t0: number; min: number; max: number; last: number }
+interface HealthChanges {
+  obj?: HealthService;
+  counter: number;
+  baseline: number;
+  structure?: string;
+  structureChangedSeq: number;
+  status: { level: number; message: number; values: Map<string, number> }[];
+}
 
 interface ItemRecord {
   sig: string;
   spec: ItemSpec;
-  kind: "topic" | "node" | "health";
+  kind: "topic" | "node" | "health" | "current_run";
   fields: FieldSpec[];
   refs: number;
   entry?: TopicEntry;
@@ -86,8 +96,8 @@ interface ItemRecord {
   trail?: { first: number; pts: TrailPoint[] };
   /** Series items: buckets, the absolute index of the first one kept. */
   series?: { first: number; buckets: Bucket[] };
-  /** Health items: the service object last seen, and its counter. */
-  health?: { obj?: HealthService; counter: number };
+  /** Health items: shared field cursors; every caller compares them with its own `since`. */
+  health?: HealthChanges;
 }
 
 interface View {
@@ -99,6 +109,7 @@ interface View {
 interface Waiter {
   view: View;
   since: number;
+  healthDelta: boolean;
   resolve: (reply: PollReply) => void;
   timer: ReturnType<typeof setTimeout>;
 }
@@ -119,6 +130,7 @@ export class VehicleStateServer {
   readonly epoch: string;
   private readonly store: TopicSource;
   private readonly health?: HealthSource;
+  private readonly currentRun?: CurrentRunSource;
   private readonly now: () => number;
   private readonly wallNow: () => number;
   private readonly holdMs: number;
@@ -138,6 +150,7 @@ export class VehicleStateServer {
   constructor(opts: StateServerOptions) {
     this.store = opts.store;
     this.health = opts.health;
+    this.currentRun = opts.currentRun;
     this.now = opts.now ?? (() => performance.now());
     this.wallNow = opts.wallNow ?? (() => Date.now());
     this.epoch = opts.epoch ?? randomEpoch();
@@ -161,7 +174,7 @@ export class VehicleStateServer {
       view = { id, items: spec.items.map((s) => this.retain(s)), lastPolled: this.now() };
       this.views.set(id, view);
     } else view.lastPolled = this.now();
-    return { v: VSTATE_VERSION, view: id, epoch: this.epoch, fresh: 1 };
+    return { v: VSTATE_VERSION, view: id, epoch: this.epoch, fresh: 1, health_delta: 1 };
   }
 
   poll(raw: unknown): Promise<PollReply> {
@@ -173,10 +186,11 @@ export class VehicleStateServer {
     const since = req.epoch === this.epoch && req.since <= this.seq ? req.since : 0;
     // Items new to the caller come whole and at once; the rest as changes after its `since`.
     const fresh = since > 0 && req.fresh && req.fresh.length > 0 ? new Set(req.fresh) : undefined;
-    const items = this.delta(view, since, fresh);
+    const healthDelta = req.health_delta === 1;
+    const items = this.delta(view, since, fresh, healthDelta);
     if (items.length > 0 || since === 0 || fresh) return Promise.resolve(this.reply(items));
     return new Promise((resolve) => {
-      const waiter: Waiter = { view, since, resolve, timer: setTimeout(() => this.finish(waiter, []), this.holdMs) };
+      const waiter: Waiter = { view, since, healthDelta, resolve, timer: setTimeout(() => this.finish(waiter), this.holdMs) };
       this.waiters.add(waiter);
     });
   }
@@ -205,7 +219,7 @@ export class VehicleStateServer {
   }
 
   close(): void {
-    for (const w of [...this.waiters]) this.finish(w, []);
+    for (const w of [...this.waiters]) this.finish(w);
     for (const view of [...this.views.values()]) this.dropView(view);
     if (this.wakeTimer !== null) clearTimeout(this.wakeTimer);
     this.wakeTimer = null;
@@ -217,16 +231,20 @@ export class VehicleStateServer {
     const sig = itemSignature(spec);
     let rec = this.items.get(sig);
     if (!rec) {
-      const kind = spec.node !== undefined ? "node" : spec.health !== undefined ? "health" : "topic";
+      const kind = spec.node !== undefined ? "node" : spec.health !== undefined ? "health" : spec.current_run ? "current_run" : "topic";
       rec = { sig, spec, kind, fields: spec.fields ?? [], refs: 0, state: {}, json: "", changedSeq: 0 };
       if (spec.trail !== undefined) rec.trail = { first: 0, pts: [] };
       if (spec.series !== undefined) rec.series = { first: 0, buckets: [] };
       if (kind === "health") {
-        rec.health = { counter: 0 };
+        rec.health = { counter: 0, baseline: 0, structureChangedSeq: 0, status: [] };
         this.retainHealth();
       }
       this.items.set(sig, rec);
       if (kind === "topic") this.bind(rec);
+      if (kind === "current_run") {
+        const item = rec;
+        rec.unlisten = this.currentRun?.subscribe(() => this.recompute(item));
+      }
       this.recompute(rec);
     }
     rec.refs += 1;
@@ -279,7 +297,7 @@ export class VehicleStateServer {
 
   private recompute(rec: ItemRecord): void {
     let state = this.computeState(rec);
-    let json = JSON.stringify(state);
+    let json = state.run ? currentRunSignature(state.run) : JSON.stringify(state);
     if (json.length > LIMITS.stateBytes && rec.kind !== "health") {
       state = { t: state.t, d: state.d, e: `vehicle state: value too large (${json.length} B > ${LIMITS.stateBytes} B) — choose a smaller field` };
       json = JSON.stringify(state);
@@ -289,8 +307,39 @@ export class VehicleStateServer {
     rec.json = json;
     rec.state = state;
     rec.changedSeq = ++this.seq;
+    if (rec.health && rec.spec.health !== "*") this.recordHealth(rec, previous, state);
     if (rec.trail || rec.series) this.record(rec, previous, state);
     this.scheduleWake();
+  }
+
+  /** Remember the latest change of each field, not what any particular browser received. */
+  private recordHealth(rec: ItemRecord, previous: ItemState, state: ItemState): void {
+    const h = rec.health!;
+    if (!state.hd || !h.obj) {
+      h.structure = undefined;
+      h.status = [];
+      return;
+    }
+    const structure = healthStructureSignature(h.obj);
+    const statuses = state.hd.s.snapshot.status;
+    if (structure !== h.structure) {
+      h.structure = structure;
+      h.baseline += 1;
+      h.structureChangedSeq = rec.changedSeq;
+      h.status = statuses.map((s) => ({ level: rec.changedSeq, message: rec.changedSeq,
+        values: new Map(Object.keys(s.values).map((key) => [key, rec.changedSeq])) }));
+    } else {
+      statuses.forEach((s, i) => {
+        const old = previous.hd!.s.snapshot.status[i];
+        const changed = h.status[i];
+        if (s.level !== old.level) changed.level = rec.changedSeq;
+        if (s.message !== old.message) changed.message = rec.changedSeq;
+        for (const [key, value] of Object.entries(s.values)) {
+          if (value !== old.values[key]) changed.values.set(key, rec.changedSeq);
+        }
+      });
+    }
+    state.hd.b = h.baseline;
   }
 
   /** A changed value extends the item's trail and history, numbered with the change. */
@@ -335,6 +384,7 @@ export class VehicleStateServer {
   private computeState(rec: ItemRecord): ItemState {
     if (rec.kind === "node") return { a: this.graph.nodes.some((n) => n.nodeFq === rec.spec.node) ? 1 : 0 };
     if (rec.kind === "health") return this.healthState(rec);
+    if (rec.kind === "current_run") return this.currentRun ? { run: this.currentRun.current() } : { e: "current run is not configured on this vehicle" };
     const entry = rec.entry;
     if (!entry) return {};
     const state: ItemState = { t: entry.typeName, d: entry.domainId };
@@ -395,17 +445,21 @@ export class VehicleStateServer {
     for (const rec of view.items) this.release(rec);
   }
 
-  private delta(view: View, since: number, fresh?: ReadonlySet<number>): [number, ItemState][] {
+  private delta(view: View, since: number, fresh?: ReadonlySet<number>, healthDelta = false): [number, ItemState][] {
     const out: [number, ItemState][] = [];
     view.items.forEach((rec, i) => {
       const from = fresh?.has(i) ? 0 : since;
-      if (rec.changedSeq > from) out.push([i, this.withExtras(rec, from)]);
+      if (rec.changedSeq > from) out.push([i, this.withExtras(rec, from, healthDelta)]);
     });
     return out;
   }
 
   /** The item's state plus what only this caller lacks: new trail points, changed buckets, ages. */
-  private withExtras(rec: ItemRecord, since: number): ItemState {
+  private withExtras(rec: ItemRecord, since: number, healthDelta: boolean): ItemState {
+    if (rec.kind === "current_run" && rec.state.run && this.currentRun)
+      return { run: this.currentRun.current() }; // initial/reconnect includes the latest observation time
+    if (healthDelta && rec.state.hd && rec.health?.obj && since > 0 && rec.health.structureChangedSeq <= since)
+      return { hu: this.healthUpdate(rec, since) };
     if (!rec.trail && !rec.series && !rec.state.hd) return rec.state;
     const state: ItemState = { ...rec.state };
     if (rec.trail && rec.trail.pts.length > 0) {
@@ -425,14 +479,37 @@ export class VehicleStateServer {
     return state;
   }
 
+  private healthUpdate(rec: ItemRecord, since: number): HealthUpdate {
+    const h = rec.health!, wire = rec.state.hd!, snapshot = wire.s.snapshot;
+    const update: HealthUpdate = {
+      b: h.baseline, c: h.counter, stamp: snapshot.stamp_unix_ns, level: snapshot.level,
+      ...healthAges(h.obj!, this.wallNow(), this.now()),
+    };
+    if (wire.s.periodMs !== undefined) update.periodMs = wire.s.periodMs;
+    const statuses: [number, HealthStatusPatch][] = [];
+    snapshot.status.forEach((status, i) => {
+      const changed = h.status[i];
+      const patch: HealthStatusPatch = {};
+      if (changed.level > since) patch.level = status.level;
+      if (changed.message > since) patch.message = status.message;
+      const values = [...changed.values].filter(([, seq]) => seq > since).map(([key]) => [key, status.values[key]]);
+      if (values.length > 0) patch.values = Object.fromEntries(values);
+      if (Object.keys(patch).length > 0) statuses.push([i, patch]);
+    });
+    if (statuses.length > 0) update.status = statuses;
+    return update;
+  }
+
   private reply(items: [number, ItemState][]): PollReply {
     return { v: VSTATE_VERSION, epoch: this.epoch, seq: this.seq, items };
   }
 
-  private finish(waiter: Waiter, items: [number, ItemState][]): void {
+  private finish(waiter: Waiter, items?: [number, ItemState][]): void {
     clearTimeout(waiter.timer);
     this.waiters.delete(waiter);
-    waiter.resolve(this.reply(items));
+    // A hold deadline (or shutdown) can beat the coalesced wake. Never acknowledge a new cursor
+    // with an empty reply while changes at that cursor are still waiting to be delivered.
+    waiter.resolve(this.reply(items ?? this.delta(waiter.view, waiter.since, undefined, waiter.healthDelta)));
   }
 
   private scheduleWake(): void {
@@ -440,7 +517,7 @@ export class VehicleStateServer {
     this.wakeTimer = setTimeout(() => {
       this.wakeTimer = null;
       for (const w of [...this.waiters]) {
-        const items = this.delta(w.view, w.since);
+        const items = this.delta(w.view, w.since, undefined, w.healthDelta);
         if (items.length > 0) this.finish(w, items);
       }
     }, this.coalesceMs);

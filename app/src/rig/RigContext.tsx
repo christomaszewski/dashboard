@@ -33,9 +33,9 @@ function clientTag(): string {
   return host ? `dashboard @ ${host}` : "dashboard";
 }
 
-export function RigProvider({ children }: { children: ReactNode }) {
+export function RigProvider({ children, enabled = true }: { children: ReactNode; enabled?: boolean }) {
   const { transport } = useTransportContext();
-  const { agents, jobs, refresh } = useRig(transport);
+  const { agents, jobs, refresh } = useRig(enabled ? transport : null);
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), CLOCK_TICK_MS);

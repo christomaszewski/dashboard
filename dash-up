@@ -15,7 +15,8 @@
 #
 # Registry (pull-based) deploy: set DASH_REGISTRY (or rig's RIG_IMAGE_REGISTRY); run `pull` then `up -d`.
 # Images resolve to <registry>/<name>:<tag> (dashboard-zenoh + dashboard-web, plus dashboard-rig-agent
-# when `rig_agent: true` and dashboard-state when `vehicle_state: true` — all built by
+# when a configured Rig/Logs tab or Rig widget needs it (or `rig_agent: true`), and dashboard-state
+# when `vehicle_state: true` or a run registry is available — all built by
 # tools/build-images.sh). Per-image vars (DASH_ZENOH_IMAGE / DASH_WEB_IMAGE / DASH_AGENT_IMAGE /
 # DASH_STATE_IMAGE) override individually.
 # Stdout stays clean (status line -> stderr) so `ps --format json` parses.
@@ -42,7 +43,8 @@ CONFIG_ABS="$(cd "$(dirname "$CONFIG")" && pwd)/$(basename "$CONFIG")"
 docker compose version >/dev/null 2>&1 || { echo "dash-up: needs the Docker Compose v2 plugin ('docker compose')" >&2; exit 1; }
 
 # config -> env (instance name + host ports). Simple tokens, no spaces.
-eval "$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS" | sed 's/^/export /')"
+DASH_CONFIG_ENV="$("$PYTHON" "$REPO/tools/dash_env.py" "$CONFIG_ABS")"
+eval "$(printf '%s\n' "$DASH_CONFIG_ENV" | sed 's/^/export /')"
 # The SAME config file is bind-mounted into dashboard-web (docker-compose.external-config.yml) and
 # served at /config/dashboard.yaml — the app reads its `home:` block + ws_port at load.
 export DASH_CONFIG_HOST="$CONFIG_ABS"
@@ -100,7 +102,8 @@ if [ -n "$DASH_RIG_DATA" ]; then
   OVERLAYS+=(-f "$REPO/deploy/docker-compose.rig-data-web.yml")
 fi
 
-# Optional rig agent (Rig tab, docs/RIG_AGENT.md): only when the config set `rig_agent: true`. The
+# Optional rig agent (docs/RIG_AGENT.md): selected by Rig/Logs tabs and Rig widgets, with explicit
+# rig_agent overrides. The
 # agent drives `rig` for the whole deployment, so it needs the deployment TREE at its host path
 # (identity mounts: rig hands docker compose host paths), the docker socket, and — for runs — the
 # registry's data_dir. rig invokes us with a config path INSIDE the tree, so the tree is found by
@@ -115,7 +118,7 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
     [ -f "$d/vehicle.yaml" ] && RIG_ROOT_HOST="$d"
   fi
   if [ -z "$RIG_ROOT_HOST" ]; then
-    echo "dash-up: rig_agent: true but no vehicle.yaml above $CONFIG_ABS — set rig_root: (agent skipped)" >&2
+    echo "dash-up: Rig agent requested but no vehicle.yaml above $CONFIG_ABS — set rig_root: (agent skipped)" >&2
   else
     case "$RIG_ROOT_HOST" in /*) : ;; *) RIG_ROOT_HOST="$(cd "$(dirname "$CONFIG_ABS")" && pwd)/$RIG_ROOT_HOST" ;; esac
     RIG_ROOT_HOST="$(cd "$RIG_ROOT_HOST" && pwd)"
@@ -146,20 +149,25 @@ if [ "${DASH_RIG_AGENT:-0}" = 1 ]; then
   fi
 fi
 
-# Optional vehicle state (docs/VEHICLE_STATE.md): `vehicle_state: true` adds dashboard-state and its
-# private, loopback-only bridge. dash_env.py derived the service key (vehicle_id, else this host's
-# short hostname); the page learns it from runtime.json, served next to the instance YAML.
+# Vehicle state (docs/VEHICLE_STATE.md): projected widgets or a run registry need dashboard-state
+# and its private loopback bridge. Run-only mode leaves the browser's topic/health routing direct.
+# dash_env.py derives the key from Rig's VEHICLE_ID, config vehicle_id, then this host's name.
 VSTATE_STATUS=""
-if [ "${DASH_VEHICLE_STATE:-0}" = 1 ]; then
+if [ "${DASH_VEHICLE_STATE:-0}" = 1 ] || [ -n "$DASH_RIG_DATA" ]; then
   export DASH_RUNTIME_JSON="$REPO/var/run/${DASH_NAME:-dashboard}/runtime.json"
   if [ "$READ_ONLY" != 1 ]; then
     mkdir -p "$(dirname "$DASH_RUNTIME_JSON")"
-    printf '{"vehicle_state_key":"%s"}\n' "$DASH_STATE_KEY" > "$DASH_RUNTIME_JSON"
+    if [ -n "$DASH_RIG_DATA" ]; then
+      printf '{"vehicle_state_key":"%s","current_run_state_key":"%s"}\n' "$DASH_STATE_KEY" "$DASH_STATE_KEY" > "$DASH_RUNTIME_JSON"
+    else
+      printf '{"vehicle_state_key":"%s"}\n' "$DASH_STATE_KEY" > "$DASH_RUNTIME_JSON"
+    fi
   fi
   if [ -n "${DASH_REGISTRY:-}" ]; then
     export DASH_STATE_IMAGE="${DASH_STATE_IMAGE:-$DASH_REGISTRY/dashboard-state:$TAG}"
   fi
   OVERLAYS+=(-f "$REPO/deploy/docker-compose.vehicle-state.yml")
+  [ -n "$DASH_RIG_DATA" ] && OVERLAYS+=(-f "$REPO/deploy/docker-compose.state-rig-data.yml")
   VSTATE_STATUS=" vehicle-state=$DASH_STATE_KEY"
 fi
 
@@ -170,6 +178,9 @@ case "${ARGS[0]}" in
     exec "$PYTHON" "$REPO/tools/runtime_images.py" "${ARGS[0]}" -f "$COMPOSE" "${OVERLAYS[@]}"
     ;;
   up)
+    # Reconcile optional services when the YAML stops selecting them. Orphans are scoped to this
+    # dashboard Compose project; detached Rig job runners deliberately have no Compose labels.
+    if [[ ! " ${ARGS[*]} " == *" --remove-orphans "* ]]; then ARGS+=(--remove-orphans); fi
     if [ "${RIG_RUNTIME_IMAGE_PINS+x}" = x ]; then
       exec "$PYTHON" "$REPO/tools/runtime_images.py" pinned-up -f "$COMPOSE" "${OVERLAYS[@]}" -- "${ARGS[@]:1}"
     fi

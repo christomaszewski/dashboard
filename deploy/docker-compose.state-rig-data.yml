@@ -1,0 +1,13 @@
+# The run feed is owned by dashboard-state, independently of dashboard-rig-agent. Keep the host
+# path inside the container so run_dir is meaningful to other services with their own mounts.
+services:
+  dashboard-state:
+    environment:
+      RIG_DATA_DIR: ${DASH_RIG_DATA:?current run needs the registry root}
+    volumes:
+      - type: bind
+        source: ${DASH_RIG_DATA}
+        target: ${DASH_RIG_DATA}
+        read_only: true
+        bind:
+          create_host_path: false

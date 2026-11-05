@@ -88,6 +88,21 @@ export interface RigState {
   job?: RigJob | null;
 }
 
+/** Compact run-registry observation served by dashboard-state, independently of the Rig agent. */
+export interface RigCurrentRun {
+  schema_version: 1;
+  vehicle_id: string;
+  epoch: string;
+  revision: number;
+  at_unix_s: number;
+  ok: boolean;
+  run_id: string | null;
+  run_dir: string | null;
+  label: string | null;
+  started: string | null;
+  error: string | null;
+}
+
 export interface RigJobResult {
   run_before?: string | null;
   run_after?: string | null;
@@ -196,6 +211,16 @@ function strArray(v: unknown): string[] {
 
 const optNum = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 const optStr = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+export function parseRigCurrentRun(bytes: Uint8Array): RigCurrentRun | null {
+  const d = decodeJson(bytes);
+  if (!isRecord(d) || d.schema_version !== 1 || typeof d.vehicle_id !== "string" || !d.vehicle_id ||
+    typeof d.epoch !== "string" || !d.epoch || !Number.isSafeInteger(d.revision) || (d.revision as number) < 1 ||
+    typeof d.at_unix_s !== "number" || !Number.isFinite(d.at_unix_s) || typeof d.ok !== "boolean") return null;
+  if (!["run_id", "run_dir", "label", "started", "error"].every(k => d[k] === null || typeof d[k] === "string")) return null;
+  if (d.run_id === "" || d.run_dir === "") return null;
+  return d as unknown as RigCurrentRun;
+}
 
 export function parseRigDescriptor(bytes: Uint8Array): RigDescriptor | null {
   const d = decodeJson(bytes);

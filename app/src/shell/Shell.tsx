@@ -16,6 +16,7 @@ import { useHashRoute, type TabId } from "./useHashRoute";
 import { TabActivity } from "./TabActivity";
 import { connectionDiagnostics } from "../transport/connectionDiagnostics";
 import { RadioIndicators } from "../health/RadioIndicator";
+import { CurrentRunIndicators } from "../rig/CurrentRunIndicators";
 
 // Lazy: three.js + the BPF loaders live in their own chunk, downloaded on first visit only.
 const CloudsTab = lazy(() => import("../clouds/CloudsTab"));
@@ -53,6 +54,7 @@ export function Shell({ title, tabs }: { title?: string; tabs?: TabVisibility })
           Vehicle Dashboard<small>{title ?? "Phase 1"}</small>
         </span>
         <TabBar tabs={visible} tab={tab} navigate={navigate} />
+        <CurrentRunIndicators />
         <span className="spacer" />
         <span className="locator">{locator}</span>
         <span className="topbar-status">

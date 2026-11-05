@@ -11,6 +11,7 @@ import type { PreflightWidgetConfig } from "./spec";
 const world = vi.hoisted(() => ({ healths: [] as HealthService[], graph: {} as RosGraph,
   transport: {} as Transport, status: "connected", active: true }));
 vi.mock("../health/HealthContext", () => ({ useHealthContext: () => ({ services: world.healths }) }));
+vi.mock("../lifecycle/LifecycleContext", () => ({ useLifecycleContext: () => ({ services: [] }) }));
 vi.mock("../ros/RosGraphContext", () => ({ useRosGraphContext: () => ({ graph: world.graph }) }));
 vi.mock("../transport/TransportContext", () => ({ useTransportContext: () => world }));
 vi.mock("../shell/TabActivity", () => ({ useTabActive: () => world.active }));
@@ -58,6 +59,19 @@ it("ages live health to red and invalidates cached green on disconnect", async (
   expect(screen.getByRole("button", { name: "1/ins: Health reporter silent" }).className).toContain("err");
   world.status = "disconnected"; view.rerender(<PreflightWidget widget={widget} />);
   expect(screen.getByRole("button", { name: "1/ins: Dashboard disconnected" }).className).toContain("err");
+});
+
+it("resolves generic health short names past withdrawn reporters while keeping explicit offline checks visible", () => {
+  const live: HealthService = { key: "fleet/current/svc/ins/health", vehicleId: "current", instance: "ins", alive: true, receivedAtMs: 10_000,
+    snapshot: { schema_version: 1, service: "ins", instance: "ins", stamp_unix_ns: 0, level: 0,
+      status: [{ name: "ins: gps", message: "GPS locked", level: 0, hardware_id: "", values: {} }] } };
+  world.healths = [live, { ...live, key: "fleet/previous/svc/ins/health", vehicleId: "previous", alive: false }];
+  render(<PreflightWidget widget={config([{ label: "Health", checks: [
+    { type: "health", service: "ins", label: "Current" },
+    { type: "health", service: "previous/ins", label: "Previous" },
+  ] }])} />);
+  expect(screen.getByRole("button", { name: "Current: Healthy" }).className).toContain("ok");
+  expect(screen.getByRole("button", { name: "Previous: Service offline" }).className).toContain("err");
 });
 
 it("polls only is_paused, updates recording/paused/error, and ignores unrelated graph rebuilds", async () => {

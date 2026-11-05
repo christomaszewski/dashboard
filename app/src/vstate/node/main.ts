@@ -4,6 +4,8 @@
 //
 //   DASH_STATE_KEY      fleet/<vehicle>/dash/<name>/state   (required; dash-up derives it)
 //   DASH_STATE_LOCATOR  ws/127.0.0.1:10001                  (the private bridge)
+//   RIG_DATA_DIR        read-only registry at its absolute host path (optional current-run feed)
+//   VEHICLE_ID          the authoritative vehicle key segment (required with RIG_DATA_DIR)
 import { ZenohRemoteApiTransport } from "../../transport/zenohRemoteApi";
 import { FlavorResolver } from "../../schema/resolver";
 import { TopicStore } from "../../ros/topicStore";
@@ -13,6 +15,8 @@ import { FrameServer, serveFrameQuery, type FrameEncoder } from "../frames";
 import { loadSharpEncoder, unavailableEncoder } from "./sharpEncoder";
 import { HealthHub } from "../healthHub";
 import { EMPTY_GRAPH, type RosGraph } from "../../ros/graph";
+import { CurrentRunWatcher, currentRunKey, serveCurrentRun } from "../currentRun";
+import { currentRunReader } from "./currentRunRegistry";
 
 // The few Node globals used here, declared locally so the app's DOM-only tsconfig stays as is.
 declare const process: {
@@ -23,6 +27,7 @@ declare const process: {
 
 const base = process.env.DASH_STATE_KEY ?? "";
 const locator = process.env.DASH_STATE_LOCATOR || "ws/127.0.0.1:10001";
+const dataDir = process.env.RIG_DATA_DIR;
 
 const log = (message: string) => console.log(`${new Date().toISOString()} dashboard-state: ${message}`);
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -60,13 +65,21 @@ async function main(): Promise<void> {
     console.error(`dashboard-state: DASH_STATE_KEY must be a plain Zenoh key (got '${base}')`);
     process.exit(2);
   }
+  let currentRun: CurrentRunWatcher | undefined;
+  if (dataDir) {
+    const vehicleId = process.env.VEHICLE_ID ?? "";
+    currentRunKey(vehicleId); // reject a wildcard or multi-segment identity before advertising
+    currentRun = new CurrentRunWatcher({ vehicleId, read: await currentRunReader(dataDir) });
+    currentRun.start();
+  }
   const transport = await connect();
+  const runFeed = currentRun ? await serveCurrentRun(currentRun, transport, { log }) : undefined;
   // Types outside the bundle resolve through a node that uses them (its ~/get_type_description).
   let latest: RosGraph = EMPTY_GRAPH;
   const resolver = new FlavorResolver(transport, { graph: () => latest });
   const store = new TopicStore({ transport, resolver });
   const health = new HealthHub(transport, resolver, log);
-  const server = new VehicleStateServer({ store, health });
+  const server = new VehicleStateServer({ store, health, currentRun });
   let encoder: FrameEncoder;
   try {
     encoder = await loadSharpEncoder();
@@ -134,7 +147,8 @@ async function main(): Promise<void> {
     server.close();
     frames.close();
     store.closeAll();
-    await Promise.allSettled([graph.close(), ...queryables.map((q) => q.close())]);
+    currentRun?.close();
+    await Promise.allSettled([graph.close(), runFeed?.close(), ...queryables.map((q) => q.close())]);
     await transport.close().catch(() => undefined);
     process.exit(0);
   };

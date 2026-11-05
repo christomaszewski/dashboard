@@ -12,6 +12,14 @@ export function matchingHealth(services: readonly HealthService[], ref: string):
   return services.filter((s) => ref === s.key || ref === `${s.vehicleId}/${s.instance}` || ref === s.instance);
 }
 
+/** Offline history must not make a short name ambiguous once only one identity is live. Keep
+ * explicit references, and keep all offline candidates when none is live so their status remains
+ * visible. Freshness is not presence: a silent reporter must still participate in ambiguity. */
+export function preferLiveIdentities<T extends { vehicleId: string; instance: string; alive: boolean }>(matches: readonly T[], ref: string): T[] {
+  const live = new Set(matches.filter(s => s.alive).map(s => `${s.vehicleId}/${s.instance}`));
+  return ref.includes("/") || live.size === 0 ? [...matches] : matches.filter(s => live.has(`${s.vehicleId}/${s.instance}`));
+}
+
 export function healthStatus(service: HealthService, components: string[] | undefined, now: number): CheckStatus {
   const rows = selectStatuses(service.snapshot, components);
   const details = rows.map((s) => {

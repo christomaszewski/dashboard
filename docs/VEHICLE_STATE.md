@@ -1,6 +1,7 @@
 # Vehicle-side state: a small, change-only view stream
 
-Status: phase 1 implemented on `feat/vehicle-state`. Opt-in with `vehicle_state: true`.
+Enable projected widgets with `vehicle_state: true`. A known Rig registry also starts the service
+for the current-run header, independently of widget projection and the optional Rig agent.
 
 ## Problem
 
@@ -98,12 +99,13 @@ and diagnostics.
    reply, a new epoch, or an `unknown-view` reply makes the browser start over with `since: 0`.
 
 ```ts
-ItemSpec  = {                                   // exactly one of topic, node, health
+ItemSpec  = {                                   // exactly one of topic, node, health, current_run
   topic?: string; fields?: { p: string; q?: number }[]; hz?: boolean; window_ms?: number;
   trail?: number;                               // keep this many positions (lat, lon = fields 0, 1)
   series?: { window_ms: number; bucket_ms: number };  // keep a history of field 0
   node?: string;                                // is this node in the vehicle's ROS graph
   health?: string;                              // "*" = the health service keys; else one service
+  current_run?: true;                           // the open Rig registry run
 }
 PollReply = { v: 1; epoch: string; seq: number; items: [index: number, state: ItemState][] }
           | { v: 1; error: "unknown-view" }        // vehicle restarted: register again
@@ -121,6 +123,7 @@ ItemState = {
   a?: 0 | 1;               // node items: present in the vehicle's graph
   hk?: string[];           // health "*": the service keys
   hd?: HealthWire;         // one health service, with ages instead of timestamps
+  run?: RigCurrentRun;     // cached open-run snapshot (docs/CURRENT_RUN.md)
 }
 ```
 
@@ -164,10 +167,24 @@ the decoders and `pluckField`, so field semantics have one implementation.
 
 ### Vehicle identity
 
-Several vehicles can be visible on one mesh, so the key carries the vehicle. `vehicle_id:` in the
-instance YAML sets it; otherwise dash-up uses the host's short hostname. dash-up passes the key to
+Several vehicles can be visible on one mesh, so the key carries the vehicle. Rig's `VEHICLE_ID`
+takes precedence, followed by `vehicle_id:` in the instance YAML, then the host's short hostname.
+dash-up passes the key to
 the service and renders `var/run/<name>/runtime.json`, which `dashboard-web` serves at
 `/config/runtime.json` so the browser addresses the right vehicle.
+
+### Current run
+
+The header registers `{current_run: true}` in the same view as other projected widgets. It reads
+the cached snapshot from a read-only registry watcher in `dashboard-state`; only changes to the
+run or registry error state advance the item revision. Empty poll heartbeats confirm freshness
+without resending the unchanged ID or directory. After a reconnect or process restart, normal
+view registration supplies the latest snapshot.
+
+When only the run feed is enabled, the header uses a run-only view and other widgets keep their
+direct path. `current_run_state_key` in runtime.json identifies this service. Other Zenoh services
+can query and subscribe to the separate [current-run feed](CURRENT_RUN.md). The browser does not
+subscribe to that publication stream.
 
 ### Failure behaviour
 
@@ -258,10 +275,49 @@ after the reload.
   graph: one `a: 0|1` item instead of the browser's graph subscription.
 - **Health.** The vehicle runs the health discovery (camera-service health keys and every
   `/diagnostics` subscription) while some page watches it. A `health: "*"` item lists the service
-  keys; one item per service carries it as the vehicle assembled it, sent again only when it
-  changes, with ages instead of timestamps. The browser mirrors these into its own health discovery,
+  keys; one item per service starts with its full snapshot, then carries observation metadata and
+  only the fields that changed. Ages travel instead of local timestamps. The browser reconstructs
+  the complete service and mirrors it into its own health discovery,
   so the Health tab, Home health widgets, preflight health checks, events and staleness work
   unchanged, and the instance's `health:` filters apply.
+
+Health updates are lossless: levels, messages, arbitrary scalar diagnostics, producer sequence and
+sample IDs all retain their exact values. Unchanged names, identity fields, metric keys and alert
+journals no longer repeat on every heartbeat. Every new observation still carries the service's age
+and each component's age independently. Cached samples keep their increasing `health.sample_age_s`;
+an empty poll or an update to a different service never refreshes a silent reporter.
+
+The protocol negotiates this without a version break:
+
+- Registration advertises `health_delta: 1`; only polls opting in receive `hu` updates. Older
+  browsers and servers continue using full `hd` snapshots, even when they share the same view.
+- A full `hd` carries a structural baseline `b`. A compact `hu` names that baseline and sends
+  complete observation metadata plus sparse `[statusIndex, {level?, message?, values?}]` patches.
+  A value of `null` remains a value. Changed service identity, status order, or metric keys
+  (including deletions) require a new full baseline.
+- The server records the last change cursor per field, so a missed reply or a slow poll still
+  receives every field changed since that caller's cursor. No per-browser delta queue is kept.
+- Initial loads, server restarts and explicit fresh items receive full snapshots. A missing or
+  mismatched baseline triggers a fresh request for that health item while other items continue;
+  the previous displayed health keeps aging until recovery.
+
+This reduces the browser's vehicle-state traffic when `vehicle_state: true`; direct native health
+subscriptions and producer publication rates are unchanged. Rebuild both `dashboard-web` and
+`dashboard-state` to enable it on both ends.
+
+The deterministic integration fixture in `app/src/vstate/healthDelta.integration.test.ts` models
+20 camera/Ouster components, changing observation IDs and counters, and an unchanged 32-event
+alert journal. It measures actual encoded JSON poll replies and verifies identical reconstructed
+services after every update:
+
+| Health replies | Full snapshots | Sparse updates |
+|---|---:|---:|
+| Initial snapshot | 21,570 B | 21,570 B |
+| Next 20 updates | 432,539 B | 42,299 B |
+
+That fixture uses **90.22% fewer steady-state reply bytes** (85.94% including the initial snapshot).
+These are application payload bytes, excluding request and Zenoh/WebSocket overhead, not a live
+radio measurement. Savings depend on how much of each real report changes.
 
 ### The browser's ROS graph
 

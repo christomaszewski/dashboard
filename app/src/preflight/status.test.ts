@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildGraph } from "../ros/graph";
 import type { HealthService, HealthStatus } from "../health/types";
-import { cameraRecordingStatus, healthStatus, matchingHealth, recorderTarget, rosServiceStatus } from "./status";
+import { cameraRecordingStatus, healthStatus, matchingHealth, preferLiveIdentities, recorderTarget, rosServiceStatus } from "./status";
 
 const now = 10_000;
 function service(rows: Record<string, Partial<HealthStatus>>, over: Partial<HealthService> = {}): HealthService {
@@ -37,6 +37,19 @@ describe("preflight verdicts", () => {
     expect(matchingHealth([health, second], "cam0")).toHaveLength(2);
     expect(matchingHealth([health, second], "2/cam0")).toEqual([second]);
     expect(matchingHealth([health, second], health.key)).toEqual([health]);
+  });
+  it("ignores retained offline identities for short names without hiding explicit or live collisions", () => {
+    const resolve = (services: HealthService[], ref: string) => preferLiveIdentities(matchingHealth(services, ref), ref);
+    const offline = service({ stream: {} }, { alive: false });
+    const live = { ...offline, key: "fleet/2/svc/cam0/health", vehicleId: "2", alive: true };
+    expect(resolve([offline, live], "cam0")).toEqual([live]);
+    expect(resolve([offline, live], "1/cam0")).toEqual([offline]);
+    expect(resolve([offline, live], offline.key)).toEqual([offline]);
+    const stale = { ...offline, alive: true, receivedAtMs: 0 };
+    expect(resolve([stale, live], "cam0")).toEqual([stale, live]);
+    const secondOffline = { ...live, alive: false };
+    expect(resolve([offline, secondOffline], "cam0")).toEqual([offline, secondOffline]);
+    expect(resolve([offline], "cam0")).toEqual([offline]);
   });
   it("requires current capture and recorded frames for camera recording green", () => {
     const camera = (state = "active", frames = 30) => service({ stream: {}, recording: row({ state, enabled: true, frames }) });

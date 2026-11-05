@@ -60,26 +60,31 @@ ws_port: 10000        # remote-api websocket (zenoh-ts) -> ws://<vehicle-ip>:<ws
 # that stop updating are marked stale.
 #
 # vehicle_state: true
-# vehicle_id: rover-3      # the vehicle segment of the service key (default: this host's short
-#                          #   hostname); unique per vehicle on the mesh, so each page finds its own
+# vehicle_id: rover-3      # used when Rig has not supplied VEHICLE_ID; otherwise host's short name
 # state_ws_port: 10001     # the private bridge's WebSocket, bound to 127.0.0.1 (host networking)
 
 # ── Rig agent (optional) ───────────────────────────────────────────────────────────────────────
-# `rig_agent: true` makes dash-up start a third service, dashboard-rig-agent (docs/RIG_AGENT.md):
+# A visible Rig/Logs tab or a rendered `type: rig` Home widget starts dashboard-rig-agent automatically:
 # the deployment's rows with live compose/health/operational state, the open run with new-run /
 # end-run, standby/activate/up/down per row (as jobs), and the run registry browser — all on the
-# Rig tab (shown automatically) and in `type: rig` home widgets. OPT-IN ON PURPOSE: the agent holds
+# Rig tab and in `type: rig` Home widgets. `rig_agent: true/false` explicitly overrides startup;
+# true also shows the Rig tab unless tabs.rig is false. The agent holds
 # the vehicle's docker socket (root-equivalent) and drives `rig` for the whole deployment; the mesh
 # is the trust boundary (deploy/README.md). dash-up finds the deployment tree by walking up from
 # this file to the nearest vehicle.yaml and takes data_dir from rig's RIG_DATA_DIR; override below.
 #
-# rig_agent: true
+# The current-run header/feed does NOT need this agent. A known registry directory starts
+# dashboard-state with a read-only mount, independently of vehicle_state. The header uses its
+# optimized view/poll connection; other services can query/subscribe to
+# fleet/<vehicle_id>/rig/current_run (docs/CURRENT_RUN.md).
+#
+# rig_agent: false                # explicit override; omit to infer from tabs/widgets
 # rig_root: /home/uxv/ws/test1     # the deployment tree (default: nearest vehicle.yaml above this file)
 # rig_data_dir: /home/uxv/logs     # the run registry (default: rig's RIG_DATA_DIR); mounted read-only
-#                                  #   into dashboard-web at /rig-data/ for the run browser + downloads
+#                                  #   into dashboard-state and dashboard-web at /rig-data/
 # rig_mount: /home/uxv/ws          # a WIDER read-only mount when the catalog points at ../sibling
 #                                  #   checkouts (dev workspaces); default: rig_root
-rig_actuate: false                 # read-only agent: no verbs, no buttons (state + runs still shown).
+rig_actuate: false                 # default: read-only agent; no verbs/buttons (state + runs still shown).
 #                                  #   Flip to true only when operators may drive the deployment from
 #                                  #   the dashboard; recording itself is controlled elsewhere (the
 #                                  #   lifecycle strips, the bag_recorders widget)
@@ -100,7 +105,7 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #   cameras: true
 #   ros: true
 #   ros3d: true
-#   logs: true        # Docker container/Compose-service log tail; requires rig_agent: true
+#   logs: true        # Docker container/Compose-service log tail; starts the Rig agent automatically
 #                     #   works with rig_actuate: false; rebuild web + agent images to add support
 #   clouds: true
 #   debug: true
@@ -443,7 +448,7 @@ rig_actuate: false                 # read-only agent: no verbs, no buttons (stat
 #     # independent. Set operational limits in the producer's health.limits when they must
 #     # affect diagnostics/recording (producer uses error_above/error_below, not err_*).
 #
-#     # -- rig: the deployment at a glance (needs rig_agent: true) --------------------------------
+#     # -- rig: the deployment at a glance (starts the Rig agent automatically) ------------------
 #     # The open run (label · age, New run / End run) and one row per vehicle.yaml entry with its
 #     # state pill and buttons: the zenoh lifecycle transitions when the instance advertises one
 #     # (camera-service), else rig's standby/activate for services declaring the trio, plus

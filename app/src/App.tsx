@@ -22,6 +22,7 @@ function ConnectedApp() {
   const title = config.phase === "ready" ? config.config.home?.title : undefined;
   const tabs = config.phase === "ready" ? config.config.tabs : undefined;
   const vehicleState = config.phase === "ready" && config.config.vehicle_state === true;
+  const rigAgent = config.phase === "ready" && config.config.rig_agent === true;
   const radio = config.phase === "ready" ? config.config.health?.radio : undefined;
   return (
     <TransportProvider locator={vehicleLocator} localLocator={localLocator}>
@@ -32,7 +33,7 @@ function ConnectedApp() {
               <HealthProvider>
                 <RadioOptionsCtx.Provider value={radio}>
                   <PlaybackProvider>
-                    <RigProvider>
+                    <RigProvider enabled={rigAgent}>
                       <Shell title={title} tabs={tabs} />
                     </RigProvider>
                   </PlaybackProvider>

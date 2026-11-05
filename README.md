@@ -57,10 +57,16 @@ vehicle's rmw_zenoh router; one generic service — projects customize only thei
   indicators, notes, grouped panels. Projects can add their own widget types in React
   ([app/src/extensions/README.md](app/src/extensions/README.md)) — compiled into the image,
   registered through the same registry as the built-ins.
-- Rig control: `rig_agent: true` in the instance YAML adds the `dashboard-rig-agent` service
+- Rig control: a configured Rig or Logs tab, or a `type: rig` Home widget, starts `dashboard-rig-agent`
   ([agent/](agent/README.md)) — rig is a one-shot CLI, this is its daemon half, speaking the
-  generic contract in [docs/RIG_AGENT.md](docs/RIG_AGENT.md) (`fleet/<vid>/rig/…`). Opt-in: it
-  holds the vehicle's docker socket.
+  generic contract in [docs/RIG_AGENT.md](docs/RIG_AGENT.md) (`fleet/<vid>/rig/…`). Explicit
+  `rig_agent: true/false` overrides automatic selection. It holds the vehicle's Docker socket;
+  actuation requires `rig_actuate: true` (read-only by default).
+- Current run: the header shows the open Rig run, including changes made outside the dashboard.
+  `dashboard-state` reads the directory already passed through `RIG_DATA_DIR`, sends the header
+  changes through its optimized view/poll connection, and publishes the queryable
+  `fleet/<vid>/rig/current_run` feed for other Zenoh services. No Rig agent is needed. See the
+  [feed contract](docs/CURRENT_RUN.md). The state service starts automatically when a registry is available.
 - Vehicle state: `vehicle_state: true` keeps ROS traffic on the vehicle. A small `dashboard-state`
   service projects each Home widget's fields there and sends only changes, one held poll at a time,
   so a slow link skips stale values instead of queueing them ([docs/VEHICLE_STATE.md](docs/VEHICLE_STATE.md)).
@@ -152,15 +158,14 @@ app/                        # the React/Vite frontend (see app/README.md for the
 
 ## Docker logs
 
-Add `logs` to the dashboard YAML's tabs and enable the vehicle agent:
+Add `logs` to the dashboard YAML's tabs; the required vehicle agent starts automatically:
 
 ```yaml
-rig_agent: true
 rig_actuate: false
-tabs: [logs]             # Home + Rig + Logs; preserve any other tabs you already use
+tabs: [logs]             # Home + Logs; preserve any other tabs you already use
 ```
 
-To show Logs without Rig, use `tabs: { logs: true, rig: false }`. Rebuild/redeploy both
+An explicit `rig_agent: true` also enables the Rig tab unless `tabs.rig: false`. Rebuild/redeploy both
 `dashboard-web` and `dashboard-rig-agent`, then bring up the dashboard with the updated YAML.
 The agent uses the same deployment-tree and Docker-socket mounts as the Rig tab; no new port or
 browser access to Docker is needed. Existing agent images show an upgrade message in Logs.
@@ -222,9 +227,13 @@ With a named grid layout, add a full-width `preflight` row to `home.layout.areas
 - **ROS service:** green when a server is advertised in the selected domain, red when absent.
   No service is called by this check; advertised presence does not prove the server can respond.
 
-Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Ambiguous
-references or ROS domains require an explicit selection and show red. A disconnected dashboard
-shows red rather than retaining green from an earlier observation. Tooltips explain the reason.
+Health/camera references accept `instance`, `vehicle/instance`, or a full health key. Short names
+ignore retained offline identities when an advertised match exists; camera checks and controls
+consider both health and lifecycle presence. A silent but still-advertised service remains a
+candidate. Multiple advertised identities require an explicit selection and show their matching
+keys in the tooltip. Qualified references stay pinned to that identity even when it is offline.
+Ambiguous ROS domains also require an explicit selection. A disconnected dashboard shows red
+rather than retaining green from an earlier observation. Tooltips explain the reason.
 
 Set `recording_controls: true` to add compact **Record all** (●) and **Stop recording** (■) icon
 buttons. Their labels appear on hover and are available to screen readers. The default is false.

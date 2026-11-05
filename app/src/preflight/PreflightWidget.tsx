@@ -1,14 +1,16 @@
 import { HealthTooltip } from "../health/HealthTooltip";
 import { useHealthContext } from "../health/HealthContext";
 import { useNow } from "../health/useHealth";
+import { useLifecycleContext } from "../lifecycle/LifecycleContext";
+import type { LifecycleService } from "../lifecycle/types";
 import { serviceQuery, useScopedGraph } from "../ros/useLivelinessGraph";
 import { useTransportContext } from "../transport/TransportContext";
 import { useTabActive } from "../shell/TabActivity";
 import type { HealthService } from "../health/types";
 import type { PreflightCheck, PreflightWidgetConfig } from "./spec";
-import { cameraRecordingStatus, disconnected, healthStatus, matchingHealth, problem, rosServiceStatus, type CheckStatus } from "./status";
+import { cameraRecordingStatus, disconnected, healthStatus, matchingHealth, preferLiveIdentities, problem, rosServiceStatus, type CheckStatus } from "./status";
 import { useRecorderStatus } from "./useRecorderStatus";
-import { recordingChecks } from "./recording";
+import { cameraCandidates, recordingChecks } from "./recording";
 import { RecordingControls } from "./RecordingControls";
 import "./preflight.css";
 
@@ -31,13 +33,17 @@ function BagCheck({ check, pollS, now }: { check: Extract<PreflightCheck, { type
   return <Dot label={check.label ?? check.recorder} source={`${check.recorder}${check.domain_id === undefined ? "" : ` · ROS domain ${check.domain_id}`}`} result={result} />;
 }
 
-function HealthCheck({ check, services, now, connected }: {
+function HealthCheck({ check, services, cameras, now, connected }: {
   check: Extract<PreflightCheck, { type: "health" | "camera_recording" }>;
-  services: HealthService[]; now: number; connected: boolean;
+  services: HealthService[]; cameras: LifecycleService[]; now: number; connected: boolean;
 }) {
-  const matches = check.service ? matchingHealth(services, check.service) : services;
-  if (check.service && matches.length > 1) return <Dot label={check.label ?? check.service} source={check.service}
-    result={connected ? problem("Ambiguous health service", "Use vehicle/instance or the full health key to select one reporter.") : disconnected()} />;
+  const candidates = check.type === "camera_recording" ? cameraCandidates(check.service, cameras, services) : undefined;
+  const matches = candidates?.health ?? (check.service ? preferLiveIdentities(matchingHealth(services, check.service), check.service) : services);
+  const identities = candidates?.identities ?? new Set(matches.map(s => `${s.vehicleId}/${s.instance}`));
+  if (check.service && (matches.length > 1 || identities.size > 1 || (candidates?.cameras.length ?? 0) > 1))
+    return <Dot label={check.label ?? check.service} source={check.service}
+      result={connected ? problem("Ambiguous health service", "Use vehicle/instance or the full health key to select one reporter.",
+        `Matches: ${[...identities].sort().join(", ")}.`, ...matches.map(s => s.key).sort()) : disconnected()} />;
   if (!matches.length) return <Dot label={check.label ?? check.service ?? "Health"} source={check.service ?? "Health discovery"}
     result={connected ? problem("No health report", check.service
       ? "No health reporter matches this reference. Check the instance name and whether the service is publishing diagnostics."
@@ -50,6 +56,7 @@ function HealthCheck({ check, services, now, connected }: {
 /** Opt-in, full-width by default. Group order and check order are exactly the YAML order. */
 export function PreflightWidget({ widget }: { widget: PreflightWidgetConfig }) {
   const { services } = useHealthContext();
+  const { services: cameras } = useLifecycleContext();
   const graph = useScopedGraph(widget.groups.flatMap((g) => g.checks).flatMap((c) => (c.type === "ros_service" ? [serviceQuery(c.service)] : [])));
   const { status } = useTransportContext();
   const connected = status === "connected";
@@ -65,7 +72,7 @@ export function PreflightWidget({ widget }: { widget: PreflightWidgetConfig }) {
           : check.type === "ros_service"
             ? <Dot key={j} label={check.label ?? check.service} source={`${check.service}${check.domain_id === undefined ? "" : ` · ROS domain ${check.domain_id}`}`}
               result={connected ? rosServiceStatus(graph, check.service, check.domain_id) : disconnected()} />
-            : <HealthCheck key={j} check={check} services={services} now={now} connected={connected} />)}
+            : <HealthCheck key={j} check={check} services={services} cameras={cameras} now={now} connected={connected} />)}
       </div>
     </div>)}
     {widget.recording_controls && <RecordingControls key={JSON.stringify(checks)} checks={checks} />}

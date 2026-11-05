@@ -88,7 +88,7 @@ export class ZenohRemoteApiTransport implements Transport {
   }
 
   /** Serve queries on `keyexpr` (vehicle services such as dashboard-state; not on Transport). */
-  async declareQueryable(keyexpr: string, onQuery: (q: IncomingQuery) => void): Promise<Subscription> {
+  async declareQueryable(keyexpr: string, onQuery: (q: IncomingQuery) => void, opts?: { replyKey?: string; encoding?: "application/json" }): Promise<Subscription> {
     const queryable = await this.session.declareQueryable(new KeyExpr(keyexpr), {
       handler: (q: Query) => {
         const finish = async (send: () => Promise<void>) => {
@@ -97,12 +97,19 @@ export class ZenohRemoteApiTransport implements Transport {
         onQuery({
           keyexpr: q.keyExpr().toString(),
           payload: q.payload()?.toBytes(),
-          reply: (payload) => finish(() => q.reply(q.keyExpr(), payload)),
+          reply: (payload) => finish(() => q.reply(opts?.replyKey ? new KeyExpr(opts.replyKey) : q.keyExpr(), payload,
+            opts?.encoding ? { encoding: opts.encoding } : undefined)),
           replyErr: (message) => finish(() => q.replyErr(message)),
         });
       },
     });
     return { close: () => queryable.undeclare() };
+  }
+
+  /** Native service publications (dashboard-state's reusable current-run feed). */
+  async declarePublisher(keyexpr: string, opts?: { encoding?: "application/json" }): Promise<Subscription & { put(payload: Uint8Array): Promise<void> }> {
+    const publisher = await this.session.declarePublisher(new KeyExpr(keyexpr), opts);
+    return { put: (payload) => publisher.put(payload), close: () => publisher.undeclare() };
   }
 
   async get(keyexpr: string, opts?: TransportGetOptions): Promise<GetReply[]> {

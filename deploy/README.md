@@ -9,8 +9,8 @@ Optional, additive sidecar that turns the vehicle into a browsable dashboard hos
 |---|---|---|
 | `dashboard-zenoh` | `zenoh-bridge-remote-api` — a Zenoh **client** of the rmw_zenoh router that exposes a WebSocket for the browser's `zenoh-ts` | `:10000` (ws) |
 | `dashboard-web` | Caddy with the React bundle baked in (a built image — `deploy/Dockerfile.web`) | `:8080` (http) |
-| `dashboard-state` + `dashboard-state-zenoh` (opt-in) | vehicle state (`docs/VEHICLE_STATE.md`, `deploy/Dockerfile.state`): Home widgets' fields projected on the vehicle and sent as changes. Its own `dashboard-zenoh` bridge with the stock config, WebSocket on 127.0.0.1 only. Only with `vehicle_state: true` (`docker-compose.vehicle-state.yml`). | `127.0.0.1:10001` (ws, `state_ws_port`) |
-| `dashboard-rig-agent` (opt-in) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, the run registry, rig verbs as detached jobs. Only with `rig_agent: true` in the instance YAML (`docker-compose.rig-agent.yml` + `docker-compose.rig-data.yml` overlays). | — (peer on `:7447`) |
+| `dashboard-state` + `dashboard-state-zenoh` | vehicle state (`docs/VEHICLE_STATE.md`, `deploy/Dockerfile.state`): projected Home fields and the current run, sent as changes. Its own bridge uses the stock config and loopback WebSocket. Starts for `vehicle_state: true` or a known registry directory (`docker-compose.vehicle-state.yml`). | `127.0.0.1:10001` (ws, `state_ws_port`) |
+| `dashboard-rig-agent` (optional) | the rig deployment over Zenoh (`docs/RIG_AGENT.md`, `deploy/Dockerfile.rig-agent`): `rig status` snapshots, registry browsing, Docker logs, and rig jobs. Selected by Rig/Logs tabs or Rig widgets; `rig_agent: true/false` overrides selection. | — (peer on `:7447`) |
 
 Connect your laptop to the mesh, then open `http://<vehicle-ip>:8080`. The app talks Zenoh over
 `ws://127.0.0.1:10000` when a verified laptop bridge is available, otherwise
@@ -19,8 +19,10 @@ browser local-network permissions and the different placement required for nativ
 
 ## Rig agent (opt-in)
 
-`dash-up` applies the agent overlay when the instance YAML sets `rig_agent: true`. What it mounts
-and why (see the comments in `docker-compose.rig-agent.yml`):
+`dash-up` applies the agent overlay when a visible Rig or Logs tab or a rendered Rig Home widget
+needs it. `rig_agent: true` forces startup and retains the default Rig tab; `rig_agent: false`
+prevents startup. Automatically selected Logs does not enable the Rig tab. Actuation requires
+`rig_actuate: true`; the default is read-only. What it mounts and why:
 
 - **Identity mounts.** rig hands `docker compose` the launchers' *host* bind paths and the agent
   talks to the *host* daemon through `/var/run/docker.sock`, so the deployment tree (and, for dev
@@ -47,6 +49,21 @@ arguments (row names must exist, labels are regex-checked, no free-form argv), a
 (`rig_actuate: false`), and a `client` tag on every job. A key-scoped sidecar ACL
 (`deny` queries on `fleet/*/rig/jobs/**` in `zenohd-dashboard.json5`) blocks verbs without breaking
 discovery, unlike the general `deny query` warned about below.
+
+The current-run header does not select the agent. When `RIG_DATA_DIR` (or `rig_data_dir:`) is
+known, `dash-up` starts `dashboard-state` with a read-only identity mount from
+`docker-compose.state-rig-data.yml`. It watches the `current` symlink and serves the
+[current-run feed](../docs/CURRENT_RUN.md), using no Docker socket or deployment-tree mount.
+Run-only startup leaves other widgets on their configured direct path. A dashboard with neither
+projected widgets nor a registry starts only the base web and Zenoh services.
+`dash-up … up` passes `--remove-orphans` so services no longer selected by the YAML are removed
+from this dashboard's Compose project, including a previously enabled Rig agent. Detached Rig
+job runners have no Compose labels and are unaffected.
+
+Rig-agent status/jobs use direct Zenoh publications and initial queries over the browser's
+reconnecting transport; they do not use the optimized vehicle-state view/poll protocol. Logs use
+bounded queries while visible. The run header uses view/poll, sharing the other projected widgets'
+client when enabled; unchanged runs add no repeated run payload to poll replies.
 
 ## Run (on the vehicle)
 

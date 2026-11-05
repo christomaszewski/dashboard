@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 import { useTransportContext } from "../transport/TransportContext";
 import { VehicleStateClient } from "./client";
 import type { Transport } from "../transport/types";
-import { loadStateKey, type StateKeyResult } from "./runtime";
+import { loadRuntimeKeys, type RuntimeKeys } from "./runtime";
 
 export interface VehicleStateValue {
   /** The instance YAML set `vehicle_state: true`. */
@@ -13,6 +13,8 @@ export interface VehicleStateValue {
   error?: string;
   /** Where image widgets fetch vehicle frames (same transport and service as the client). */
   frames?: { transport: Transport; base: string } | null;
+  /** Local run registry, enabled by runtime metadata even when topic projection is disabled. */
+  currentRun?: { client: VehicleStateClient | null; vehicleId?: string; error?: string };
 }
 
 export const VehicleStateCtx = createContext<VehicleStateValue>({ enabled: false, client: null });
@@ -41,18 +43,17 @@ export function WidgetTopicSource({ setting, children }: { setting: boolean | un
 
 export function VehicleStateProvider({ enabled, children }: { enabled: boolean; children: ReactNode }) {
   const { transport } = useTransportContext();
-  const [key, setKey] = useState<StateKeyResult | null>(null);
-  const [client, setClient] = useState<VehicleStateClient | null>(null);
+  const [keys, setKeys] = useState<RuntimeKeys | null>(null);
+  const [clients, setClients] = useState<{ client: VehicleStateClient | null; runClient: VehicleStateClient | null }>({ client: null, runClient: null });
 
   useEffect(() => {
-    if (!enabled) return;
     let cancelled = false;
     let retry: ReturnType<typeof setTimeout> | undefined;
     const attempt = () =>
-      void loadStateKey(fetch, import.meta.env.VITE_VEHICLE_STATE_KEY).then((result) => {
+      void loadRuntimeKeys(fetch, import.meta.env.VITE_VEHICLE_STATE_KEY).then((result) => {
         if (cancelled) return;
-        setKey(result);
-        if ("error" in result) retry = setTimeout(attempt, 5000); // the link may just be bad
+        setKeys(result);
+        if ((enabled && result.error) || result.currentRunError || result.retry) retry = setTimeout(attempt, 5000);
       });
     attempt();
     return () => {
@@ -61,16 +62,20 @@ export function VehicleStateProvider({ enabled, children }: { enabled: boolean; 
     };
   }, [enabled]);
 
-  const base = key && "base" in key ? key.base : undefined;
+  const base = enabled && !keys?.error ? keys?.base : undefined;
+  const runBase = keys?.currentRunBase;
   useEffect(() => {
-    if (!enabled || !transport || !base) return setClient(null);
-    const next = new VehicleStateClient({ transport, base });
-    setClient(next);
-    return () => next.close();
-  }, [enabled, transport, base]);
+    const client = transport && base ? new VehicleStateClient({ transport, base }) : null;
+    const runClient = runBase === base ? client : transport && runBase ? new VehicleStateClient({ transport, base: runBase }) : null;
+    setClients({ client, runClient });
+    return () => { client?.close(); if (runClient !== client) runClient?.close(); };
+  }, [transport, base, runBase]);
 
-  const error = key && "error" in key ? key.error : undefined;
+  const error = enabled ? keys?.error : undefined;
   const frames = useMemo(() => (enabled && transport && base ? { transport, base } : null), [enabled, transport, base]);
-  const value = useMemo(() => ({ enabled, client, error, frames }), [enabled, client, error, frames]);
+  const runError = keys?.currentRunError;
+  const currentRun = useMemo(() => runBase || runError ? { client: clients.runClient,
+    vehicleId: runBase?.match(/^fleet\/([^/]+)\/dash\//)?.[1], error: runError } : undefined, [runBase, runError, clients.runClient]);
+  const value = useMemo(() => ({ enabled, client: clients.client, error, frames, currentRun }), [enabled, clients.client, error, frames, currentRun]);
   return <VehicleStateCtx.Provider value={value}>{children}</VehicleStateCtx.Provider>;
 }

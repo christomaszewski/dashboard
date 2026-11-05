@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shlex
 import shutil
 import socket
 import subprocess
@@ -23,11 +24,119 @@ from contextlib import redirect_stdout
 from unittest.mock import patch
 
 import runtime_images as ri
+import dash_env as de
 
 REPO = Path(__file__).resolve().parents[1]
 DOCKER = shutil.which("docker")
 ID_A, ID_B, ID_C = ("sha256:" + character * 64 for character in "abc")
 BASE_IMAGES = ["dashboard-web:local", "dashboard-zenoh:local"]
+
+
+class ConfigTests(unittest.TestCase):
+    def load(self, text, fallback=False):
+        with tempfile.TemporaryDirectory(prefix="dashboard-config-") as tmp:
+            path = Path(tmp) / "dashboard.yaml"
+            path.write_text(text)
+            if fallback:
+                with patch.dict(sys.modules, {"yaml": None}):
+                    return de.load(str(path))
+            return de.load(str(path))
+
+    def test_agent_requirements_match_with_and_without_pyyaml(self):
+        cases = [
+            ("name: dash", False),
+            ("{}", False),
+            ("rig_agent: true", True),
+            ("rig_agent: false\ntabs: [rig, logs]", False),
+            ("rig_agent: true\ntabs: {rig: false}", True),
+            ("tabs: [rig]", True),
+            ("tabs:\n  - logs", True),
+            ("tabs:\n- logs\nname: dash", True),
+            ("tabs: {home: false, logs: true}", True),
+            ("tabs:\n  rig: true\n  logs: false", True),
+            ("tabs: {rig: false, logs: false}", False),
+            ("tabs: {rig: 'true', logs: yes}", False),
+            ("tabs: [health, cameras, ros, ros3d, clouds, debug]\nvehicle_state: true", False),
+            ("home: {widgets: [{type: rig}]}", True),
+            ("home:\n  widgets:\n    - type: rig\n      stacks: [front, rear]", True),
+            ("home:\n  widgets:\n    - type: panel\n      items:\n        - type: rig", True),
+            ("home: {widgets: [{type: rig}]}\ntabs: {home: false, cameras: true}", False),
+            ("home: {widgets: [{type: rig}]}\ntabs: {home: false}", True),
+            ("home: {widgets: [{type: rig}]}\nrig_agent: false", False),
+            ("home: {version: 2, widgets: [{type: rig}]}", False),
+            ("home: {version: true, widgets: [{type: rig}]}", False),
+            ("home: {widgets: [{type: rig, stacks: bad}]}", False),
+            ("home: {widgets: [{type: rig, stacks: [1]}]}", False),
+            ("home: {widgets: [{type: panel, items: [{type: panel, items: [{type: rig}]}]}]}", False),
+            ("home: {widgets: [{type: preflight, recording_controls: true}, {type: health}]}", False),
+        ]
+        for text, expected in cases:
+            for fallback in (False, True):
+                with self.subTest(text=text, fallback=fallback):
+                    cfg = self.load(text, fallback)
+                    self.assertEqual(de.rig_agent_required(cfg), expected)
+
+    def test_fallback_preserves_nested_names_quotes_and_topic_rates(self):
+        text = """name: dash
+topic_rates:
+  /imu/data: 5
+home:
+  widgets:
+    - type: panel
+      title: "Operator's # controls"
+      items:
+        - type: rig
+          label: 'Vehicle: rig'
+        - type: text
+          text: vehicle's state
+          name: nested
+tabs: [health, "logs"] # chosen views
+"""
+        regular, fallback = self.load(text), self.load(text, True)
+        self.assertEqual(fallback, regular)
+        self.assertEqual(fallback["name"], "dash")
+        self.assertEqual(fallback["topic_rates"], {"/imu/data": 5})
+        self.assertTrue(de.rig_agent_required(fallback))
+
+    def test_fallback_refuses_unsupported_yaml_instead_of_losing_dependencies(self):
+        for text in ("tabs: &views [logs]", "tabs: *views", "tabs: [logs,", "home: !custom widgets"):
+            with self.subTest(text=text), self.assertRaisesRegex(SystemExit, "PyYAML"):
+                self.load(text, True)
+
+    def test_fallback_reads_shipped_home_example_and_text_blocks(self):
+        example = (REPO / "config/infra/dashboard.example.yaml").read_text()
+        start = example.index("# home:\n")
+        home = "\n".join(line[2:] if line.startswith("# ") else line for line in example[start:].splitlines())
+        text_blocks = """home:
+  widgets:
+    - type: text
+      text: |
+        Operator's status: # literal content
+        Call before lifting.
+    - type: text
+      text: >-
+        Call the tower
+        before lifting.
+    - type: rig
+"""
+        for text in (example, example[:start] + home, text_blocks):
+            with self.subTest(text=text[:80]):
+                regular, fallback = self.load(text), self.load(text, True)
+                self.assertEqual(fallback, regular)
+                self.assertEqual(de.rig_agent_required(fallback), de.rig_agent_required(regular))
+        self.assertTrue(de.rig_agent_required(self.load(text_blocks, True)))
+
+    def test_launcher_identity_precedes_config_then_hostname(self):
+        for identity in ("from-rig", "rover.3", "-rover-"):
+            with patch.dict(os.environ, {"VEHICLE_ID": identity}, clear=True):
+                self.assertEqual(de.state_key({"name": "dash", "vehicle_id": "from-config"}), f"fleet/{identity}/dash/dash/state")
+        for identity in ("", "rover/3", "rover*", "rover 3"):
+            with patch.dict(os.environ, {"VEHICLE_ID": identity}, clear=True), self.assertRaisesRegex(SystemExit, "VEHICLE_ID"):
+                de.state_key({"name": "dash"})
+        with patch.dict(os.environ, {}, clear=True), patch.object(de.socket, "gethostname", return_value="rover.local"):
+            self.assertEqual(de.state_key({"name": "dash", "vehicle_id": 7}), "fleet/7/dash/dash/state")
+            self.assertEqual(de.state_key({"name": "dash", "vehicle_id": "rover.3"}), "fleet/rover.3/dash/dash/state")
+            self.assertEqual(de.state_key({"name": "dash"}), "fleet/rover/dash/dash/state")
 
 
 def model():
@@ -200,7 +309,7 @@ class LauncherTests(unittest.TestCase):
         fake.chmod(0o755)
         self.log = self.root / "docker.jsonl"
         self.env = {k: v for k, v in os.environ.items()
-                    if not k.startswith(("DASH_", "RIG_", "COMPOSE_", "DOCKER_", "ROS_"))}
+                    if k != "VEHICLE_ID" and not k.startswith(("DASH_", "RIG_", "COMPOSE_", "DOCKER_", "ROS_"))}
         self.env.update(PATH=str(self.bin) + os.pathsep + os.environ.get("PATH", ""),
                         DASH_PYTHON=sys.executable, DOCKER_LOG=str(self.log),
                         PYTHONDONTWRITEBYTECODE="1", RIG_TARGET_ARCH="arm64")
@@ -239,15 +348,69 @@ class LauncherTests(unittest.TestCase):
         self.config.write_text("service: dashboard\nname: dash\nrig_agent: true\n"
                                "topic_rates:\n  /imu/data: 5\nros_domain_id: 7\nclouds_dir: clouds\nrig_data_dir: runs\n")
         before = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*"))
-        self.assertEqual(self.inventory()["images"], sorted(BASE_IMAGES + ["dashboard-rig-agent:local"]))
+        self.assertEqual(self.inventory()["images"], sorted(BASE_IMAGES + ["dashboard-rig-agent:local", "dashboard-state:local"]))
         after = sorted(str(p.relative_to(self.root)) for p in self.root.rglob("*") if p != self.log)
         self.assertEqual(after, before)
         entry = self.entries()[-1]
         self.assertEqual(entry["env"]["DASH_RIG_ROOT"], str(self.fleet))
         self.assertEqual(entry["env"]["DASH_RIG_DATA"], str(self.fleet / "runs"))
         self.assertEqual(entry["env"]["DASH_CLOUDS_HOST"], str(self.fleet / "clouds"))
-        for overlay in ("rig-agent", "rig-data", "rig-data-web", "clouds"):
+        for overlay in ("rig-agent", "rig-data", "rig-data-web", "clouds", "vehicle-state", "state-rig-data"):
             self.assertIn(str(self.repo / "deploy" / f"docker-compose.{overlay}.yml"), entry["args"])
+
+    def test_runtime_inventory_follows_rendered_agent_dependencies_and_overrides(self):
+        (self.fleet / "vehicle.yaml").write_text("name: fixture\n")
+        # -S proves ordinary nested YAML still selects services on a stock Python host.
+        no_yaml = self.bin / "python-no-yaml"
+        no_yaml.write_text(f"#!/bin/sh\nunset PYTHONPATH\nexec {shlex.quote(sys.executable)} -S \"$@\"\n")
+        no_yaml.chmod(0o755)
+        cases = [
+            ("tabs: [logs]", True),
+            ("tabs:\n  rig: true", True),
+            ("home:\n  widgets:\n    - type: panel\n      items:\n        - type: rig", True),
+            ("tabs: {home: false, clouds: true}\nhome: {widgets: [{type: rig}]}", False),
+            ("tabs: [health, cameras, clouds]\nhome: {widgets: [{type: preflight}]}", False),
+            ("tabs: [rig, logs]\nrig_agent: false", False),
+            ("tabs: {rig: false}\nrig_agent: true", True),
+        ]
+        for body, required in cases:
+            for python in (sys.executable, str(no_yaml)):
+                with self.subTest(body=body, python=python):
+                    self.config.write_text(f"name: dash\n{body}\n")
+                    expected = sorted(BASE_IMAGES + (["dashboard-rig-agent:local"] if required else []))
+                    self.assertEqual(self.inventory(DASH_PYTHON=python)["images"], expected)
+                    env = self.entries()[-1]["env"]
+                    self.assertEqual(env["DASH_RIG_AGENT"], str(int(required)))
+                    self.assertEqual(env["DASH_RIG_ACTUATE"], "0")
+        self.config.write_text("name: dash\ntabs: [rig]\nrig_actuate: true\n")
+        self.inventory()
+        self.assertEqual(self.entries()[-1]["env"]["DASH_RIG_ACTUATE"], "1")
+
+    def test_inherited_run_registry_starts_state_without_agent_or_projected_widgets(self):
+        self.config.write_text("name: dash\nvehicle_state: false\nrig_agent: false\nvehicle_id: config-vehicle\n")
+        data = str(self.fleet / "recordings")
+        self.assertEqual(self.inventory(RIG_DATA_DIR=data, VEHICLE_ID="rover.3")["images"],
+                         sorted(BASE_IMAGES + ["dashboard-state:local"]))
+        entry = self.entries()[-1]
+        env = entry["env"]
+        self.assertEqual(env["DASH_VEHICLE_STATE"], "0")
+        self.assertEqual(env["DASH_RIG_AGENT"], "0")
+        self.assertEqual(env["DASH_VEHICLE_ID"], "rover.3")
+        self.assertEqual(env["DASH_STATE_KEY"], "fleet/rover.3/dash/dash/state")
+        self.assertEqual(env["DASH_RIG_DATA"], data)
+        self.assertIn(str(self.repo / "deploy/docker-compose.state-rig-data.yml"), entry["args"])
+        self.assertNotIn(str(self.repo / "deploy/docker-compose.rig-agent.yml"), entry["args"])
+        self.assertFalse((self.repo / "var").exists())
+
+    def test_unsupported_fallback_config_fails_before_compose_selection(self):
+        no_yaml = self.bin / "python-no-yaml"
+        no_yaml.write_text(f"#!/bin/sh\nunset PYTHONPATH\nexec {shlex.quote(sys.executable)} -S \"$@\"\n")
+        no_yaml.chmod(0o755)
+        self.config.write_text("name: dash\ntabs: &views [logs]\n")
+        result = self.invoke("runtime-images", DASH_PYTHON=str(no_yaml))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("PyYAML", result.stderr)
+        self.assertEqual([e["args"] for e in self.entries()], [["compose", "version"]])
 
     def test_vehicle_state_inventory_key_and_registry_without_writes(self):
         self.config.write_text("service: dashboard\nname: dash\nvehicle_state: true\nvehicle_id: rover-3\n")
@@ -292,11 +455,16 @@ class LauncherTests(unittest.TestCase):
     def test_pinned_launcher_captures_exact_active_native_model(self):
         result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(), COMPOSE_PROJECT_NAME="dash-vehicle-fixture")
         self.assertEqual(result.returncode, 0, result.stderr)
-        frozen = self.entries()[-1]["model"]
+        entry = self.entries()[-1]
+        self.assertEqual(entry["args"].count("--remove-orphans"), 1)
+        frozen = entry["model"]
         self.assertEqual(frozen["name"], "dash-vehicle-fixture")
         self.assertEqual({s["image"] for s in frozen["services"].values()}, {ID_A, ID_B})
         self.assertTrue(all(s["platform"] == "linux/arm64" and s["pull_policy"] == "never" and "build" not in s
                             for s in frozen["services"].values()))
+        result = self.invoke("up", "-d", "--remove-orphans", RIG_RUNTIME_IMAGE_PINS=pins())
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.entries()[-1]["args"].count("--remove-orphans"), 1)
 
     def test_pinned_launcher_refuses_bypass_and_incomplete_map(self):
         for args in (("up", "--build"), ("run", "dashboard-web"), ("--profile", "all", "up"), ("restart",)):
@@ -314,14 +482,14 @@ class LauncherTests(unittest.TestCase):
         digest = "localhost:5000/dashboard-web@sha256:" + "d" * 64
         env = dict(REAL_DOCKER=DOCKER, DASH_WEB_IMAGE=digest, RIG_IMAGE_REGISTRY="localhost:5000", RIG_IMAGE_TAG="fleet")
         inventory = self.inventory(**env)
-        self.assertEqual(inventory["images"], sorted([digest, "localhost:5000/dashboard-zenoh:fleet"]))
+        self.assertEqual(inventory["images"], sorted([digest, "localhost:5000/dashboard-zenoh:fleet", "localhost:5000/dashboard-state:fleet"]))
         result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(inventory["images"]), **env)
         self.assertEqual(result.returncode, 0, result.stderr)
         frozen = self.entries()[-1]["model"]
         web = frozen["services"]["dashboard-web"]
         self.assertEqual({v["target"]: v["source"] for v in web["volumes"]}, {
             "/config/dashboard.yaml": str(self.config), "/clouds": str(self.fleet / "clouds"),
-            "/rig-data": str(self.fleet / "runs")})
+            "/rig-data": str(self.fleet / "runs"), "/config/runtime.json": str(self.repo / "var/run/dash/runtime.json")})
         # Resolve the stdin model once more to catch Compose interpolation/path round-trip issues.
         probe = subprocess.run([DOCKER, "compose", "-f", "-", "config", "--format", "json"],
                                input=json.dumps(frozen), capture_output=True, text=True, timeout=30)
@@ -344,12 +512,32 @@ class LauncherTests(unittest.TestCase):
                       [{"target": v["target"], "source": v["source"]} for v in services["dashboard-web"]["volumes"]])
         state, bridge = services["dashboard-state"], services["dashboard-state-zenoh"]
         self.assertEqual(state["environment"], {"DASH_STATE_KEY": "fleet/rover-3/dash/dash/state",
-                                                "DASH_STATE_LOCATOR": "ws/127.0.0.1:10001"})
+                                                "DASH_STATE_LOCATOR": "ws/127.0.0.1:10001", "VEHICLE_ID": "rover-3"})
         self.assertEqual(bridge["image"], services["dashboard-zenoh"]["image"])  # one pinned bridge image
         self.assertEqual(bridge["command"][-2:], ["--ws-port", "127.0.0.1:10001"])
         # The private bridge always gets the stock config: the browser path's rate limits never apply.
         self.assertEqual([v["source"] for v in bridge["volumes"]], [str(self.repo / "deploy/zenohd-dashboard.json5")])
         self.assertNotEqual(services["dashboard-zenoh"]["volumes"][0]["source"], bridge["volumes"][0]["source"])
+
+    @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
+    def test_real_compose_run_only_state_mount_and_identity(self):
+        self.config.write_text("name: dash\nvehicle_state: false\nrig_agent: false\nvehicle_id: ignored-config\n")
+        data = str(self.fleet / "records")
+        env = dict(REAL_DOCKER=DOCKER, RIG_DATA_DIR=data, VEHICLE_ID="rover.3")
+        inventory = self.inventory(**env)
+        self.assertEqual(inventory["images"], sorted(BASE_IMAGES + ["dashboard-state:local"]))
+        result = self.invoke("up", "-d", RIG_RUNTIME_IMAGE_PINS=pins(inventory["images"]), **env)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        services = self.entries()[-1]["model"]["services"]
+        self.assertNotIn("dashboard-rig-agent", services)
+        state = services["dashboard-state"]
+        self.assertEqual(state["environment"]["VEHICLE_ID"], "rover.3")
+        self.assertEqual(state["environment"]["RIG_DATA_DIR"], data)
+        self.assertEqual(state["volumes"], [{"type": "bind", "source": data, "target": data,
+                                             "read_only": True, "bind": {"create_host_path": False}}])
+        runtime = json.loads((self.repo / "var/run/dash/runtime.json").read_text())
+        self.assertEqual(runtime, {"vehicle_state_key": "fleet/rover.3/dash/dash/state",
+                                  "current_run_state_key": "fleet/rover.3/dash/dash/state"})
 
     @unittest.skipUnless(DOCKER, "Docker Compose not installed; fake-Compose contract tests still run")
     def test_real_compose_agent_opt_in_and_native_platform_rejection(self):

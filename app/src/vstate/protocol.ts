@@ -4,7 +4,8 @@
 // has one definition on both sides of the radio.
 import { pluckField } from "../home/pluck";
 import type { DecodedMessage } from "../schema/types";
-import type { HealthWire } from "./healthWire";
+import type { HealthUpdate, HealthWire } from "./healthWire";
+import type { RigCurrentRun } from "../rig/types";
 
 export const VSTATE_VERSION = 1;
 
@@ -38,6 +39,7 @@ export interface SeriesSpec {
  *   node    is this fully-qualified node in the vehicle's ROS graph
  *   health  "*" = the keys of the vehicle's health services; else one service, as its own
  *           discovery assembled it (docs/VEHICLE_STATE.md, "Health")
+ *   current_run  the vehicle's independently observed current Rig run
  */
 export interface ItemSpec {
   topic?: string;
@@ -49,6 +51,8 @@ export interface ItemSpec {
   series?: SeriesSpec;
   node?: string;
   health?: string;
+  /** The current Rig run, observed on the vehicle without a Rig agent. */
+  current_run?: true;
 }
 
 export interface ViewSpec {
@@ -62,6 +66,8 @@ export interface RegisterReply {
   epoch: string;
   /** This vehicle honours `poll.fresh`: a caller changing its view may keep its `since`. */
   fresh?: 1;
+  /** This vehicle can answer opted-in polls with sparse health updates. */
+  health_delta?: 1;
 }
 
 export interface PollRequest {
@@ -71,6 +77,8 @@ export interface PollRequest {
   since: number;
   /** View indices of items new to this caller (added since its last view): answered whole, at once. */
   fresh?: number[];
+  /** Accept sparse health updates; omit when the caller needs legacy full snapshots. */
+  health_delta?: 1;
 }
 
 /** Field values after projection: JSON-safe, with tags for bigint and non-finite floats. */
@@ -97,6 +105,10 @@ export interface ItemState {
   hk?: string[];
   /** Health service: as the vehicle's discovery holds it, with ages instead of timestamps. */
   hd?: HealthWire;
+  /** Negotiated health freshness and fields changed since the caller's cursor. */
+  hu?: HealthUpdate;
+  /** Current-run item: the registry observer's cached document. */
+  run?: RigCurrentRun;
 }
 
 export type PollReply =
@@ -104,7 +116,7 @@ export type PollReply =
   | { v: typeof VSTATE_VERSION; error: "unknown-view" };
 
 /** A plain key for one vehicle's state service: fleet/<vehicle>/dash/<name>/state (no wildcards). */
-export const STATE_KEY_RE = /^[A-Za-z0-9_-]+(?:\/[A-Za-z0-9_-]+)*$/;
+export const STATE_KEY_RE = /^[A-Za-z0-9_.-]+(?:\/[A-Za-z0-9_.-]+)*$/;
 
 /** A topic name the vehicle accepts (absolute; no wildcards or whitespace). */
 export function isRosTopicName(name: string): boolean {
@@ -134,8 +146,12 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function validateItem(raw: unknown, i: number): ItemSpec {
   if (!isRecord(raw)) fail(`items[${i}] must be a mapping`);
-  const kinds = ["topic", "node", "health"].filter((k) => raw[k] !== undefined);
-  if (kinds.length !== 1) fail(`items[${i}] needs exactly one of topic, node, health`);
+  const kinds = ["topic", "node", "health", "current_run"].filter((k) => raw[k] !== undefined);
+  if (kinds.length !== 1) fail(`items[${i}] needs exactly one of topic, node, health, current_run`);
+  if (raw.current_run !== undefined) {
+    if (raw.current_run !== true) fail(`items[${i}].current_run must be true`);
+    return { current_run: true };
+  }
   if (raw.node !== undefined) {
     if (typeof raw.node !== "string" || raw.node.length > 256 || !NODE_RE.test(raw.node)) fail(`items[${i}].node must be a ROS node name`);
     return { node: raw.node };
@@ -189,6 +205,10 @@ export function validatePollRequest(raw: unknown): PollRequest {
   if (typeof raw.epoch !== "string" || raw.epoch.length > 64) fail("poll.epoch must be a string");
   if (!Number.isSafeInteger(raw.since) || (raw.since as number) < 0) fail("poll.since must be a non-negative integer");
   const req: PollRequest = { v: VSTATE_VERSION, view: raw.view, epoch: raw.epoch, since: raw.since as number };
+  if (raw.health_delta !== undefined) {
+    if (raw.health_delta !== 1) fail("poll.health_delta must be 1");
+    req.health_delta = 1;
+  }
   if (raw.fresh !== undefined) {
     const fresh = raw.fresh;
     if (!Array.isArray(fresh) || fresh.length > LIMITS.items || !fresh.every((i) => Number.isSafeInteger(i) && i >= 0)) {
@@ -205,6 +225,7 @@ export function validatePollRequest(raw: unknown): PollRequest {
 export function canonicalItem(spec: ItemSpec): ItemSpec {
   if (spec.node !== undefined) return { node: spec.node };
   if (spec.health !== undefined) return { health: spec.health };
+  if (spec.current_run !== undefined) return { current_run: spec.current_run };
   const out: ItemSpec = { topic: spec.topic };
   if (spec.fields && spec.fields.length > 0) out.fields = spec.fields.map((f) => (f.q === undefined ? { p: f.p } : { p: f.p, q: f.q }));
   if (spec.hz) out.hz = true;

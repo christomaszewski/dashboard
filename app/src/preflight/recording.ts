@@ -5,7 +5,7 @@ import type { RosGraph } from "../ros/graph";
 import { callService } from "../services/callService";
 import type { Transport } from "../transport/types";
 import type { PreflightCheck, PreflightGroup } from "./spec";
-import { matchingHealth, recorderTarget, scopedGraph } from "./status";
+import { matchingHealth, preferLiveIdentities, recorderTarget, scopedGraph } from "./status";
 
 export type RecordingCheck = Extract<PreflightCheck, { type: "bag_recording" | "camera_recording" }>;
 export type RecordingAction = "start" | "stop";
@@ -35,6 +35,22 @@ export function recordingChecks(groups: PreflightGroup[]): RecordingCheck[] {
   return [...unique.values()];
 }
 
+/** Status and controls resolve the same identity across both discovery surfaces. An offline
+ * health reporter is still a candidate when its lifecycle endpoint remains live (and vice versa). */
+export function cameraCandidates(ref: string, cameras: LifecycleService[], health: HealthService[]) {
+  const healthMatches = matchingHealth(health, ref);
+  const healthIdentities = new Set(healthMatches.map(s => `${s.vehicleId}/${s.instance}`));
+  const cameraMatches = cameras.filter(s => ref === s.instance || ref === `${s.vehicleId}/${s.instance}` ||
+    ref === `fleet/${s.vehicleId}/svc/${s.instance}/health` || healthIdentities.has(`${s.vehicleId}/${s.instance}`));
+  const selected = preferLiveIdentities<HealthService | LifecycleService>([...healthMatches, ...cameraMatches], ref);
+  const identities = new Set(selected.map(s => `${s.vehicleId}/${s.instance}`));
+  return {
+    health: healthMatches.filter(s => identities.has(`${s.vehicleId}/${s.instance}`)),
+    cameras: cameraMatches.filter(s => identities.has(`${s.vehicleId}/${s.instance}`)),
+    identities,
+  };
+}
+
 export function resolveRecordingTarget(check: RecordingCheck, graph: RosGraph, cameras: LifecycleService[], health: HealthService[]): RecordingTarget {
   const target: RecordingTarget = { id: recordingCheckId(check), check, label: check.label ?? (check.type === "bag_recording" ? check.recorder : check.service) };
   if (check.type === "bag_recording") {
@@ -44,17 +60,11 @@ export function resolveRecordingTarget(check: RecordingCheck, graph: RosGraph, c
     const qualified = { ...check, domain_id: domain };
     return { ...target, id: recordingCheckId(qualified), check: qualified, graph: scopedGraph(graph, domain) };
   }
-  // Check both discovery surfaces: a lifecycle-only match must not hide another vehicle's health
-  // reporter with the same short name (nor may a health-only match pick a different lifecycle).
-  const healthIdentities = new Set(matchingHealth(health, check.service).map(s => `${s.vehicleId}/${s.instance}`));
-  const matches = cameras.filter(s => check.service === s.instance || check.service === `${s.vehicleId}/${s.instance}` ||
-    check.service === `fleet/${s.vehicleId}/svc/${s.instance}/health` || healthIdentities.has(`${s.vehicleId}/${s.instance}`));
-  const identities = new Set([
-    ...matches.map(s => `${s.vehicleId}/${s.instance}`),
-    ...healthIdentities,
-  ]);
+  const { cameras: matches, health: healthMatches, identities } = cameraCandidates(check.service, cameras, health);
   if (identities.size > 1 || matches.length > 1)
-    return { ...target, error: "Ambiguous camera. Use vehicle/instance or the full health key." };
+    return { ...target, error: `Ambiguous camera: ${[...identities].sort().join(", ")}. ` +
+      (healthMatches.length ? `Health keys: ${healthMatches.map(s => s.key).sort().join(", ")}. ` : "") +
+      "Use vehicle/instance or the full health key." };
   const camera = matches[0];
   if (!camera) {
     const identity = [...identities][0];

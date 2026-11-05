@@ -6,6 +6,7 @@ import {
   parseRigJob,
   parseRigKey,
   parseRigState,
+  parseRigCurrentRun,
   parseRunDetail,
   parseRunsReply,
   parseSubmitReply,
@@ -65,6 +66,17 @@ describe("rig keys", () => {
 });
 
 describe("rig parsers", () => {
+  it("current run: distinguishes open, closed and unavailable, and requires ordered identity metadata", () => {
+    const run = { schema_version: 1, vehicle_id: "1", epoch: "boot-a", revision: 1, at_unix_s: 1,
+      ok: true, run_id: "20261105T140000Z_test", run_dir: "/data/runs/20261105T140000Z_test", label: "test", started: null, error: null };
+    expect(parseRigCurrentRun(enc(run))).toEqual(run);
+    expect(parseRigCurrentRun(enc({ ...run, run_id: null, run_dir: null }))).toMatchObject({ ok: true, run_id: null });
+    expect(parseRigCurrentRun(enc({ ...run, ok: false, error: "Registry unavailable" }))).toMatchObject({ ok: false });
+    for (const over of [{ schema_version: 2 }, { vehicle_id: 1 }, { epoch: "" }, { revision: 0 }, { revision: 1.2 },
+      { ok: undefined }, { run_id: undefined }, { run_dir: "" }, { error: [] }]) {
+      expect(parseRigCurrentRun(enc({ ...run, ...over }))).toBeNull();
+    }
+  });
   it("descriptor: required fields, numeric vehicle_id stringified, embedded job parsed", () => {
     const d = parseRigDescriptor(enc({ schema_version: 1, service: "rig-agent", vehicle_id: 1, capabilities: { actuate: false }, job: JOB }));
     expect(d?.vehicle_id).toBe("1");

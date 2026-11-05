@@ -4,7 +4,8 @@
 // replies get rarer and intermediate values are skipped — nothing queues.
 import type { HistoryPoint, TopicSnapshot } from "../ros/topicStore";
 import type { HealthService } from "../health/types";
-import { healthFromWire } from "./healthWire";
+import { parseRigCurrentRun, type RigCurrentRun } from "../rig/types";
+import { applyHealthUpdate, healthFromWire, type HealthWire } from "./healthWire";
 import { TransportError } from "../transport/reconnecting";
 import type { Transport } from "../transport/types";
 import {
@@ -33,6 +34,8 @@ export interface VehicleSnapshot extends TopicSnapshot {
   healthKeys?: readonly string[];
   /** Health service items: the service on this browser's clocks. */
   health?: HealthService;
+  /** Local run registry snapshot; the shared poll stream confirms freshness even without changes. */
+  currentRun?: RigCurrentRun;
 }
 
 export interface VehicleStateClientOptions {
@@ -64,6 +67,8 @@ interface ClientItem {
   trail?: { next: number; pts: [number, number][] };
   /** Series items: buckets by absolute index, on this browser's monotonic clock. */
   series?: Map<number, HistoryPoint>;
+  /** Last complete wire state; deltas must never merge into browser-clock health objects. */
+  healthWire?: HealthWire;
 }
 
 const SUPERSEDED = Symbol("superseded");
@@ -78,7 +83,7 @@ export class VehicleStateClient {
   private readonly items = new Map<string, ClientItem>();
   private readonly listeners = new Map<string, Set<() => void>>();
   private wanted: string[] = [];
-  private view: { id: string; sigs: string[] } | null = null;
+  private view: { id: string; sigs: string[]; healthDelta: boolean } | null = null;
   private epoch = "";
   private since = 0;
   /** Items whose whole state this client holds (as of `since`). By object: a re-created item is new. */
@@ -96,6 +101,7 @@ export class VehicleStateClient {
   /** When the current run of unanswered requests began (null = the last one was answered). */
   private unansweredSince: number | null = null;
   private readonly outageGraceMs: number;
+  private lastResponseMono: number | undefined;
 
   constructor(opts: VehicleStateClientOptions) {
     this.transport = opts.transport;
@@ -153,6 +159,9 @@ export class VehicleStateClient {
   getSnapshot(key: string): VehicleSnapshot | null {
     return this.items.get(key)?.snapshot ?? null;
   }
+
+  /** Last successful poll on this page's monotonic clock, including an empty change set. */
+  lastResponseMonoMs(): number | undefined { return this.lastResponseMono; }
 
   close(): void {
     this.closed = true;
@@ -219,7 +228,7 @@ export class VehicleStateClient {
             // previous view still holds the shared items on the vehicle, so their trails and
             // histories continue. Otherwise (first view, new epoch, an older vehicle) start over.
             const keep = reg.fresh === 1 && reg.epoch === this.epoch && this.since > 0;
-            this.view = { id: reg.view, sigs };
+            this.view = { id: reg.view, sigs, healthDelta: reg.health_delta === 1 };
             this.epoch = reg.epoch;
             if (keep) this.fresh = new Set(sigs.filter((sig) => { const item = this.items.get(sig); return !item || !this.complete.has(item); }));
             else this.since = 0;
@@ -241,9 +250,17 @@ export class VehicleStateClient {
             continue;
           }
           // A reply to since 0, or from a different epoch, is complete: trails and histories restart.
-          this.apply(reply, sigs, askedSince === 0 || reply.epoch !== askedEpoch, askedFresh);
+          const epochChanged = reply.epoch !== askedEpoch;
+          const incomplete = this.apply(reply, sigs, askedSince === 0 || epochChanged, askedFresh);
           // Every item asked about is now whole here: changed ones arrived, the rest already were.
-          for (const item of askedItems) if (item) this.complete.add(item);
+          // A missing health baseline is repaired separately, without replaying other items.
+          for (const item of askedItems) if (item) {
+            if (incomplete.has(item.sig)) this.complete.delete(item);
+            else this.complete.add(item);
+          }
+          // A restarted server may already know this hashed view from another caller. Its full
+          // reply is valid, but capabilities belong to the epoch that answered registration.
+          if (epochChanged) this.view = null;
           backoff = 1000;
           await this.orWake(sleep(Math.max(0, this.minIntervalMs - (performance.now() - started))));
         } catch (e) {
@@ -291,21 +308,48 @@ export class VehicleStateClient {
     return this.query<RegisterReply>(this.keys.view, { v: VSTATE_VERSION, items }, 5000);
   }
 
-  private poll(view: { id: string; sigs: string[] }, fresh: ReadonlySet<string>): Promise<PollReply> {
+  private poll(view: { id: string; sigs: string[]; healthDelta: boolean }, fresh: ReadonlySet<string>): Promise<PollReply> {
     const body: PollRequest = { v: VSTATE_VERSION, view: view.id, epoch: this.epoch, since: this.since };
+    if (view.healthDelta) body.health_delta = 1;
     if (fresh.size > 0) body.fresh = view.sigs.flatMap((sig, i) => (fresh.has(sig) ? [i] : []));
     return this.query<PollReply>(this.keys.poll, body, this.holdMs + 6000);
   }
 
-  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[], full: boolean, fresh: ReadonlySet<string>): void {
+  private apply(reply: Exclude<PollReply, { error: string }>, sigs: string[], full: boolean, fresh: ReadonlySet<string>): Set<string> {
+    this.lastResponseMono = performance.now();
     this.epoch = reply.epoch;
     this.since = reply.seq;
-    this.fresh = new Set();
+    const incomplete = new Set<string>();
+    for (const sig of sigs) {
+      const item = this.items.get(sig);
+      if (!item?.spec.health || item.spec.health === "*") continue;
+      if (full) item.healthWire = undefined;
+      // A requested full health item must actually arrive before it is complete again.
+      if (full || fresh.has(sig)) incomplete.add(sig);
+    }
     this.outage = null;
     this.unansweredSince = null;
-    for (const [index, state] of reply.items) {
+    for (const [index, received] of reply.items) {
       const item = this.items.get(sigs[index] ?? "");
       if (!item) continue; // released since this view was registered
+      const whole = full || fresh.has(item.sig);
+      let state = received;
+      if (item.spec.health && item.spec.health !== "*") {
+        if (state.hu !== undefined) {
+          const merged = !whole && this.view?.healthDelta && item.healthWire && !state.hd
+            ? applyHealthUpdate(item.healthWire, state.hu) : null;
+          if (!merged) {
+            // Leave the last report and its ages untouched. Other items in this reply remain
+            // usable, and only this index needs a full answer on the next poll.
+            item.healthWire = undefined;
+            incomplete.add(item.sig);
+            continue;
+          }
+          state = { ...state, hd: merged };
+        }
+        item.healthWire = state.hd; // an authoritative empty service also clears the baseline
+        incomplete.delete(item.sig);
+      }
       const next = toSnapshot(item, state);
       // Advertised but no sample since the vehicle (re)subscribed — a restarted service, a
       // re-advertised topic: keep showing the last value, marked stale, instead of blanking it.
@@ -313,13 +357,14 @@ export class VehicleStateClient {
         next.message = item.snapshot.message;
         next.stale = true;
       }
-      const whole = full || fresh.has(item.sig);
       if (item.spec.trail !== undefined) next.trail = mergeTrail(item, state, whole);
       else if (item.trail) delete item.trail;
       if (item.spec.series !== undefined) next.history = mergeSeries(item, state, whole);
       item.snapshot = next;
       this.notify(item.sig);
     }
+    this.fresh = incomplete;
+    return incomplete;
   }
 
   private fail(message: string): void {
@@ -384,6 +429,7 @@ function toSnapshot(item: ClientItem, state: ItemState): VehicleSnapshot {
     alive: state.a === undefined ? undefined : state.a === 1,
     healthKeys: state.hk,
     health: state.hd ? healthFromWire(state.hd) : undefined,
+    currentRun: state.run ? parseRigCurrentRun(encodeMessage(state.run)) ?? undefined : undefined,
   };
 }
 

@@ -122,7 +122,7 @@ export interface DashboardConfig {
   ws_port?: number;
   /** Try a laptop bridge first. Omitted = ws/127.0.0.1:10000; false = vehicle only. */
   local_bridge?: string | false;
-  /** dash-up starts the vehicle-side rig agent (docs/RIG_AGENT.md); shows the Rig tab by default. */
+  /** Resolved agent requirement: Rig/Logs tabs and rendered Rig widgets, with an explicit override. */
   rig_agent?: boolean;
   /** dash-up starts dashboard-state; Home widgets get projected, change-only values from it
    *  instead of raw topics (docs/VEHICLE_STATE.md). */
@@ -354,6 +354,24 @@ export function parseHome(value: unknown): ParsedHome {
   return { title: optStr(value, "title"), layout, layoutWarning, widgets };
 }
 
+/** Keep launcher overrides compatible with tools/dash_env.py; malformed values do not override. */
+function booleanOverride(value: unknown): boolean | undefined {
+  if (typeof value === "boolean") return value;
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  const text = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(text)) return true;
+  if (["false", "0", "no", "off"].includes(text)) return false;
+  return undefined;
+}
+
+function needsRigAgent(tabs: TabVisibility | undefined, home: ParsedHome | undefined): boolean {
+  const visible = visibleTabs(tabs);
+  if (visible.includes("rig") || visible.includes("logs")) return true;
+  if (!visible.includes("home") || !home || home.fatal) return false;
+  return home.widgets.some(w => w.ok && (w.widget.type === "rig" ||
+    (isPanelWidget(w.widget) && w.widget.items.some(i => i.ok && i.item.type === "rig"))));
+}
+
 /** Parse the whole instance YAML. Throws only on unparseable YAML (caller maps to the error state). */
 export function parseDashboardConfig(yamlText: string): DashboardConfig {
   const doc: unknown = parseYaml(yamlText);
@@ -363,11 +381,13 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     // loud on purpose: the wrong layout kills the node that receives it
     throw new Error(`rmw_attachment must be ${ATTACHMENT_LAYOUTS.join(" | ")}, got '${String(layout)}'`);
   }
-  const rigAgent = doc["rig_agent"] === true || doc["rig_agent"] === "true";
+  const rigOverride = booleanOverride(doc["rig_agent"]);
   const vehicleState = doc["vehicle_state"] === true || doc["vehicle_state"] === "true";
   const tabs = doc["tabs"] !== undefined ? parseTabs(doc["tabs"]) : undefined;
   const resolvedTabs: TabVisibility | undefined =
-    tabs?.rig !== undefined ? tabs : rigAgent ? { ...(tabs ?? {}), rig: true } : tabs;
+    tabs?.rig !== undefined ? tabs : rigOverride === true ? { ...(tabs ?? {}), rig: true } : tabs;
+  const home = doc["home"] !== undefined ? parseHome(doc["home"]) : undefined;
+  const rigAgent = rigOverride ?? needsRigAgent(resolvedTabs, home);
   let ros3d: SceneOverrides | undefined; let ros3d_error: string | undefined;
   if (doc.ros3d !== undefined) {
     try { ros3d = parseSceneOverrides(doc.ros3d); }
@@ -378,13 +398,13 @@ export function parseDashboardConfig(yamlText: string): DashboardConfig {
     web_port: optNum(doc, "web_port"),
     ws_port: optNum(doc, "ws_port"),
     local_bridge: doc.local_bridge === false ? false : optStr(doc, "local_bridge"),
-    rig_agent: rigAgent || undefined,
+    rig_agent: rigAgent,
     vehicle_state: vehicleState || undefined,
     tabs: resolvedTabs,
     ros3d,
     ros3d_error,
     health: parseHealthOptions(doc.health),
-    home: doc["home"] !== undefined ? parseHome(doc["home"]) : undefined,
+    home,
     rmw_attachment: layout as AttachmentLayout | undefined,
   };
 }

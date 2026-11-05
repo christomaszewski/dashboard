@@ -117,6 +117,11 @@ manifest; they accept no verbs.
 
 ## Runs
 
+The header's compact [current-run feed](CURRENT_RUN.md) is produced by `dashboard-state`,
+independently of this agent. It is available even when all Rig controls are disabled.
+
+### Registry queries
+
 `…/rig/runs` — rig's `list_runs` semantics, derived from the documented registry layout
 (`<data_dir>/runs/<id>/manifest.yaml`, `ended:` present ⇔ sealed; the relative `current` symlink ⇔
 the open run):
@@ -282,7 +287,8 @@ The agent holds the host's docker socket and the deployment tree: it is **root-e
 vehicle**, and its verbs stop the whole stack. The mesh is the trust boundary today (no auth on any
 `fleet/**` key), but this is a larger actuation surface than the ROS bus, so producers must:
 
-- be **opt-in** (the dashboard: `rig_agent: true` in the instance YAML — absent = no agent, no socket);
+- be **opt-in** through configured Rig/Logs tabs or Rig widgets, or explicit `rig_agent: true`;
+  `rig_agent: false` prevents startup, and the dashboard defaults to read-only unless `rig_actuate: true`;
 - accept a **fixed verb whitelist with validated arguments** — row names must exist in the manifest,
   labels are regex-checked, no free-form argv ever reaches rig;
 - offer a **read-only mode** (`capabilities.actuate: false`; the dashboard: `rig_actuate: false`)

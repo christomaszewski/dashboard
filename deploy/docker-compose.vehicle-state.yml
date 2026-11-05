@@ -1,4 +1,5 @@
-# Overlay applied by dash-up ONLY when the instance YAML sets `vehicle_state: true`
+# Overlay applied by dash-up when the instance YAML sets `vehicle_state: true` or a Rig registry
+# directory is available (the current run uses this service independently of the Rig agent).
 # (docs/VEHICLE_STATE.md): Home widgets get projected, change-only values from the vehicle instead
 # of raw ROS topics.
 #
@@ -33,6 +34,7 @@ services:
     environment:
       DASH_STATE_KEY: ${DASH_STATE_KEY:?vehicle_state needs DASH_STATE_KEY — start through dash-up}
       DASH_STATE_LOCATOR: ws/127.0.0.1:${DASH_STATE_WS_PORT:-10001}
+      VEHICLE_ID: ${DASH_VEHICLE_ID:?dashboard-state needs DASH_VEHICLE_ID — start through dash-up}
     depends_on:
       - dashboard-state-zenoh
     restart: unless-stopped                    # crash-only: it exits when its bridge stops answering
